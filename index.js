@@ -17,8 +17,13 @@ app.use(cookieParser());
 const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/yourhaat';
-mongoose.connect(MONGODB_URI).then(() => console.log('MongoDB connected')).catch(err => console.error('MongoDB connection error', err));
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/yourhaat';
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error', err));
+
+// Helpful startup info
+console.log('Using MongoDB URI:', process.env.MONGODB_URI ? 'MONGODB_URI' : (process.env.MONGO_URI ? 'MONGO_URI' : 'default localhost'));
 
 app.get("/", (req, res) => {
   res.send("Welcome to YourHaat Backend!");
