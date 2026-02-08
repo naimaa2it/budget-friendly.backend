@@ -9,6 +9,11 @@ const createToken = (user) => {
   return jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 };
 
+// Simple connectivity check for debugging
+router.get('/ping', (req, res) => {
+  res.json({ ok: true, time: Date.now(), origin: req.headers.origin, cookie: req.headers.cookie || null });
+});
+
 // Firebase (client) provides user info after sign-in (google or email)
 router.post('/firebase-login', async (req, res) => {
   try {
