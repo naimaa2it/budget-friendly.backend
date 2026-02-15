@@ -2,7 +2,10 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
+import Product from '../models/Product.js';
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
@@ -10,6 +13,31 @@ const SALT_ROUNDS = 12; // Increased from 10 for better security
 const createToken = (admin) => {
   const payload = { id: admin._id, role: admin.role, type: 'admin' };
   return jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+};
+
+// --- Cloudinary + upload setup ---
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Middleware to require admin JWT cookie
+const requireAdmin = async (req, res, next) => {
+  try {
+    const token = req.cookies?.token;
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    if (payload.type !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const admin = await Admin.findById(payload.id);
+    if (!admin) return res.status(403).json({ error: 'Admin not found' });
+    if (!admin.isActive) return res.status(403).json({ error: 'Account disabled' });
+    req.admin = admin;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 };
 
 // Admin / Moderator registration (only via admin secret)
@@ -71,6 +99,98 @@ router.post('/check-email', async (req, res) => {
     res.json({ exists: false, ok: true });
   } catch (err) {
     console.error('Email check error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Image upload to Cloudinary (admin-only)
+router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    const result = await cloudinary.uploader.upload(dataUri, {
+      folder: process.env.CLOUDINARY_FOLDER || 'yourhaat/products',
+      resource_type: 'image',
+      quality: 'auto',
+      fetch_format: 'auto'
+    });
+    res.json({ ok: true, asset: {
+      public_id: result.public_id,
+      url: result.secure_url || result.url,
+      width: result.width,
+      height: result.height,
+      format: result.format
+    }});
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
+  }
+});
+
+// Admin product management (protected)
+router.get('/products', requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, q, category, status } = req.query;
+    const skip = (Math.max(1, page) - 1) * limit;
+    const filter = {};
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+    if (q) filter.$or = [ { title: new RegExp(q, 'i') }, { description: new RegExp(q, 'i') } ];
+
+    const [items, total] = await Promise.all([
+      Product.find(filter).sort({ updatedAt: -1 }).skip(Number(skip)).limit(Number(limit)),
+      Product.countDocuments(filter)
+    ]);
+    res.json({ items, total, page: Number(page), limit: Number(limit) });
+  } catch (err) {
+    console.error('Admin GET /products error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/products', requireAdmin, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const p = new Product(payload);
+    await p.save();
+    res.json({ ok: true, product: p });
+  } catch (err) {
+    console.error('Admin POST /products error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/products/:id', requireAdmin, async (req, res) => {
+  try {
+    const p = await Product.findById(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    res.json({ product: p });
+  } catch (err) {
+    console.error('Admin GET /products/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/products/:id', requireAdmin, async (req, res) => {
+  try {
+    const updates = req.body || {};
+    const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, product: p });
+  } catch (err) {
+    console.error('Admin PUT /products/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/products/:id', requireAdmin, async (req, res) => {
+  try {
+    // soft-delete: set status=archived
+    const p = await Product.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, product: p });
+  } catch (err) {
+    console.error('Admin DELETE /products/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
