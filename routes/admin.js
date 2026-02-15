@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
+import User from '../models/User.js';
 import Product from '../models/Product.js';
 import BlogPost from '../models/BlogPost.js';
 import sharp from 'sharp';
@@ -563,6 +564,35 @@ router.delete('/admins/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, admin: { _id: a._id, isActive: a.isActive } });
   } catch (err) {
     console.error('DELETE /admins/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- User management (admin-only) -------------------------------------------------
+router.get('/users', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const { q = '', limit = 200 } = req.query;
+    const filter = {};
+    if (q) filter.$or = [ { email: new RegExp(q, 'i') }, { name: new RegExp(q, 'i') } ];
+    const items = await User.find(filter).select('-hashedPassword -resetToken -resetExpires').sort({ createdAt: -1 }).limit(Number(limit));
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /users error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/users/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const u = await User.findById(req.params.id);
+    if (!u) return res.status(404).json({ error: 'Not found' });
+    if (u.role === 'admin') return res.status(400).json({ error: 'Cannot delete admin user' });
+    await User.deleteOne({ _id: u._id });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /users/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
