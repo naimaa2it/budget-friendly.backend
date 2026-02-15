@@ -594,6 +594,35 @@ router.get('/users', requireAdmin, async (req, res) => {
   }
 });
 
+// Get single user (admin)
+router.get('/users/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const u = await User.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires');
+    if (!u) return res.status(404).json({ error: 'Not found' });
+    res.json({ user: u });
+  } catch (err) {
+    console.error('GET /users/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/users/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const { name, isVerified } = req.body || {};
+    const u = await User.findById(req.params.id);
+    if (!u) return res.status(404).json({ error: 'Not found' });
+    if (typeof name !== 'undefined') u.name = name;
+    if (typeof isVerified !== 'undefined') u.isVerified = !!isVerified;
+    await u.save();
+    res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt } });
+  } catch (err) {
+    console.error('PUT /users/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.delete('/users/:id', requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
