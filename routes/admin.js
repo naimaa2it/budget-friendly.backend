@@ -213,6 +213,36 @@ router.delete('/categories/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// Settings (admin area)
+router.get('/settings', requireAdmin, async (req, res) => {
+  try {
+    // allow moderators to view settings; only admins may update (enforced on PUT)
+    const Setting = (await import('../models/Setting.js')).default;
+    let settings = await Setting.findOne();
+    if (!settings) {
+      settings = new Setting();
+      await settings.save();
+    }
+    res.json({ settings });
+  } catch (err) {
+    console.error('GET /settings error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/settings', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const payload = req.body || {};
+    const Setting = (await import('../models/Setting.js')).default;
+    const settings = await Setting.findOneAndUpdate({}, { $set: payload }, { upsert: true, new: true });
+    res.json({ ok: true, settings });
+  } catch (err) {
+    console.error('PUT /settings error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin product management (protected)
 router.get('/products', requireAdmin, async (req, res) => {
   try {
