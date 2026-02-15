@@ -345,6 +345,17 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
 
 router.delete('/products/:id', requireAdmin, async (req, res) => {
   try {
+    const force = req.query.force === 'true' || req.query.force === '1';
+
+    if (force) {
+      // permanent delete
+      const p = await Product.findById(req.params.id);
+      if (!p) return res.status(404).json({ error: 'Not found' });
+      await Product.deleteOne({ _id: p._id });
+      // TODO: optionally remove images from cloudinary
+      return res.json({ ok: true });
+    }
+
     // soft-delete: set status=archived
     const p = await Product.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
