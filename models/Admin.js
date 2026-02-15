@@ -7,9 +7,9 @@ const AdminSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'moderator'], default: 'admin', required: true },
   
   // Security fields
-  isActive: { type: Boolean, default: true }, // can be disabled by super admin
-  isLocked: { type: Boolean, default: false }, // locked after too many failed attempts
-  lockUntil: { type: Date }, // auto-unlock after this time
+  isActive: { type: Boolean, default: true },
+  isLocked: { type: Boolean, default: false },
+  lockUntil: { type: Date },
   loginAttempts: { type: Number, default: 0 },
   lastLoginAt: { type: Date },
   lastLoginIP: { type: String },
@@ -20,7 +20,7 @@ const AdminSchema = new mongoose.Schema({
   
   // Audit fields
   createdAt: { type: Date, default: Date.now },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, // which admin created this account
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   updatedAt: { type: Date, default: Date.now }
 });
 

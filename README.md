@@ -2,7 +2,12 @@
 
 This Express backend provides two separate authentication systems:
 1. **Regular users** (Firebase-authenticated) → stored in `User` collection
-2. **Admin/Moderator accounts** (email/password with secret) → stored in `Admin` collection
+2. **Admin/Moderator accounts** (email/password + secret code) → stored in `Admin` collection
+
+**Same email CAN register as both a user AND an admin** because:
+- **Users** create Firebase accounts and are stored in User collection
+- **Admins** do NOT use Firebase - they have local passwords hashed in Admin collection
+- They are completely independent with no connection
 
 ---
 
@@ -12,7 +17,7 @@ This Express backend provides two separate authentication systems:
 For regular customers who sign up via Firebase (Google or email/password).
 
 **Fields:**
-- `email` (unique, required)
+- `email` (required, lowercase, trimmed) - can duplicate if different provider
 - `name`, `image`
 - `role` (default: 'user')
 - `provider` (firebase, google, local)
@@ -26,12 +31,12 @@ For regular customers who sign up via Firebase (Google or email/password).
 
 ---
 
-### Admin Model (`models/Admin.js`) — NEW
-For admin and moderator accounts (separate collection with enhanced security).
+### Admin Model (`models/Admin.js`)
+For admin and moderator accounts with local email/password authentication.
 
 **Fields:**
-- `name`, `email` (unique, lowercase, trimmed)
-- `hashedPassword` (bcrypt with 12 rounds)
+- `name`, `email` (lowercase, trimmed, unique per admin)
+- `hashedPassword` (bcrypt with 12 rounds - local password, NOT Firebase)
 - `role` (admin | moderator)
 - **Security fields:**
   - `isActive` — can be disabled by super admin
@@ -42,14 +47,20 @@ For admin and moderator accounts (separate collection with enhanced security).
 - **Password reset:**
   - `resetToken`, `resetExpires`
 - **Audit:**
-  - `createdAt`, `updatedAt`, `createdBy` (reference to creating admin)
+  - `createdAt`, `updatedAt`
+
+**KEY DIFFERENCE: Admins do NOT create Firebase accounts**
+- Admin passwords are hashed with bcrypt on the backend
+- Admin login requires: email + password + admin secret code
+- No Firebase involvement for admins
+- Same email can be both user (in Firebase) and admin (local password)
 
 **Security features:**
 - Account locks after **5 failed login attempts** (30-minute lockout)
-- Passwords must be **at least 8 characters**
+- Passwords must be **at least 6 characters**
 - Login attempts and IP addresses are logged
 - Admin secret code (`ADMIN_SECRET`) validated on registration and login
-- Passwords hashed with bcrypt (12 rounds, stronger than default 10)
+- Passwords hashed with bcrypt (12 rounds)
 
 **Virtual field:**
 - `isCurrentlyLocked` — checks if account is locked and lockout hasn't expired
@@ -70,7 +81,7 @@ Upserts user in `User` collection after Firebase authentication.
 - **Response:** Sets JWT cookie and returns user object
 
 #### `GET /api/auth/me`
-Returns current user from JWT cookie (checks both User and Admin collections).
+Returns current user from JWT cookie (checks both User and Admin collections based on token type).
 - **Response:** `{ user: {...} }` or `{ user: null }`
 
 #### `POST /api/auth/logout`
@@ -80,28 +91,37 @@ Clears JWT cookie.
 
 ### Admin Auth (`/api/admin`)
 
+#### `POST /api/admin/check-email`
+Checks if email is already registered as admin (same email OK for users).
+- **Body:** `{ email }`
+- **Response:** `{ exists: false, ok: true }` or error
+
 #### `POST /api/admin/register`
-Creates a new admin/moderator account.
+Creates a new admin/moderator account with local password (NO Firebase).
 - **Body:** `{ name, email, password, adminSecret, role }`
 - **Validation:**
-  - Password must be ≥8 characters
+  - Password must be ≥6 characters
+  - Email must not already exist as admin (can exist as user)
   - `adminSecret` must match `process.env.ADMIN_SECRET`
+  - Password is hashed with bcrypt on backend
 - **Response:** `{ ok: true, user: {...} }`
 
 #### `POST /api/admin/login`
-Authenticates admin/moderator and issues JWT cookie.
+Authenticates admin/moderator with email + password + secret code (NO Firebase).
 - **Body:** `{ email, password, adminSecret }`
 - **Security checks:**
   1. Validates admin secret
-  2. Checks if account exists
+  2. Checks if admin account exists
   3. Checks if account is active (`isActive = true`)
   4. Checks if account is locked (returns minutes remaining)
   5. Verifies password → increments login attempts on failure
   6. On success: resets attempts, updates `lastLoginAt` and `lastLoginIP`
-- **Response:** Sets JWT cookie (with `type: 'admin'`) and returns user object
 
+
+
+- **Response:** Sets JWT cookie (with `type: 'admin'`) and returns user object
 **Error responses:**
-- 403: Invalid admin secret or account disabled
+- 403: Invalid admin secret, account disabled, or not an admin account
 - 423: Account temporarily locked (includes minutes remaining)
 - 401: Invalid credentials
 
@@ -142,14 +162,17 @@ Resets admin password using reset token.
 }
 ```
 
-**Admin token:**
+**Admin/Moderator token:**
 ```json
 {
-  "id": "admin_id",
+  "id": "user_id",
   "role": "admin",
   "type": "admin"
 }
 ```
+
+**Note:** Both user and admin tokens are issued for users stored in the `User` collection. The difference is in the `role` field determined by their account type.
+
 
 The `type: 'admin'` field tells `/api/auth/me` to look in the `Admin` collection instead of `User`.
 

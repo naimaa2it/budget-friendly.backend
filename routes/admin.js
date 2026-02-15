@@ -29,9 +29,11 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    // Check if admin with this email already exists
+    // Check if this email already exists as admin (separate from User collection)
     const existing = await Admin.findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(400).json({ error: 'Admin with this email already exists' });
+    if (existing) {
+      return res.status(400).json({ error: 'This email is already registered as an admin. Use admin login instead.' });
+    }
 
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
     const admin = new Admin({ 
@@ -47,6 +49,28 @@ router.post('/register', async (req, res) => {
     res.json({ ok: true, user: { email: admin.email, name: admin.name, role: admin.role } });
   } catch (err) {
     console.error('Admin registration error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check if email already exists as admin (same email can be user + admin)
+router.post('/check-email', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    // Only check if already exists as admin (allow same email for user)
+    const existingAdmin = await Admin.findOne({ email: email.toLowerCase() });
+    if (existingAdmin) {
+      return res.status(400).json({ 
+        exists: true, 
+        error: 'This email is already registered as an admin.'
+      });
+    }
+
+    res.json({ exists: false, ok: true });
+  } catch (err) {
+    console.error('Email check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -143,18 +167,18 @@ router.post('/reset', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    const admin = await Admin.findOne({ resetToken: token, resetExpires: { $gt: Date.now() } });
-    if (!admin) return res.status(400).json({ error: 'Invalid or expired reset token' });
+    const user = await User.findOne({ resetToken: token, resetExpires: { $gt: Date.now() } });
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
 
-    admin.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    admin.resetToken = undefined;
-    admin.resetExpires = undefined;
-    admin.loginAttempts = 0; // Reset login attempts on password change
-    admin.isLocked = false;
-    admin.lockUntil = undefined;
-    await admin.save();
+    user.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    user.resetToken = undefined;
+    user.resetExpires = undefined;
+    user.loginAttempts = 0; // Reset login attempts on password change
+    user.isLocked = false;
+    user.lockUntil = undefined;
+    await user.save();
 
-    console.log(`Password reset completed for admin: ${admin.email}`);
+    console.log(`Password reset completed for admin: ${user.email}`);
     res.json({ ok: true, message: 'Password reset successful' });
   } catch (err) {
     console.error('Admin password reset error:', err);
