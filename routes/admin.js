@@ -127,14 +127,100 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
   }
 });
 
+// --- Category management (admin-only) ---
+router.get('/categories', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const Category = (await import('../models/Category.js')).default;
+    const items = await Category.find().sort({ level: 1, order: 1, name: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /categories error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create category (max 5 subcategories per parent)
+router.post('/categories', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const { name, parentId, order } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    const Category = (await import('../models/Category.js')).default;
+
+    let level = 0;
+    if (parentId) {
+      const parent = await Category.findById(parentId);
+      if (!parent) return res.status(400).json({ error: 'Parent category not found' });
+      const childCount = await Category.countDocuments({ parent: parentId });
+      if (childCount >= 5) return res.status(400).json({ error: 'A category may have at most 5 subcategories' });
+      level = parent.level + 1;
+    }
+
+    const cat = new Category({ name, parent: parentId || undefined, level, order: order || 0, isActive: true });
+    await cat.save();
+    res.json({ ok: true, category: cat });
+  } catch (err) {
+    console.error('POST /categories error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update category
+router.put('/categories/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const { name, parentId, order, isActive } = req.body || {};
+    const Category = (await import('../models/Category.js')).default;
+    const cat = await Category.findById(req.params.id);
+    if (!cat) return res.status(404).json({ error: 'Not found' });
+
+    if (parentId && parentId !== String(cat.parent)) {
+      const newParent = await Category.findById(parentId);
+      if (!newParent) return res.status(400).json({ error: 'Parent not found' });
+      const childCount = await Category.countDocuments({ parent: parentId });
+      if (childCount >= 5) return res.status(400).json({ error: 'A category may have at most 5 subcategories' });
+      cat.parent = parentId;
+      cat.level = newParent.level + 1;
+    }
+    if (name) cat.name = name;
+    if (typeof isActive === 'boolean') cat.isActive = isActive;
+    if (typeof order !== 'undefined') cat.order = order;
+    await cat.save();
+    res.json({ ok: true, category: cat });
+  } catch (err) {
+    console.error('PUT /categories/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete category (only if no children and no products assigned) - otherwise deactivate
+router.delete('/categories/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const Category = (await import('../models/Category.js')).default;
+    const cat = await Category.findById(req.params.id);
+    if (!cat) return res.status(404).json({ error: 'Not found' });
+    const child = await Category.findOne({ parent: cat._id });
+    if (child) return res.status(400).json({ error: 'Category has subcategories; remove them first or deactivate instead' });
+    const product = await Product.findOne({ categoryId: cat._id });
+    if (product) return res.status(400).json({ error: 'Category is used by products; cannot delete' });
+    await cat.deleteOne();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /categories/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin product management (protected)
 router.get('/products', requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, q, category, status } = req.query;
+    const { page = 1, limit = 20, q, categoryId, status } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
     const filter = {};
     if (status) filter.status = status;
-    if (category) filter.category = category;
+    if (categoryId) filter.categoryId = categoryId;
     if (q) filter.$or = [ { title: new RegExp(q, 'i') }, { description: new RegExp(q, 'i') } ];
 
     const [items, total] = await Promise.all([
@@ -151,6 +237,18 @@ router.get('/products', requireAdmin, async (req, res) => {
 router.post('/products', requireAdmin, async (req, res) => {
   try {
     const payload = req.body || {};
+
+    // If categoryId provided, resolve and store category name on product for backward compatibility
+    if (payload.categoryId) {
+      try {
+        const Category = (await import('../models/Category.js')).default;
+        const cat = await Category.findById(payload.categoryId);
+        if (cat) payload.category = cat.name;
+      } catch (err) {
+        // ignore resolution errors
+      }
+    }
+
     const p = new Product(payload);
     await p.save();
     res.json({ ok: true, product: p });
@@ -174,6 +272,18 @@ router.get('/products/:id', requireAdmin, async (req, res) => {
 router.put('/products/:id', requireAdmin, async (req, res) => {
   try {
     const updates = req.body || {};
+
+    // If categoryId present, resolve name
+    if (updates.categoryId) {
+      try {
+        const Category = (await import('../models/Category.js')).default;
+        const cat = await Category.findById(updates.categoryId);
+        if (cat) updates.category = cat.name;
+      } catch (err) {
+        // ignore
+      }
+    }
+
     const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, product: p });

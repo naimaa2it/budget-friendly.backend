@@ -23,6 +23,7 @@ const ProductSchema = new mongoose.Schema({
   slug: { type: String, index: true },
   description: { type: String },
   category: { type: String, default: 'general' },
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   tags: [{ type: String }],
   // category-specific structured fields (brand, specs, material, sizes, etc.)
   specs: { type: Object },

@@ -6,12 +6,12 @@ const router = express.Router();
 // Public product listing with pagination, search, category filter
 router.get('/', async (req, res) => {
   try {
-    const { q, category, page = 1, limit = 20, status = 'published' } = req.query;
+    const { q, categoryId, page = 1, limit = 20, status = 'published' } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
 
     const filter = {};
     if (status) filter.status = status;
-    if (category) filter.category = category;
+    if (categoryId) filter.categoryId = categoryId;
     if (q) filter.$or = [
       { title: new RegExp(q, 'i') },
       { description: new RegExp(q, 'i') },
@@ -26,6 +26,26 @@ router.get('/', async (req, res) => {
     res.json({ items, total, page: Number(page), limit: Number(limit) });
   } catch (err) {
     console.error('GET /api/products error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Public categories listing (tree-friendly)
+router.get('/categories', async (req, res) => {
+  try {
+    const Category = (await import('../models/Category.js')).default;
+    const cats = await Category.find({ isActive: true }).sort({ level: 1, order: 1, name: 1 });
+    // build tree
+    const map = new Map();
+    cats.forEach(c => map.set(String(c._id), { _id: c._id, name: c.name, parent: c.parent ? String(c.parent) : null, level: c.level, children: [] }));
+    const roots = [];
+    for (const node of map.values()) {
+      if (node.parent && map.has(node.parent)) map.get(node.parent).children.push(node);
+      else roots.push(node);
+    }
+    res.json({ categories: roots });
+  } catch (err) {
+    console.error('GET /api/products/categories error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
