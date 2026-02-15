@@ -6,6 +6,7 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
 import Product from '../models/Product.js';
+import BlogPost from '../models/BlogPost.js';
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
@@ -331,6 +332,79 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, product: p });
   } catch (err) {
     console.error('Admin DELETE /products/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- Blog (admin) ---
+
+// List / search blog posts (admin)
+router.get('/blog', requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, q, status } = req.query;
+    const skip = (Math.max(1, page) - 1) * limit;
+    const filter = {};
+    if (status) filter.status = status;
+    if (q) filter.$or = [ { title: new RegExp(q, 'i') }, { excerpt: new RegExp(q, 'i') }, { content: new RegExp(q, 'i') } ];
+
+    const [items, total] = await Promise.all([
+      BlogPost.find(filter).sort({ updatedAt: -1 }).skip(Number(skip)).limit(Number(limit)),
+      BlogPost.countDocuments(filter)
+    ]);
+    res.json({ items, total, page: Number(page), limit: Number(limit) });
+  } catch (err) {
+    console.error('Admin GET /blog error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create post
+router.post('/blog', requireAdmin, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const p = new BlogPost(payload);
+    await p.save();
+    res.json({ ok: true, post: p });
+  } catch (err) {
+    console.error('Admin POST /blog error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get single post (admin)
+router.get('/blog/:id', requireAdmin, async (req, res) => {
+  try {
+    const p = await BlogPost.findById(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    res.json({ post: p });
+  } catch (err) {
+    console.error('Admin GET /blog/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update post
+router.put('/blog/:id', requireAdmin, async (req, res) => {
+  try {
+    const updates = req.body || {};
+    if (updates.status === 'published') updates.publishedAt = updates.publishedAt || Date.now();
+    const p = await BlogPost.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, post: p });
+  } catch (err) {
+    console.error('Admin PUT /blog/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete / archive post
+router.delete('/blog/:id', requireAdmin, async (req, res) => {
+  try {
+    const p = await BlogPost.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, post: p });
+  } catch (err) {
+    console.error('Admin DELETE /blog/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

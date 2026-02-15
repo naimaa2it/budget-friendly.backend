@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import productRoutes from './routes/products.js';
+import blogRoutes from './routes/blog.js';
 
 dotenv.config();
 
@@ -67,6 +68,7 @@ app.get("/", (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/blog', blogRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
