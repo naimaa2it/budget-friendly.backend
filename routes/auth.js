@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Admin from '../models/Admin.js';
 
 const router = express.Router();
 
@@ -49,8 +50,24 @@ router.get('/me', async (req, res) => {
   try {
     const token = req.cookies?.token;
     if (!token) return res.json({ user: null });
+    
     const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    const user = await User.findById(payload.id).select('-hashedPassword -resetToken -resetExpires');
+    
+    // Check if this is an admin token (has type: 'admin')
+    let user;
+    if (payload.type === 'admin') {
+      user = await Admin.findById(payload.id).select('-hashedPassword -resetToken -resetExpires -loginAttempts');
+      
+      // Check if admin account is still active
+      if (user && !user.isActive) {
+        res.clearCookie('token');
+        return res.json({ user: null, error: 'Account disabled' });
+      }
+    } else {
+      // Regular user
+      user = await User.findById(payload.id).select('-hashedPassword -resetToken -resetExpires');
+    }
+    
     if (!user) return res.json({ user: null });
     res.json({ user });
   } catch (err) {

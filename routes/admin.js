@@ -2,13 +2,13 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
+import Admin from '../models/Admin.js';
 
 const router = express.Router();
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12; // Increased from 10 for better security
 
-const createToken = (user) => {
-  const payload = { id: user._id, role: user.role };
+const createToken = (admin) => {
+  const payload = { id: admin._id, role: admin.role, type: 'admin' };
   return jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 };
 
@@ -17,18 +17,36 @@ router.post('/register', async (req, res) => {
   try {
     const { name, email, password, adminSecret, role } = req.body;
     if (!name || !email || !password || !adminSecret) return res.status(400).json({ error: 'Missing fields' });
-    if (adminSecret !== process.env.ADMIN_SECRET) return res.status(403).json({ error: 'Invalid admin secret' });
+    
+    // Validate admin secret
+    if (adminSecret !== process.env.ADMIN_SECRET) {
+      console.warn(`Failed admin registration attempt from IP ${req.ip} - invalid secret`);
+      return res.status(403).json({ error: 'Invalid admin secret' });
+    }
 
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: 'User with this email already exists' });
+    // Validate password strength
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // Check if admin with this email already exists
+    const existing = await Admin.findOne({ email: email.toLowerCase() });
+    if (existing) return res.status(400).json({ error: 'Admin with this email already exists' });
 
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
-    const user = new User({ name, email, hashedPassword: hashed, role: role === 'moderator' ? 'moderator' : 'admin', provider: 'local', isVerified: true });
-    await user.save();
+    const admin = new Admin({ 
+      name, 
+      email: email.toLowerCase(), 
+      hashedPassword: hashed, 
+      role: role === 'moderator' ? 'moderator' : 'admin',
+      isActive: true
+    });
+    await admin.save();
 
-    res.json({ ok: true, user: { email: user.email, name: user.name, role: user.role } });
+    console.log(`New ${admin.role} registered: ${admin.email}`);
+    res.json({ ok: true, user: { email: admin.email, name: admin.name, role: admin.role } });
   } catch (err) {
-    console.error(err);
+    console.error('Admin registration error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -38,19 +56,52 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password, adminSecret } = req.body;
     if (!email || !password || !adminSecret) return res.status(400).json({ error: 'Missing fields' });
-    if (adminSecret !== process.env.ADMIN_SECRET) return res.status(403).json({ error: 'Invalid admin secret' });
+    
+    // Validate admin secret
+    if (adminSecret !== process.env.ADMIN_SECRET) {
+      console.warn(`Failed admin login attempt from IP ${req.ip} - invalid secret`);
+      return res.status(403).json({ error: 'Invalid admin secret' });
+    }
 
-    const user = await User.findOne({ email, role: { $in: ['admin', 'moderator'] } });
-    if (!user || !user.hashedPassword) return res.status(401).json({ error: 'Invalid credentials' });
+    const admin = await Admin.findOne({ email: email.toLowerCase() });
+    if (!admin || !admin.hashedPassword) {
+      console.warn(`Failed admin login attempt from IP ${req.ip} - admin not found: ${email}`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
-    const ok = await bcrypt.compare(password, user.hashedPassword);
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    // Check if account is active
+    if (!admin.isActive) {
+      console.warn(`Inactive admin login attempt: ${email}`);
+      return res.status(403).json({ error: 'Account is disabled. Contact super admin.' });
+    }
 
-    const token = createToken(user);
-    res.cookie('token', token, { httpOnly: true, sameSite: 'lax' });
-    res.json({ user: { email: user.email, name: user.name, role: user.role } });
+    // Check if account is locked
+    if (admin.isCurrentlyLocked) {
+      const minutesLeft = Math.ceil((admin.lockUntil - Date.now()) / 60000);
+      return res.status(423).json({ error: `Account is temporarily locked. Try again in ${minutesLeft} minutes.` });
+    }
+
+    // Verify password
+    const ok = await bcrypt.compare(password, admin.hashedPassword);
+    if (!ok) {
+      console.warn(`Failed admin login attempt from IP ${req.ip} - wrong password: ${email}`);
+      await admin.incLoginAttempts();
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Successful login - reset attempts and update last login info
+    await admin.resetLoginAttempts();
+    admin.lastLoginAt = Date.now();
+    admin.lastLoginIP = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    await admin.save();
+
+    const token = createToken(admin);
+    res.cookie('token', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    
+    console.log(`Admin logged in: ${admin.email} (${admin.role})`);
+    res.json({ user: { email: admin.email, name: admin.name, role: admin.role, image: null } });
   } catch (err) {
-    console.error(err);
+    console.error('Admin login error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -58,19 +109,27 @@ router.post('/login', async (req, res) => {
 // Admin forgot password - returns token (in prod send an email)
 router.post('/forgot', async (req, res) => {
   try {
-    const { email } = req.body;
-    const user = await User.findOne({ email, role: { $in: ['admin', 'moderator'] } });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { email, adminSecret } = req.body;
+    if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+      return res.status(403).json({ error: 'Invalid admin secret' });
+    }
+
+    const admin = await Admin.findOne({ email: email.toLowerCase() });
+    if (!admin) {
+      // Don't reveal if admin exists or not
+      return res.json({ ok: true, message: 'If account exists, reset token has been generated' });
+    }
 
     const token = crypto.randomBytes(32).toString('hex');
-    user.resetToken = token;
-    user.resetExpires = Date.now() + 1000 * 60 * 30; // 30 minutes
-    await user.save();
+    admin.resetToken = token;
+    admin.resetExpires = Date.now() + 1000 * 60 * 30; // 30 minutes
+    await admin.save();
 
+    console.log(`Password reset requested for admin: ${email}`);
     // TODO: send email with link containing token
-    res.json({ ok: true, token });
+    res.json({ ok: true, token, message: 'Reset token generated' });
   } catch (err) {
-    console.error(err);
+    console.error('Admin forgot password error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -78,17 +137,27 @@ router.post('/forgot', async (req, res) => {
 router.post('/reset', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    const user = await User.findOne({ resetToken: token, resetExpires: { $gt: Date.now() } });
-    if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+    if (!token || !newPassword) return res.status(400).json({ error: 'Missing fields' });
+    
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
 
-    user.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    user.resetToken = undefined;
-    user.resetExpires = undefined;
-    await user.save();
+    const admin = await Admin.findOne({ resetToken: token, resetExpires: { $gt: Date.now() } });
+    if (!admin) return res.status(400).json({ error: 'Invalid or expired reset token' });
 
-    res.json({ ok: true });
+    admin.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    admin.resetToken = undefined;
+    admin.resetExpires = undefined;
+    admin.loginAttempts = 0; // Reset login attempts on password change
+    admin.isLocked = false;
+    admin.lockUntil = undefined;
+    await admin.save();
+
+    console.log(`Password reset completed for admin: ${admin.email}`);
+    res.json({ ok: true, message: 'Password reset successful' });
   } catch (err) {
-    console.error(err);
+    console.error('Admin password reset error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
