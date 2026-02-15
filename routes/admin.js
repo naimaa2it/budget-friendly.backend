@@ -7,6 +7,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
 import Product from '../models/Product.js';
 import BlogPost from '../models/BlogPost.js';
+import sharp from 'sharp';
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
@@ -104,17 +105,34 @@ router.post('/check-email', async (req, res) => {
   }
 });
 
-// Image upload to Cloudinary (admin-only)
+// Image upload to Cloudinary (admin-only) — optimized server-side with sharp
 router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-    const result = await cloudinary.uploader.upload(dataUri, {
-      folder: process.env.CLOUDINARY_FOLDER || 'yourhaat/products',
-      resource_type: 'image',
-      quality: 'auto',
-      fetch_format: 'auto'
-    });
+
+    const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
+    const quality = Number(process.env.IMG_QUALITY) || 75;
+
+    // optimize image with sharp (resize, rotate, convert to webp)
+    const optimizedBuffer = await sharp(req.file.buffer)
+      .rotate()
+      .resize({ width: maxWidth, withoutEnlargement: true })
+      .webp({ quality })
+      .toBuffer();
+
+    const streamUpload = (buffer) =>
+      new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream({
+          folder: process.env.CLOUDINARY_FOLDER || 'yourhaat/products',
+          resource_type: 'image'
+        }, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        });
+        stream.end(buffer);
+      });
+
+    const result = await streamUpload(optimizedBuffer);
     res.json({ ok: true, asset: {
       public_id: result.public_id,
       url: result.secure_url || result.url,

@@ -1,5 +1,15 @@
 import express from 'express';
 import Product from '../models/Product.js';
+import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
+import sharp from 'sharp';
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = express.Router();
 
@@ -58,6 +68,46 @@ router.get('/:id', async (req, res) => {
   } catch (err) {
     console.error('GET /api/products/:id error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload image (optimized server-side) - returns Cloudinary asset
+router.post('/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
+    const quality = Number(process.env.IMG_QUALITY) || 75;
+
+    const optimizedBuffer = await sharp(req.file.buffer)
+      .rotate()
+      .resize({ width: maxWidth, withoutEnlargement: true })
+      .webp({ quality })
+      .toBuffer();
+
+    const streamUpload = (buffer) =>
+      new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream({
+          folder: process.env.CLOUDINARY_FOLDER || 'yourhaat/products',
+          resource_type: 'image'
+        }, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        });
+        stream.end(buffer);
+      });
+
+    const result = await streamUpload(optimizedBuffer);
+    res.json({ ok: true, asset: {
+      public_id: result.public_id,
+      url: result.secure_url || result.url,
+      width: result.width,
+      height: result.height,
+      format: result.format
+    } });
+  } catch (err) {
+    console.error('POST /api/products/upload error:', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
   }
 });
 
