@@ -250,6 +250,91 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// --- Admin accounts management (admin-only) ---
+
+// List all admins/moderators
+router.get('/admins', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const items = await Admin.find().select('-hashedPassword -resetToken -resetExpires -loginAttempts');
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /admins error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get single admin
+router.get('/admins/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const a = await Admin.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires -loginAttempts');
+    if (!a) return res.status(404).json({ error: 'Not found' });
+    res.json({ admin: a });
+  } catch (err) {
+    console.error('GET /admins/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create new admin (admin-only)
+router.post('/admins', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const { name, email, password, role } = req.body || {};
+    if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' });
+    const existing = await Admin.findOne({ email: email.toLowerCase() });
+    if (existing) return res.status(400).json({ error: 'Admin with this email already exists' });
+    const hashed = await bcrypt.hash(password, SALT_ROUNDS);
+    const admin = new Admin({ name, email: email.toLowerCase(), hashedPassword: hashed, role: role === 'moderator' ? 'moderator' : 'admin', isActive: true });
+    await admin.save();
+    res.json({ ok: true, admin: { email: admin.email, name: admin.name, role: admin.role, _id: admin._id } });
+  } catch (err) {
+    console.error('POST /admins error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update admin (admin-only)
+router.put('/admins/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const { name, email, newPassword, role, isActive } = req.body || {};
+    const a = await Admin.findById(req.params.id);
+    if (!a) return res.status(404).json({ error: 'Not found' });
+
+    if (email && email.toLowerCase() !== a.email) {
+      const exists = await Admin.findOne({ email: email.toLowerCase() });
+      if (exists) return res.status(400).json({ error: 'Another admin already uses that email' });
+      a.email = email.toLowerCase();
+    }
+    if (name) a.name = name;
+    if (typeof isActive === 'boolean') a.isActive = isActive;
+    if (role) a.role = role === 'moderator' ? 'moderator' : 'admin';
+    if (newPassword) a.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+    await a.save();
+    res.json({ ok: true, admin: { _id: a._id, name: a.name, email: a.email, role: a.role, isActive: a.isActive } });
+  } catch (err) {
+    console.error('PUT /admins/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Deactivate / archive admin (admin-only)
+router.delete('/admins/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin._id.toString() === req.params.id) return res.status(400).json({ error: 'Cannot deactivate yourself' });
+    const a = await Admin.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+    if (!a) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, admin: { _id: a._id, isActive: a.isActive } });
+  } catch (err) {
+    console.error('DELETE /admins/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin forgot password - returns token (in prod send an email)
 router.post('/forgot', async (req, res) => {
   try {
