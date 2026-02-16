@@ -51,9 +51,9 @@ router.get('/categories', async (req, res) => {
   try {
     const Category = (await import('../models/Category.js')).default;
     const cats = await Category.find({ isActive: true }).sort({ level: 1, order: 1, name: 1 });
-    // build tree
+    // build tree — include slug, order and images for client display
     const map = new Map();
-    cats.forEach(c => map.set(String(c._id), { _id: c._id, name: c.name, parent: c.parent ? String(c.parent) : null, level: c.level, children: [] }));
+    cats.forEach(c => map.set(String(c._id), { _id: c._id, name: c.name, slug: c.slug, parent: c.parent ? String(c.parent) : null, level: c.level, order: c.order, images: c.images || [], children: [] }));
     const roots = [];
     for (const node of map.values()) {
       if (node.parent && map.has(node.parent)) map.get(node.parent).children.push(node);

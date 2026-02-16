@@ -198,6 +198,10 @@ router.post('/categories', requireAdmin, async (req, res) => {
     }
 
     const cat = new Category({ name, parent: parentId || undefined, level, order: order || 0, isActive: true });
+
+    // allow initial images array (frontend should upload to /api/admin/upload first)
+    if (Array.isArray(req.body.images)) cat.images = req.body.images;
+
     await cat.save();
     res.json({ ok: true, category: cat });
   } catch (err) {
@@ -210,11 +214,12 @@ router.post('/categories', requireAdmin, async (req, res) => {
 router.put('/categories/:id', requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, parentId, order, isActive } = req.body || {};
+    const { name, parentId, order, isActive, images } = req.body || {};
     const Category = (await import('../models/Category.js')).default;
     const cat = await Category.findById(req.params.id);
     if (!cat) return res.status(404).json({ error: 'Not found' });
 
+    // handle parent change
     if (parentId && parentId !== String(cat.parent)) {
       const newParent = await Category.findById(parentId);
       if (!newParent) return res.status(400).json({ error: 'Parent not found' });
@@ -223,9 +228,36 @@ router.put('/categories/:id', requireAdmin, async (req, res) => {
       cat.parent = parentId;
       cat.level = newParent.level + 1;
     }
+
+    // process image removals (delete from Cloudinary if public_id removed)
+    if (Array.isArray(cat.images) && Array.isArray(images)) {
+      const oldIds = cat.images.map(i => i && i.public_id).filter(Boolean);
+      const newIds = images.map(i => i && i.public_id).filter(Boolean);
+      const removed = oldIds.filter(id => !newIds.includes(id));
+      if (removed.length > 0) {
+        try {
+          ensureCloudinaryConfigured();
+          for (const publicId of removed) {
+            try {
+              console.log('Deleting removed category image from Cloudinary:', publicId);
+              await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+            } catch (clErr) {
+              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            }
+          }
+        } catch (e) {
+          console.error('Error while removing category images from Cloudinary:', e);
+        }
+      }
+    }
+
     if (name) cat.name = name;
     if (typeof isActive === 'boolean') cat.isActive = isActive;
     if (typeof order !== 'undefined') cat.order = order;
+
+    // accept images array when provided (frontend uploads images separately to /admin/upload)
+    if (Array.isArray(images)) cat.images = images;
+
     await cat.save();
     res.json({ ok: true, category: cat });
   } catch (err) {
