@@ -4,11 +4,17 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import sharp from 'sharp';
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+let cloudinaryConfigured = false;
+const ensureCloudinaryConfigured = () => {
+  if (!cloudinaryConfigured) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+    cloudinaryConfigured = true;
+  }
+};
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = express.Router();
@@ -74,16 +80,29 @@ router.get('/:id', async (req, res) => {
 // Upload image (optimized server-side) - returns Cloudinary asset
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
+    ensureCloudinaryConfigured(); // configure on first use
+    
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      console.error('Cloudinary configuration missing');
+      return res.status(500).json({ error: 'Server upload not configured (Cloudinary credentials missing).' });
+    }
 
     const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
     const quality = Number(process.env.IMG_QUALITY) || 75;
 
-    const optimizedBuffer = await sharp(req.file.buffer)
-      .rotate()
-      .resize({ width: maxWidth, withoutEnlargement: true })
-      .webp({ quality })
-      .toBuffer();
+    let optimizedBuffer;
+    try {
+      optimizedBuffer = await sharp(req.file.buffer)
+        .rotate()
+        .resize({ width: maxWidth, withoutEnlargement: true })
+        .webp({ quality })
+        .toBuffer();
+    } catch (sharpErr) {
+      console.error('Sharp image processing error:', sharpErr);
+      return res.status(400).json({ error: 'Invalid image file or unsupported format.' });
+    }
 
     const streamUpload = (buffer) =>
       new Promise((resolve, reject) => {
@@ -106,7 +125,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       format: result.format
     } });
   } catch (err) {
-    console.error('POST /api/products/upload error:', err);
+    console.error('POST /api/products/upload error:', err instanceof Error ? err.stack : err);
     res.status(500).json({ error: err.message || 'Upload failed' });
   }
 });

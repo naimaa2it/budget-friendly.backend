@@ -1,6 +1,8 @@
+import dotenv from "dotenv";
+dotenv.config(); // MUST be first so env vars are available to all imports
+
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import mongoose from 'mongoose';
 import cookieParser from 'cookie-parser';
 
@@ -8,8 +10,6 @@ import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import productRoutes from './routes/products.js';
 import blogRoutes from './routes/blog.js';
-
-dotenv.config();
 
 const app = express();
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
