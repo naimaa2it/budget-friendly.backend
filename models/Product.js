@@ -22,31 +22,102 @@ const ProductSchema = new mongoose.Schema({
   title: { type: String, required: true },
   slug: { type: String, index: true },
   description: { type: String },
+  sku: { type: String, index: true }, // top-level SKU for single-variant products
   category: { type: String, default: 'general' },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   tags: [{ type: String }],
   // category-specific structured fields (brand, specs, material, sizes, etc.)
   specs: { type: Object },
   status: { type: String, enum: ['draft', 'published', 'archived'], default: 'draft' },
+
+  // images & variants
   images: [ImageSchema],
   variants: [VariantSchema],
-  // convenience fields for single-variant products
+
+  // pricing & inventory
   price: { type: Number },
   compareAtPrice: { type: Number },
+  currency: { type: String, default: 'USD' },
   inventory: { type: Number, default: 0 },
+  availability: { type: String, enum: ['in_stock', 'pre_order', 'upcoming', 'out_of_stock'], default: 'in_stock' },
+
+  // product-specific attributes
+  colors: [{ name: { type: String }, hex: { type: String } }],
+  sizes: [{ type: String }],
+  guidelines: { type: String },
   featured: { type: Boolean, default: false },
+
+  // sales / rewards / attributes
+  monthlySold: { type: Number, default: 0 }, // bought in past month
+  rewardPoints: { type: Number, default: 0 },
+  keyAttributes: [{ label: String, value: String }],
+  customization: {
+    customizable: { type: Boolean, default: false },
+    options: [{ name: String, type: String, values: [String] }]
+  },
+
+  // warranty & return policy
+  warranty: {
+    period: { type: String },
+    details: { type: String },
+    provider: { type: String }
+  },
+  returnPolicy: {
+    days: { type: Number },
+    refundable: { type: Boolean, default: true },
+    details: { type: String }
+  },
+
+  // reviews & rating
+  reviews: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    rating: { type: Number, min: 1, max: 5, required: true },
+    title: { type: String },
+    body: { type: String },
+    helpful: { type: Number, default: 0 },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  averageRating: { type: Number, default: 0 },
+  reviewCount: { type: Number, default: 0 },
+
+  // FAQ
+  faqs: [{ question: String, answer: String }],
+
+  // seo + timestamps
   seo: {
     title: { type: String },
     description: { type: String }
   },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
+}, {
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// human-friendly monthly-sold label (virtual)
+ProductSchema.virtual('monthlySoldLabel').get(function () {
+  const n = this.monthlySold || 0;
+  if (n >= 1000000) return Math.round((n / 1000000) * 10) / 10 + 'M+';
+  if (n >= 1000) return Math.round((n / 1000) * 10) / 10 + 'k+';
+  return String(n);
 });
 
 ProductSchema.pre('save', function () {
+  // update timestamps and slug
   this.updatedAt = Date.now();
   if (!this.slug && this.title) {
     this.slug = this.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  }
+
+  // recalculate aggregated review fields
+  if (Array.isArray(this.reviews) && this.reviews.length) {
+    const sum = this.reviews.reduce((s, r) => s + (r.rating || 0), 0);
+    this.reviewCount = this.reviews.length;
+    this.averageRating = Math.round((sum / this.reviewCount) * 10) / 10; // one decimal
+  } else {
+    this.reviewCount = 0;
+    this.averageRating = 0;
   }
 });
 
