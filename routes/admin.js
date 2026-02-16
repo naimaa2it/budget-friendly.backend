@@ -354,7 +354,35 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
       }
     }
 
-    const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
+    // Load existing product to detect removed images
+    const existing = await Product.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    // Determine images removed by comparing public_id lists
+    if (Array.isArray(existing.images) && Array.isArray(updates.images)) {
+      const oldIds = existing.images.map(i => i && i.public_id).filter(Boolean);
+      const newIds = updates.images.map(i => i && i.public_id).filter(Boolean);
+      const removed = oldIds.filter(id => !newIds.includes(id));
+
+      if (removed.length > 0) {
+        try {
+          ensureCloudinaryConfigured();
+          for (const publicId of removed) {
+            try {
+              console.log('Deleting removed product image from Cloudinary:', publicId);
+              await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+            } catch (clErr) {
+              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            }
+          }
+        } catch (e) {
+          console.error('Error while removing images from Cloudinary:', e);
+        }
+      }
+    }
+
+    // Apply updates and return updated product
+    const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, product: p });
   } catch (err) {
@@ -368,11 +396,29 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     const force = req.query.force === 'true' || req.query.force === '1';
 
     if (force) {
-      // permanent delete
+      // permanent delete — remove Cloudinary images first
       const p = await Product.findById(req.params.id);
       if (!p) return res.status(404).json({ error: 'Not found' });
+
+      if (Array.isArray(p.images) && p.images.length > 0) {
+        try {
+          ensureCloudinaryConfigured();
+          for (const img of p.images) {
+            if (img && img.public_id) {
+              try {
+                console.log('Deleting product image from Cloudinary (force delete):', img.public_id);
+                await cloudinary.uploader.destroy(img.public_id, { resource_type: 'image' });
+              } catch (err) {
+                console.warn('Failed to delete Cloudinary image', img.public_id, err && err.message ? err.message : err);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Cloudinary deletion error during product force-delete:', e);
+        }
+      }
+
       await Product.deleteOne({ _id: p._id });
-      // TODO: optionally remove images from cloudinary
       return res.json({ ok: true });
     }
 
