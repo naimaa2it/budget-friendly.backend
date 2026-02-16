@@ -49,6 +49,20 @@ router.get('/', requireAdmin, async (req, res) => {
   }
 });
 
+// Get single category (admin-only) — returns full document including images
+router.get('/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const Category = (await import('../models/Category.js')).default;
+    const cat = await Category.findById(req.params.id);
+    if (!cat) return res.status(404).json({ error: 'Not found' });
+    res.json({ category: cat });
+  } catch (err) {
+    console.error('GET /categories/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Create category (max 5 subcategories per parent)
 router.post('/', requireAdmin, async (req, res) => {
   try {
