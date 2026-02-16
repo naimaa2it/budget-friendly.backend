@@ -26,6 +26,8 @@ const ProductSchema = new mongoose.Schema({
   category: { type: String, default: 'general' },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   tags: [{ type: String }],
+  // admin-visible badges (e.g. best_seller, hot, new_arrival)
+  badges: [{ type: String, enum: ['best_seller','hot','new_arrival','trending','limited'] , default: [] }],
   // category-specific structured fields (brand, specs, material, sizes, etc.)
   specs: { type: Object },
   status: { type: String, enum: ['draft', 'published', 'archived'], default: 'draft' },
