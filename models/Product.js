@@ -47,6 +47,11 @@ const ProductSchema = new mongoose.Schema({
   guidelines: { type: String },
   featured: { type: Boolean, default: false },
 
+  // promotion flags (admin toggles)
+  coupon: { type: Boolean, default: false }, // eligible for coupons
+  flashSale: { type: Boolean, default: false },
+  clearance: { type: Boolean, default: false },
+
   // sales / rewards / attributes
   monthlySold: { type: Number, default: 0 }, // bought in past month
   rewardPoints: { type: Number, default: 0 },
