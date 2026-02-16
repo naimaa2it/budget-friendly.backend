@@ -76,6 +76,7 @@ const ProductSchema = new mongoose.Schema({
   // reviews & rating
   reviews: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    authorName: { type: String }, // optional display name when not linked to a user
     rating: { type: Number, min: 1, max: 5, required: true },
     title: { type: String },
     body: { type: String },
