@@ -146,6 +146,28 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     if (child) return res.status(400).json({ error: 'Category has subcategories; remove them first or deactivate instead' });
     const product = await Product.findOne({ categoryId: cat._id });
     if (product) return res.status(400).json({ error: 'Category is used by products; cannot delete' });
+
+    // remove any images from Cloudinary before deleting the category
+    try {
+      if (Array.isArray(cat.images) && cat.images.length > 0) {
+        const ids = cat.images.map(i => i && i.public_id).filter(Boolean);
+        if (ids.length > 0) {
+          ensureCloudinaryConfigured();
+          for (const publicId of ids) {
+            try {
+              console.log('Deleting category image from Cloudinary:', publicId);
+              await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+            } catch (clErr) {
+              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error while cleaning up category images from Cloudinary:', e);
+      // proceed with deletion of DB record even if Cloudinary cleanup fails
+    }
+
     await cat.deleteOne();
     res.json({ ok: true });
   } catch (err) {
