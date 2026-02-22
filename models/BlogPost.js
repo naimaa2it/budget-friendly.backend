@@ -24,9 +24,11 @@ const BlogPostSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-BlogPostSchema.pre('validate', async function(next) {
+// ensure a unique slug before validation
+BlogPostSchema.pre('validate', async function() {
   if (!this.slug && this.title) {
-    let base = slugify(this.title, { lower: true, strict: true }).slice(0, 120) || 'post';
+    // use local helper to avoid missing dependency
+    let base = slugifyString(this.title).slice(0, 120) || 'post';
     let slug = base;
     // ensure unique
     let i = 0;
@@ -38,7 +40,6 @@ BlogPostSchema.pre('validate', async function(next) {
     }
     this.slug = slug;
   }
-  next();
 });
 
 BlogPostSchema.pre('save', function() {
