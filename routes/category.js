@@ -102,7 +102,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     if (req.admin.role !== 'admin' && req.admin.role !== 'moderator') {
       return res.status(403).json({ error: 'Admin or moderator access required' });
     }
-    const { name, parentId, isActive, images } = req.body || {};
+    const { name, parentId, isActive, images, removedImages } = req.body || {};
     const Category = (await import('../models/Category.js')).default;
     const cat = await Category.findById(req.params.id);
     if (!cat) return res.status(404).json({ error: 'Not found' });
@@ -117,6 +117,25 @@ router.put('/:id', requireAdmin, async (req, res) => {
       cat.level = newParent.level + 1;
     }
 
+    // Delete removed images from Cloudinary
+    if (Array.isArray(removedImages) && removedImages.length > 0) {
+      try {
+        ensureCloudinaryConfigured();
+        for (const publicId of removedImages) {
+          if (publicId) {
+            try {
+              console.log('Deleting removed category image from Cloudinary:', publicId);
+              await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+            } catch (clErr) {
+              console.warn('Cloudinary delete failed for', publicId, clErr?.message || clErr);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error while removing category images from Cloudinary:', e);
+      }
+    }
+
     // process image removals (delete from Cloudinary if public_id removed)
     if (Array.isArray(cat.images) && Array.isArray(images)) {
       const oldIds = cat.images.map(i => i && i.public_id).filter(Boolean);
@@ -128,6 +147,28 @@ router.put('/:id', requireAdmin, async (req, res) => {
           for (const publicId of removed) {
             try {
               console.log('Deleting removed category image from Cloudinary:', publicId);
+              await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+            } catch (clErr) {
+              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            }
+          }
+        } catch (e) {
+          console.error('Error while removing category images from Cloudinary:', e);
+        }
+      }
+    }
+
+    // process image removals (delete from Cloudinary if public_id removed)
+    if (Array.isArray(cat.images) && Array.isArray(images)) {
+      const oldIds = cat.images.map(i => i && i.public_id).filter(Boolean);
+      const newIds = images.map(i => i && i.public_id).filter(Boolean);
+      const removed = oldIds.filter(id => !newIds.includes(id));
+      if (removed.length > 0) {
+        try {
+          ensureCloudinaryConfigured();
+          for (const publicId of removed) {
+            try {
+              console.log('Deleting replaced category image from Cloudinary:', publicId);
               await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
             } catch (clErr) {
               console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
