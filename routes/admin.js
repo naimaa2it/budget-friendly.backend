@@ -191,7 +191,35 @@ router.get('/products', requireAdmin, async (req, res) => {
 
 router.post('/products', requireAdmin, async (req, res) => {
   try {
-    const payload = req.body || {};
+    let payload = req.body || {};
+
+    // perform a bit of defensive cleanup/validation so the database error is
+    // easier for the client to understand.  This mirrors some of the logic
+    // already in the front end but ensures the server doesn't crash if a bad
+    // payload slips through.
+
+    // parse customization options if they accidentally arrive as a JSON
+    // string (happened previously when the schema mis‑interpreted the type)
+    if (payload.customization && typeof payload.customization.options === 'string') {
+      try {
+        payload.customization.options = JSON.parse(payload.customization.options);
+      } catch {
+        // leave it alone; the validator below will catch it
+      }
+    }
+
+    // make sure each variant has a numeric price; respond with 400 if not.
+    if (Array.isArray(payload.variants)) {
+      for (const v of payload.variants) {
+        if (v.price == null) {
+          return res.status(400).json({ error: 'Each variant must include a price' });
+        }
+        // cast numeric strings to numbers (express.json already does this for
+        // top‑level fields, but nested ones may come through as strings)
+        v.price = Number(v.price);
+        if (v.inventory != null) v.inventory = Number(v.inventory);
+      }
+    }
 
     // If categoryId provided, resolve and store category name on product for backward compatibility
     if (payload.categoryId) {
@@ -227,6 +255,26 @@ router.get('/products/:id', requireAdmin, async (req, res) => {
 router.put('/products/:id', requireAdmin, async (req, res) => {
   try {
     const updates = req.body || {};
+
+    // parse stringified customization options if needed
+    if (updates.customization && typeof updates.customization.options === 'string') {
+      try {
+        updates.customization.options = JSON.parse(updates.customization.options);
+      } catch {
+        // let validation catch it
+      }
+    }
+
+    // variant sanity check (same as POST)
+    if (Array.isArray(updates.variants)) {
+      for (const v of updates.variants) {
+        if (v.price == null) {
+          return res.status(400).json({ error: 'Each variant must include a price' });
+        }
+        v.price = Number(v.price);
+        if (v.inventory != null) v.inventory = Number(v.inventory);
+      }
+    }
 
     // If categoryId present, resolve name
     if (updates.categoryId) {
