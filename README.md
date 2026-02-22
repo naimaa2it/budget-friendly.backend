@@ -16,6 +16,17 @@ This Express backend provides two separate authentication systems:
 ### User Model (`models/User.js`)
 For regular customers who sign up via Firebase (Google or email/password).
 
+### Category Model (`models/Category.js`)
+Categories are stored with a simple parent reference, allowing a three‑tier hierarchy (main → sub → sub‑sub).
+The schema contains:
+- `name` (required)
+- `slug` (auto-generated from name)
+- `parent` (ObjectId referring to another category; null for top‑level)
+- `level` (computed automatically on save)
+- `order`, `images`, `isActive`, timestamps
+
+This keeps the collection straightforward and the UI supports creating a main, sub, or sub‑sub category by choosing the appropriate parent chain.
+
 **Fields:**
 - `email` (required, lowercase, trimmed) - can duplicate if different provider
 - `name`, `image`

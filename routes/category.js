@@ -63,11 +63,13 @@ router.get('/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Create category (max 5 subcategories per parent)
+// Create category (max 5 subcategories per parent, max level 2)
 router.post('/', requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, parentId, order } = req.body || {};
+    if (req.admin.role !== 'admin' && req.admin.role !== 'moderator') {
+      return res.status(403).json({ error: 'Admin or moderator access required' });
+    }
+    const { name, parentId } = req.body || {};
     if (!name) return res.status(400).json({ error: 'Name is required' });
     const Category = (await import('../models/Category.js')).default;
 
@@ -75,12 +77,13 @@ router.post('/', requireAdmin, async (req, res) => {
     if (parentId) {
       const parent = await Category.findById(parentId);
       if (!parent) return res.status(400).json({ error: 'Parent category not found' });
-      const childCount = await Category.countDocuments({ parent: parentId });
-      if (childCount >= 5) return res.status(400).json({ error: 'A category may have at most 5 subcategories' });
       level = parent.level + 1;
+      if (level > 2) return res.status(400).json({ error: 'Maximum nesting level is 2 (main -> sub -> sub-sub)' });
+      const childCount = await Category.countDocuments({ parent: parentId });
+      if (childCount >= 10) return res.status(400).json({ error: 'A category may have at most 10 subcategories' });
     }
 
-    const cat = new (await import('../models/Category.js')).default({ name, parent: parentId || undefined, level, order: order || 0, isActive: true });
+    const cat = new (await import('../models/Category.js')).default({ name, parent: parentId || undefined, level, order: 0, isActive: true });
 
     // allow initial images array (frontend should upload to /api/admin/upload first)
     if (Array.isArray(req.body.images)) cat.images = req.body.images;
@@ -96,8 +99,10 @@ router.post('/', requireAdmin, async (req, res) => {
 // Update category
 router.put('/:id', requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, parentId, order, isActive, images } = req.body || {};
+    if (req.admin.role !== 'admin' && req.admin.role !== 'moderator') {
+      return res.status(403).json({ error: 'Admin or moderator access required' });
+    }
+    const { name, parentId, isActive, images } = req.body || {};
     const Category = (await import('../models/Category.js')).default;
     const cat = await Category.findById(req.params.id);
     if (!cat) return res.status(404).json({ error: 'Not found' });
@@ -107,7 +112,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
       const newParent = await Category.findById(parentId);
       if (!newParent) return res.status(400).json({ error: 'Parent not found' });
       const childCount = await Category.countDocuments({ parent: parentId });
-      if (childCount >= 5) return res.status(400).json({ error: 'A category may have at most 5 subcategories' });
+      if (childCount >= 10) return res.status(400).json({ error: 'A category may have at most 10 subcategories' });
       cat.parent = parentId;
       cat.level = newParent.level + 1;
     }
@@ -136,7 +141,6 @@ router.put('/:id', requireAdmin, async (req, res) => {
 
     if (name) cat.name = name;
     if (typeof isActive === 'boolean') cat.isActive = isActive;
-    if (typeof order !== 'undefined') cat.order = order;
 
     // accept images array when provided (frontend uploads images separately to /admin/upload)
     if (Array.isArray(images)) cat.images = images;
