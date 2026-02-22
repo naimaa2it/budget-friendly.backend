@@ -25,6 +25,7 @@ const ProductSchema = new mongoose.Schema({
   sku: { type: String, index: true }, // top-level SKU for single-variant products
   category: { type: String, default: 'general' },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+  department: { type: String }, // Brand/department (e.g., ryans, asus, cosrx)
   tags: [{ type: String }],
   // admin-visible badges (e.g. best_seller, hot, new_arrival)
   badges: [{ type: String, enum: ['best_seller','hot','new_arrival','trending','limited'] , default: [] }],
