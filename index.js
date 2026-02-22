@@ -65,10 +65,13 @@ app.get("/", (req, res) => {
   res.send("Welcome to YourHaat Backend!");
 });
 
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/blog', blogRoutes);
+app.use('/api/auth', authRoutes);// here have all of the auth related routes like login, register, logout, refresh token etc.
+
+app.use('/api/admin', adminRoutes);// here have all of the admin related routes like user management, product management, order management etc.
+
+app.use('/api/products', productRoutes);//here have all of the product related routes like add product, update product, delete product, get products etc.
+
+app.use('/api/blog', blogRoutes);//here have all of the blog related routes like add blog, update blog, delete blog, get blogs etc.
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
