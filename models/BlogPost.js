@@ -42,6 +42,7 @@ BlogPostSchema.pre('validate', async function() {
   }
 });
 
+
 BlogPostSchema.pre('save', function() {
   this.updatedAt = Date.now();
   if (this.status === 'published' && !this.publishedAt) this.publishedAt = Date.now();
