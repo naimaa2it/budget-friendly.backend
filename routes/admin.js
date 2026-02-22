@@ -50,48 +50,15 @@ const requireAdmin = async (req, res, next) => {
   }
 };
 
-// Admin / Moderator registration (only via admin secret)
+// Admin / Moderator registration endpoint has been superseded by manual seeding.
+// Keeping route for compatibility, but reject all requests to prevent self-registration.
 router.post('/register', async (req, res) => {
-  try {
-    const { name, email, password, adminSecret, role } = req.body;
-    if (!name || !email || !password || !adminSecret) return res.status(400).json({ error: 'Missing fields' });
-    
-    // Validate admin secret
-    if (adminSecret !== process.env.ADMIN_SECRET) {
-      console.warn(`Failed admin registration attempt from IP ${req.ip} - invalid secret`);
-      return res.status(403).json({ error: 'Invalid admin secret' });
-    }
-
-    // Validate password strength
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
-
-    // Check if this email already exists as admin (separate from User collection)
-    const existing = await Admin.findOne({ email: email.toLowerCase() });
-    if (existing) {
-      return res.status(400).json({ error: 'This email is already registered as an admin. Use admin login instead.' });
-    }
-
-    const hashed = await bcrypt.hash(password, SALT_ROUNDS);
-    const admin = new Admin({ 
-      name, 
-      email: email.toLowerCase(), 
-      hashedPassword: hashed, 
-      role: role === 'moderator' ? 'moderator' : 'admin',
-      isActive: true
-    });
-    await admin.save();
-
-    console.log(`New ${admin.role} registered: ${admin.email}`);
-    res.json({ ok: true, user: { email: admin.email, name: admin.name, role: admin.role } });
-  } catch (err) {
-    console.error('Admin registration error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+  console.warn(`Blocked attempt to access /api/admin/register from IP ${req.ip}`);
+  return res.status(403).json({ error: 'Admin registration is disabled. Please contact an existing administrator.' });
 });
 
 // Check if email already exists as admin (same email can be user + admin)
+// still available even though registration is off
 router.post('/check-email', async (req, res) => {
   try {
     const { email } = req.body;

@@ -97,14 +97,10 @@ Checks if email is already registered as admin (same email OK for users).
 - **Response:** `{ exists: false, ok: true }` or error
 
 #### `POST /api/admin/register`
-Creates a new admin/moderator account with local password (NO Firebase).
-- **Body:** `{ name, email, password, adminSecret, role }`
-- **Validation:**
-  - Password must be ≥6 characters
-  - Email must not already exist as admin (can exist as user)
-  - `adminSecret` must match `process.env.ADMIN_SECRET`
-  - Password is hashed with bcrypt on backend
-- **Response:** `{ ok: true, user: {...} }`
+**This endpoint is deprecated and closed.**
+All registration is disabled; attempts to call it will receive a **403** with a message
+"Admin registration is disabled. Please contact an existing administrator."
+Existing admins should be created manually or via secure backend tooling.
 
 #### `POST /api/admin/login`
 Authenticates admin/moderator with email + password + secret code (NO Firebase).
