@@ -58,9 +58,22 @@ const ProductSchema = new mongoose.Schema({
   monthlySold: { type: Number, default: 0 }, // bought in past month
   rewardPoints: { type: Number, default: 0 },
   keyAttributes: [{ label: String, value: String }],
+  // customisation options that customers can pick
   customization: {
     customizable: { type: Boolean, default: false },
-    options: [{ name: String, type: String, values: [String] }]
+    // `type` is a valid field name, but Mongoose treats it specially when
+    // we use the shorthand object notation inside an array.  The original
+    // inline definition caused the schema to be interpreted as
+    // `options: [String]`, which in turn led to the "Cast to [string] failed"
+    // error when we tried to save an object.  To avoid the ambiguity we
+    // explicitly build a sub‑schema below.
+    options: [
+      new mongoose.Schema({
+        name: String,
+        type: String,    // e.g. "text", "select", etc.
+        values: [String]
+      }, { _id: false })
+    ]
   },
 
   // warranty & return policy
