@@ -108,7 +108,8 @@ const ProductSchema = new mongoose.Schema({
   // seo + timestamps
   seo: {
     title: { type: String },
-    description: { type: String }
+    description: { type: String },
+    keywords: [{ type: String }] // comma-separated keywords for SEO
   },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
