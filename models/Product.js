@@ -28,7 +28,7 @@ const ProductSchema = new mongoose.Schema({
   department: { type: String }, // Brand/department (e.g., ryans, asus, cosrx)
   tags: [{ type: String }],
   // admin-visible badges (e.g. best_seller, hot, new_arrival)
-  badges: [{ type: String, enum: ['best_seller','hot','new_arrival','trending','limited'] , default: [] }],
+  badges: [{ type: String, enum: ['best_seller','hot','new_arrival','trending','limited','popular_pics'] , default: [] }],
   // category-specific structured fields (brand, specs, material, sizes, etc.)
   specs: { type: Object },
   status: { type: String, enum: ['draft', 'published', 'archived'], default: 'draft' },
