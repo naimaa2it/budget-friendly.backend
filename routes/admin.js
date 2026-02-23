@@ -175,7 +175,12 @@ router.get('/products', requireAdmin, async (req, res) => {
     const skip = (Math.max(1, page) - 1) * limit;
     const filter = {};
     if (status) filter.status = status;
-    if (categoryId) filter.categoryId = categoryId;
+    if (categoryId) {
+      // accept one id or comma-separated list
+      const ids = String(categoryId).split(',').map(id => id.trim()).filter(Boolean);
+      if (ids.length === 1) filter.categoryId = ids[0];
+      else if (ids.length > 1) filter.categoryId = { $in: ids };
+    }
     if (q) filter.$or = [ { title: new RegExp(q, 'i') }, { description: new RegExp(q, 'i') } ];
 
     const [items, total] = await Promise.all([
