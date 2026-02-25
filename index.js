@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import productRoutes from './routes/products.js';
 import blogRoutes from './routes/blog.js';
+import userRoutes from './routes/user.js';
 
 const app = express();
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
@@ -68,6 +69,8 @@ app.get("/", (req, res) => {
 app.use('/api/auth', authRoutes);// here have all of the auth related routes like login, register, logout, refresh token etc.
 
 app.use('/api/admin', adminRoutes);// here have all of the admin related routes like user management, product management, order management etc.
+
+app.use('/api/user', userRoutes); // user-level endpoints for profile, addresses, etc.
 
 app.use('/api/products', productRoutes);//here have all of the product related routes like add product, update product, delete product, get products etc.
 
