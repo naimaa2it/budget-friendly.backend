@@ -59,7 +59,10 @@ const ProductSchema = new mongoose.Schema({
   // sales / rewards / attributes
   monthlySold: { type: Number, default: 0 }, // bought in past month
   rewardPoints: { type: Number, default: 0 },
-  keyAttributes: [{ level: String, key: String, value: String }], // e.g., { level: 'Connectivity', key: 'Bluetooth', value: 'V5.3' }
+  keyAttributes: [{ 
+    level: String, 
+    attributes: [{ key: String, value: String }] 
+  }], // e.g., { level: 'Connectivity', attributes: [{ key: 'Bluetooth', value: 'V5.3' }] }
   // customisation options that customers can pick
   customization: {
     customizable: { type: Boolean, default: false },
