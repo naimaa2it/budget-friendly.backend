@@ -38,7 +38,7 @@ const requireUser = async (req, res, next) => {
 // update profile (name/email/mobile/dob + optional image file)
 router.put('/profile', requireUser, upload.single('image'), async (req, res) => {
   try {
-    const { name, email, mobile, dob } = req.body || {};
+    const { name, email, mobile, dob, removeImage } = req.body || {};
     const u = req.user;
 
     // email change validation
@@ -53,7 +53,20 @@ router.put('/profile', requireUser, upload.single('image'), async (req, res) => 
     if (typeof mobile !== 'undefined') u.mobile = mobile;
     if (typeof dob !== 'undefined') u.dob = dob;
 
-    // handle image upload if provided
+    // handle image removal request (only if no new file is being uploaded)
+    const wantsRemoveImage = removeImage === '1' || removeImage === 'true';
+    if (!req.file && wantsRemoveImage && u.imagePublicId) {
+      try {
+        await ensureCloudinaryConfigured();
+        await cloudinary.uploader.destroy(u.imagePublicId);
+      } catch (delErr) {
+        console.warn('Failed to remove profile image from Cloudinary', delErr);
+      }
+      u.image = undefined;
+      u.imagePublicId = undefined;
+    }
+
+    // handle image upload if provided (takes precedence over removal flag)
     if (req.file) {
       // make sure cloudinary credentials exist
       if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
@@ -162,7 +175,15 @@ router.put('/addresses/:id', requireUser, async (req, res) => {
 
 router.delete('/addresses/:id', requireUser, async (req, res) => {
   try {
-    req.user.addresses.id(req.params.id)?.remove();
+    // remove address entry by id - avoid using subdocument.remove() which can fail
+    // depending on how the document was retrieved.
+    const id = req.params.id;
+    // using mongoose array pull method is safe
+    req.user.addresses.pull(id);
+    // if pull doesn't work for some reason, fall back to manual filter
+    if (req.user.addresses.some(a => a._id.toString() === id)) {
+      req.user.addresses = req.user.addresses.filter(a => a._id.toString() !== id);
+    }
     await req.user.save();
     res.json({ ok: true });
   } catch (err) {
