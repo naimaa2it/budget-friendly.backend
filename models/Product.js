@@ -22,6 +22,7 @@ const ProductSchema = new mongoose.Schema({
   title: { type: String, required: true },
   slug: { type: String, index: true },
   description: { type: String },
+  detailedDescription: { type: String }, // Rich detailed description for product details page
   sku: { type: String, index: true }, // top-level SKU for single-variant products
   category: { type: String, default: 'general' },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
@@ -58,7 +59,7 @@ const ProductSchema = new mongoose.Schema({
   // sales / rewards / attributes
   monthlySold: { type: Number, default: 0 }, // bought in past month
   rewardPoints: { type: Number, default: 0 },
-  keyAttributes: [{ label: String, value: String }],
+  keyAttributes: [{ level: String, key: String, value: String }], // e.g., { level: 'Connectivity', key: 'Bluetooth', value: 'V5.3' }
   // customisation options that customers can pick
   customization: {
     customizable: { type: Boolean, default: false },
