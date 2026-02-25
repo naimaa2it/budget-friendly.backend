@@ -32,7 +32,7 @@ const ProductSchema = new mongoose.Schema({
   badges: [{ type: String, enum: ['best_seller','hot','new_arrival','trending','limited','popular_pics', 'deals_of_the_day'] , default: [] }],
   // category-specific structured fields (brand, specs, material, sizes, etc.)
   specs: { type: Object },
-  status: { type: String, enum: ['published', 'archived'], default: 'published' },
+  status: { type: String, enum: ['draft', 'published', 'archived'], default: 'published' },
 
   // images & variants
   images: [ImageSchema],
