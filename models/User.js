@@ -3,13 +3,28 @@ import mongoose from 'mongoose';
 const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   name: { type: String },
+  mobile: { type: String },
+  dob: { type: String },
   image: { type: String },
+  imagePublicId: { type: String },
   role: { type: String, enum: ['user', 'admin', 'moderator'], default: 'user' },
   provider: { type: String, enum: ['firebase', 'google', 'local'], default: 'local' },
   hashedPassword: { type: String },
   isVerified: { type: Boolean, default: false },
   resetToken: { type: String },
   resetExpires: { type: Date },
+  addresses: [
+    {
+      _id: { type: mongoose.Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
+      fullName: String,
+      email: String,
+      phone: String,
+      city: String,
+      zone: String,
+      address: String,
+      type: { type: String, enum: ['Home', 'Office'], default: 'Home' }
+    }
+  ],
   createdAt: { type: Date, default: Date.now }
 });
 
