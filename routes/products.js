@@ -99,6 +99,44 @@ router.post('/:id/reviews', async (req, res) => {
   }
 });
 
+// Edit a review
+router.put('/:id/reviews/:index', async (req, res) => {
+  try {
+    const { authorName, rating, title, body } = req.body;
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating (1-5) is required' });
+    if (!body?.trim()) return res.status(400).json({ error: 'Review comment is required' });
+    const prod = await Product.findById(req.params.id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    const idx = Number(req.params.index);
+    if (idx < 0 || idx >= prod.reviews.length) return res.status(404).json({ error: 'Review not found' });
+    prod.reviews[idx].authorName = authorName?.trim() || prod.reviews[idx].authorName;
+    prod.reviews[idx].rating = Number(rating);
+    prod.reviews[idx].title = title?.trim() || '';
+    prod.reviews[idx].body = body.trim();
+    await prod.save();
+    res.json({ ok: true, reviews: prod.reviews, averageRating: prod.averageRating, reviewCount: prod.reviewCount });
+  } catch (err) {
+    console.error('PUT /api/products/:id/reviews/:index error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a review
+router.delete('/:id/reviews/:index', async (req, res) => {
+  try {
+    const prod = await Product.findById(req.params.id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    const idx = Number(req.params.index);
+    if (idx < 0 || idx >= prod.reviews.length) return res.status(404).json({ error: 'Review not found' });
+    prod.reviews.splice(idx, 1);
+    await prod.save();
+    res.json({ ok: true, reviews: prod.reviews, averageRating: prod.averageRating, reviewCount: prod.reviewCount });
+  } catch (err) {
+    console.error('DELETE /api/products/:id/reviews/:index error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Submit a question
 router.post('/:id/questions', async (req, res) => {
   try {
