@@ -82,6 +82,39 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Submit a review
+router.post('/:id/reviews', async (req, res) => {
+  try {
+    const { authorName, rating, title, body } = req.body;
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating (1-5) is required' });
+    if (!body?.trim()) return res.status(400).json({ error: 'Review comment is required' });
+    const prod = await Product.findById(req.params.id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    prod.reviews.push({ authorName: authorName?.trim() || 'Anonymous', rating: Number(rating), title: title?.trim() || '', body: body.trim(), createdAt: new Date() });
+    await prod.save();
+    res.json({ ok: true, reviews: prod.reviews, averageRating: prod.averageRating, reviewCount: prod.reviewCount });
+  } catch (err) {
+    console.error('POST /api/products/:id/reviews error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Submit a question
+router.post('/:id/questions', async (req, res) => {
+  try {
+    const { question } = req.body;
+    if (!question?.trim()) return res.status(400).json({ error: 'Question is required' });
+    const prod = await Product.findById(req.params.id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    prod.faqs.push({ question: question.trim(), answer: '' });
+    await prod.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/products/:id/questions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Upload image (optimized server-side) - returns Cloudinary asset
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
