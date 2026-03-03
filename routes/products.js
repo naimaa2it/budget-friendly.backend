@@ -72,6 +72,24 @@ router.get('/categories', async (req, res) => {
   }
 });
 
+// Admin: get ALL reviews across all products (dashboard)
+router.get('/admin-reviews', requireAdmin, async (req, res) => {
+  try {
+    const products = await Product.find({ 'reviews.0': { $exists: true } }, 'title reviews').lean();
+    const rows = [];
+    products.forEach(p => {
+      (p.reviews || []).forEach((r, idx) => {
+        rows.push({ productId: p._id, productTitle: p.title, index: idx, ...r });
+      });
+    });
+    rows.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json({ ok: true, rows });
+  } catch (err) {
+    console.error('GET /api/products/admin-reviews error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const prod = await Product.findById(req.params.id);
@@ -84,7 +102,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Middleware: logged-in user (regular user JWT)
-const requireUser = async (req, res, next) => {
+async function requireUser(req, res, next) {
   try {
     const token = req.cookies?.token;
     if (!token) return res.status(401).json({ error: 'Please login first to submit a review.' });
@@ -98,10 +116,10 @@ const requireUser = async (req, res, next) => {
   } catch (err) {
     return res.status(401).json({ error: 'Invalid session. Please login again.' });
   }
-};
+}
 
 // Middleware: admin/moderator only
-const requireAdmin = async (req, res, next) => {
+async function requireAdmin(req, res, next) {
   try {
     const token = req.cookies?.token;
     if (!token) return res.status(401).json({ error: 'Not authenticated' });
@@ -115,7 +133,7 @@ const requireAdmin = async (req, res, next) => {
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
   }
-};
+}
 
 // Submit a review (must be logged-in user)
 router.post('/:id/reviews', requireUser, async (req, res) => {
@@ -170,6 +188,24 @@ router.delete('/:id/reviews/:index', requireAdmin, async (req, res) => {
     res.json({ ok: true, reviews: prod.reviews, averageRating: prod.averageRating, reviewCount: prod.reviewCount });
   } catch (err) {
     console.error('DELETE /api/products/:id/reviews/:index error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Admin: edit any review (no ownership check)
+router.put('/admin-reviews/:productId/:index', requireAdmin, async (req, res) => {
+  try {
+    const { rating, body } = req.body;
+    const prod = await Product.findById(req.params.productId);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    const idx = Number(req.params.index);
+    if (idx < 0 || idx >= prod.reviews.length) return res.status(404).json({ error: 'Review not found' });
+    if (rating !== undefined) prod.reviews[idx].rating = Number(rating);
+    if (body !== undefined) prod.reviews[idx].body = body;
+    await prod.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /api/products/admin-reviews/:productId/:index error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
