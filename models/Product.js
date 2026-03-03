@@ -48,7 +48,8 @@ const ProductSchema = new mongoose.Schema({
   // product-specific attributes
   colors: [{ name: { type: String }, hex: { type: String } }],
   sizes: [{ type: String }],
-  guidelines: { type: String },
+  guidelines: { type: String }, // Rich HTML (care & handling instructions)
+  specifications: { type: String }, // Rich HTML for the Specification tab
   featured: { type: Boolean, default: false },
 
   // promotion flags (admin toggles)
