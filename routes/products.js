@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import Product from '../models/Product.js';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -82,15 +83,50 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Submit a review
-router.post('/:id/reviews', async (req, res) => {
+// Middleware: logged-in user (regular user JWT)
+const requireUser = async (req, res, next) => {
   try {
-    const { authorName, rating, title, body } = req.body;
+    const token = req.cookies?.token;
+    if (!token) return res.status(401).json({ error: 'Please login first to submit a review.' });
+    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    if (payload.type === 'admin') return res.status(403).json({ error: 'Use a customer account to submit reviews.' });
+    const User = (await import('../models/User.js')).default;
+    const user = await User.findById(payload.id).select('name email role');
+    if (!user) return res.status(401).json({ error: 'User not found.' });
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid session. Please login again.' });
+  }
+};
+
+// Middleware: admin/moderator only
+const requireAdmin = async (req, res, next) => {
+  try {
+    const token = req.cookies?.token;
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    if (payload.type !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const Admin = (await import('../models/Admin.js')).default;
+    const admin = await Admin.findById(payload.id);
+    if (!admin || !admin.isActive) return res.status(403).json({ error: 'Admin not found or disabled' });
+    req.admin = admin;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// Submit a review (must be logged-in user)
+router.post('/:id/reviews', requireUser, async (req, res) => {
+  try {
+    const { authorName, rating, body } = req.body;
     if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating (1-5) is required' });
     if (!body?.trim()) return res.status(400).json({ error: 'Review comment is required' });
     const prod = await Product.findById(req.params.id);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
-    prod.reviews.push({ authorName: authorName?.trim() || 'Anonymous', rating: Number(rating), title: title?.trim() || '', body: body.trim(), createdAt: new Date() });
+    const displayName = authorName?.trim() || req.user.name || req.user.email.split('@')[0];
+    prod.reviews.push({ user: req.user._id, authorName: displayName, rating: Number(rating), body: body.trim(), createdAt: new Date() });
     await prod.save();
     res.json({ ok: true, reviews: prod.reviews, averageRating: prod.averageRating, reviewCount: prod.reviewCount });
   } catch (err) {
@@ -99,20 +135,21 @@ router.post('/:id/reviews', async (req, res) => {
   }
 });
 
-// Edit a review
-router.put('/:id/reviews/:index', async (req, res) => {
+// Edit a review (must be the review's owner)
+router.put('/:id/reviews/:index', requireUser, async (req, res) => {
   try {
-    const { authorName, rating, title, body } = req.body;
+    const { authorName, rating, body } = req.body;
     if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating (1-5) is required' });
     if (!body?.trim()) return res.status(400).json({ error: 'Review comment is required' });
     const prod = await Product.findById(req.params.id);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
     const idx = Number(req.params.index);
     if (idx < 0 || idx >= prod.reviews.length) return res.status(404).json({ error: 'Review not found' });
-    prod.reviews[idx].authorName = authorName?.trim() || prod.reviews[idx].authorName;
-    prod.reviews[idx].rating = Number(rating);
-    prod.reviews[idx].title = title?.trim() || '';
-    prod.reviews[idx].body = body.trim();
+    const review = prod.reviews[idx];
+    if (review.user?.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'You can only edit your own reviews.' });
+    review.authorName = authorName?.trim() || req.user.name || req.user.email.split('@')[0];
+    review.rating = Number(rating);
+    review.body = body.trim();
     await prod.save();
     res.json({ ok: true, reviews: prod.reviews, averageRating: prod.averageRating, reviewCount: prod.reviewCount });
   } catch (err) {
@@ -121,8 +158,8 @@ router.put('/:id/reviews/:index', async (req, res) => {
   }
 });
 
-// Delete a review
-router.delete('/:id/reviews/:index', async (req, res) => {
+// Delete a review (admin/moderator only)
+router.delete('/:id/reviews/:index', requireAdmin, async (req, res) => {
   try {
     const prod = await Product.findById(req.params.id);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
