@@ -109,15 +109,20 @@ const ProductSchema = new mongoose.Schema({
 
   // FAQ / Community Q&A
   faqs: [{
-    question:   { type: String, required: true },
-    answer:     { type: String, default: '' },
-    user:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    askerName:  { type: String },
-    helpful:    { type: Number, default: 0 },
-    helpfulBy:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    answeredBy: { type: String },           // admin display name
-    answeredAt: { type: Date },
-    createdAt:  { type: Date, default: Date.now }
+    question:  { type: String, required: true },
+    user:      { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    askerName: { type: String },
+    createdAt: { type: Date, default: Date.now },
+    // community + seller answers
+    answers: [{
+      user:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      authorName: { type: String },
+      body:       { type: String },
+      isOfficial: { type: Boolean, default: false }, // true = seller/admin answer
+      helpful:    { type: Number, default: 0 },
+      helpfulBy:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+      createdAt:  { type: Date, default: Date.now }
+    }]
   }],
 
   // seo + timestamps
