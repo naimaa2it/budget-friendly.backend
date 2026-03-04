@@ -88,6 +88,37 @@ app.get('/api/occasions', async (req, res) => {
   }
 });
 
+// Public: list active featured sections with populated products (used by homepage)
+app.get('/api/featured', async (req, res) => {
+  try {
+    const { default: FeaturedSection } = await import('./models/FeaturedSection.js');
+    const { default: Product } = await import('./models/Product.js');
+    const sections = await FeaturedSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+
+    const result = await Promise.all(sections.map(async (sec) => {
+      let products = [];
+      if (sec.productIds && sec.productIds.length > 0) {
+        // manual product list
+        products = await Product.find({ _id: { $in: sec.productIds }, status: { $ne: 'archived' } });
+        // preserve admin order
+        const idOrder = sec.productIds.map(id => id.toString());
+        products.sort((a, b) => idOrder.indexOf(a._id.toString()) - idOrder.indexOf(b._id.toString()));
+      } else if (sec.categoryId) {
+        // auto-pull from category
+        products = await Product.find({ categoryId: sec.categoryId, status: { $ne: 'archived' } })
+          .sort({ updatedAt: -1 })
+          .limit(sec.limit || 10);
+      }
+      return { ...sec.toObject(), products };
+    }));
+
+    res.json({ items: result });
+  } catch (err) {
+    console.error('GET /api/featured error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

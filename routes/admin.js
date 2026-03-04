@@ -783,4 +783,90 @@ router.put('/occasions-reorder', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Featured Sections (admin CRUD) ───────────────────────────────────────────
+
+// GET  /api/admin/featured  — list all featured sections sorted by order
+router.get('/featured', requireAdmin, async (req, res) => {
+  try {
+    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
+    const items = await FeaturedSection.find().sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /featured error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/featured  — create a new featured section
+router.post('/featured', requireAdmin, async (req, res) => {
+  try {
+    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
+    const payload = req.body || {};
+    const last = await FeaturedSection.findOne().sort({ order: -1 });
+    payload.order = last ? last.order + 1 : 0;
+    const section = new FeaturedSection(payload);
+    await section.save();
+    res.json({ ok: true, section });
+  } catch (err) {
+    console.error('POST /featured error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/featured/:id  — single featured section
+router.get('/featured/:id', requireAdmin, async (req, res) => {
+  try {
+    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
+    const section = await FeaturedSection.findById(req.params.id);
+    if (!section) return res.status(404).json({ error: 'Not found' });
+    res.json({ section });
+  } catch (err) {
+    console.error('GET /featured/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/featured/:id  — update a featured section
+router.put('/featured/:id', requireAdmin, async (req, res) => {
+  try {
+    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
+    const updates = { ...req.body, updatedAt: Date.now() };
+    const section = await FeaturedSection.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+    if (!section) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, section });
+  } catch (err) {
+    console.error('PUT /featured/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/featured/:id  — permanently delete a featured section
+router.delete('/featured/:id', requireAdmin, async (req, res) => {
+  try {
+    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
+    const section = await FeaturedSection.findByIdAndDelete(req.params.id);
+    if (!section) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /featured/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/featured-reorder  — update order for multiple sections at once
+// body: [ { _id, order }, … ]
+router.put('/featured-reorder', requireAdmin, async (req, res) => {
+  try {
+    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
+    const items = req.body || [];
+    await Promise.all(items.map(({ _id, order }) =>
+      FeaturedSection.findByIdAndUpdate(_id, { order })
+    ));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /featured-reorder error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
