@@ -75,11 +75,11 @@ router.get('/categories', async (req, res) => {
 // Admin: get ALL reviews across all products (dashboard)
 router.get('/admin-reviews', requireAdmin, async (req, res) => {
   try {
-    const products = await Product.find({ 'reviews.0': { $exists: true } }, 'title reviews').lean();
+    const products = await Product.find({ 'reviews.0': { $exists: true } }, 'title reviews categoryId').lean();
     const rows = [];
     products.forEach(p => {
       (p.reviews || []).forEach((r, idx) => {
-        rows.push({ productId: p._id, productTitle: p.title, index: idx, ...r });
+        rows.push({ productId: p._id, productTitle: p.title, categoryId: p.categoryId, index: idx, ...r });
       });
     });
     rows.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
