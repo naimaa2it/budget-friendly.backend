@@ -955,4 +955,82 @@ router.put('/banners-reorder', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Media Library (Cloudinary) ────────────────────────────────────────────────
+
+// GET /api/admin/media?folder=&next_cursor=&q=
+// Lists images stored in Cloudinary (up to 60 per page)
+router.get('/media', requireAdmin, async (req, res) => {
+  try {
+    ensureCloudinaryConfigured();
+    const { folder = '', next_cursor, q } = req.query;
+
+    const opts = {
+      type: 'upload',
+      resource_type: 'image',
+      max_results: 60,
+    };
+    if (folder) opts.prefix = folder;
+    if (next_cursor) opts.next_cursor = next_cursor;
+
+    const result = await cloudinary.api.resources(opts);
+
+    let resources = result.resources || [];
+
+    // client-side name filter (Cloudinary doesn't support full-text search on free tier)
+    if (q) {
+      const lower = q.toLowerCase();
+      resources = resources.filter(r =>
+        r.public_id.toLowerCase().includes(lower)
+      );
+    }
+
+    res.json({
+      items: resources.map(r => ({
+        public_id: r.public_id,
+        url: r.secure_url || r.url,
+        width: r.width,
+        height: r.height,
+        bytes: r.bytes,
+        format: r.format,
+        created_at: r.created_at,
+        folder: r.folder || r.public_id.split('/').slice(0, -1).join('/'),
+      })),
+      next_cursor: result.next_cursor || null,
+    });
+  } catch (err) {
+    console.error('GET /media error:', err);
+    res.status(500).json({ error: err.message || 'Cloudinary error' });
+  }
+});
+
+// GET /api/admin/media/folders  — list all folder prefixes found across uploaded assets
+router.get('/media/folders', requireAdmin, async (req, res) => {
+  try {
+    ensureCloudinaryConfigured();
+    const result = await cloudinary.api.root_folders();
+    const folders = (result.folders || []).map(f => f.path);
+    res.json({ folders });
+  } catch (err) {
+    // non-fatal — return empty list
+    res.json({ folders: [] });
+  }
+});
+
+// DELETE /api/admin/media  — delete one or more images from Cloudinary
+// body: { public_ids: ['folder/name', ...] }
+router.delete('/media', requireAdmin, async (req, res) => {
+  try {
+    ensureCloudinaryConfigured();
+    const { public_ids } = req.body || {};
+    if (!Array.isArray(public_ids) || public_ids.length === 0) {
+      return res.status(400).json({ error: 'public_ids array required' });
+    }
+    const result = await cloudinary.api.delete_resources(public_ids, { resource_type: 'image' });
+    res.json({ ok: true, deleted: result.deleted });
+  } catch (err) {
+    console.error('DELETE /media error:', err);
+    res.status(500).json({ error: err.message || 'Delete failed' });
+  }
+});
+
 export default router;
