@@ -72,6 +72,24 @@ router.get('/categories', async (req, res) => {
   }
 });
 
+// Admin: get ALL questions across all products (dashboard)
+router.get('/admin-questions', requireAdmin, async (req, res) => {
+  try {
+    const products = await Product.find({ 'faqs.0': { $exists: true } }, 'title faqs categoryId').lean();
+    const rows = [];
+    products.forEach(p => {
+      (p.faqs || []).forEach((f, idx) => {
+        rows.push({ productId: p._id, productTitle: p.title, categoryId: p.categoryId, index: idx, ...f });
+      });
+    });
+    rows.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    res.json({ ok: true, rows });
+  } catch (err) {
+    console.error('GET /api/products/admin-questions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin: get ALL reviews across all products (dashboard)
 router.get('/admin-reviews', requireAdmin, async (req, res) => {
   try {
