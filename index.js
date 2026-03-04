@@ -119,6 +119,18 @@ app.get('/api/featured', async (req, res) => {
   }
 });
 
+// Public: list active banner slides (used by homepage)
+app.get('/api/banners', async (req, res) => {
+  try {
+    const { default: Banner } = await import('./models/Banner.js');
+    const items = await Banner.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /api/banners error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

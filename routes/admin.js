@@ -869,4 +869,90 @@ router.put('/featured-reorder', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Banners (admin CRUD) ─────────────────────────────────────────────────────
+
+router.get('/banners', requireAdmin, async (req, res) => {
+  try {
+    const Banner = (await import('../models/Banner.js')).default;
+    const items = await Banner.find().sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /banners error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/banners', requireAdmin, async (req, res) => {
+  try {
+    const Banner = (await import('../models/Banner.js')).default;
+    const payload = req.body || {};
+    const last = await Banner.findOne().sort({ order: -1 });
+    payload.order = last ? last.order + 1 : 0;
+    const banner = new Banner(payload);
+    await banner.save();
+    res.json({ ok: true, banner });
+  } catch (err) {
+    console.error('POST /banners error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/banners/:id', requireAdmin, async (req, res) => {
+  try {
+    const Banner = (await import('../models/Banner.js')).default;
+    const banner = await Banner.findById(req.params.id);
+    if (!banner) return res.status(404).json({ error: 'Not found' });
+    res.json({ banner });
+  } catch (err) {
+    console.error('GET /banners/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/banners/:id', requireAdmin, async (req, res) => {
+  try {
+    const Banner = (await import('../models/Banner.js')).default;
+    const updates = { ...req.body, updatedAt: Date.now() };
+    const banner = await Banner.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!banner) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, banner });
+  } catch (err) {
+    console.error('PUT /banners/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/banners/:id', requireAdmin, async (req, res) => {
+  try {
+    const Banner = (await import('../models/Banner.js')).default;
+    const banner = await Banner.findByIdAndDelete(req.params.id);
+    if (!banner) return res.status(404).json({ error: 'Not found' });
+    // optionally remove from Cloudinary
+    if (banner.image?.public_id) {
+      try {
+        ensureCloudinaryConfigured();
+        await cloudinary.uploader.destroy(banner.image.public_id, { resource_type: 'image' });
+      } catch (e) { console.warn('Cloudinary delete failed for banner image:', e?.message); }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /banners/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/banners-reorder', requireAdmin, async (req, res) => {
+  try {
+    const Banner = (await import('../models/Banner.js')).default;
+    const items = req.body || [];
+    await Promise.all(items.map(({ _id, order }) =>
+      Banner.findByIdAndUpdate(_id, { order })
+    ));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /banners-reorder error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
