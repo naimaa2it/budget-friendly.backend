@@ -107,8 +107,18 @@ const ProductSchema = new mongoose.Schema({
   averageRating: { type: Number, default: 0 },
   reviewCount: { type: Number, default: 0 },
 
-  // FAQ
-  faqs: [{ question: String, answer: String }],
+  // FAQ / Community Q&A
+  faqs: [{
+    question:   { type: String, required: true },
+    answer:     { type: String, default: '' },
+    user:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    askerName:  { type: String },
+    helpful:    { type: Number, default: 0 },
+    helpfulBy:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    answeredBy: { type: String },           // admin display name
+    answeredAt: { type: Date },
+    createdAt:  { type: Date, default: Date.now }
+  }],
 
   // seo + timestamps
   seo: {
