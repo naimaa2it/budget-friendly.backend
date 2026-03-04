@@ -23,9 +23,8 @@ const router = express.Router();
 // Public product listing with pagination, search, category filter
 router.get('/', async (req, res) => {
   try {
-    const { q, categoryId, page = 1, limit = 20, status = 'published' } = req.query;
+    const { q, categoryId, badge, page = 1, limit = 20, status = 'published' } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
-
     const filter = {};
     if (status) filter.status = status;
     if (categoryId) {
@@ -34,6 +33,7 @@ router.get('/', async (req, res) => {
       if (ids.length === 1) filter.categoryId = ids[0];
       else if (ids.length > 1) filter.categoryId = { $in: ids };
     }
+    if (badge) filter.badges = badge;
     if (q) filter.$or = [
       { title: new RegExp(q, 'i') },
       { description: new RegExp(q, 'i') },
