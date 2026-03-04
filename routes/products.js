@@ -236,7 +236,7 @@ router.post('/:id/questions', requireUser, async (req, res) => {
     const prod = await Product.findById(req.params.id);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
     const displayName = askerName?.trim() || req.user.name || req.user.email.split('@')[0];
-    prod.faqs.push({ question: question.trim(), answer: '', user: req.user._id, askerName: displayName, helpful: 0, helpfulBy: [], createdAt: new Date() });
+    prod.faqs.push({ question: question.trim(), answers: [], user: req.user._id, askerName: displayName, createdAt: new Date() });
     await prod.save();
     res.json({ ok: true, faqs: prod.faqs });
   } catch (err) {
@@ -256,7 +256,6 @@ router.put('/:id/questions/:index', requireUser, async (req, res) => {
     if (idx < 0 || idx >= prod.faqs.length) return res.status(404).json({ error: 'Question not found' });
     const faq = prod.faqs[idx];
     if (faq.user?.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'You can only edit your own questions.' });
-    if (faq.answer) return res.status(400).json({ error: 'Cannot edit an already answered question.' });
     faq.question = question.trim();
     await prod.save();
     res.json({ ok: true, faqs: prod.faqs });
@@ -266,27 +265,74 @@ router.put('/:id/questions/:index', requireUser, async (req, res) => {
   }
 });
 
-// Mark question as helpful (toggle, must be logged-in user)
-router.post('/:id/questions/:index/helpful', requireUser, async (req, res) => {
+// Submit a community answer to a question (any logged-in user)
+router.post('/:id/questions/:qIdx/answers', requireUser, async (req, res) => {
+  try {
+    const { body, authorName } = req.body;
+    if (!body?.trim()) return res.status(400).json({ error: 'Answer body is required' });
+    const prod = await Product.findById(req.params.id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    const qIdx = Number(req.params.qIdx);
+    if (qIdx < 0 || qIdx >= prod.faqs.length) return res.status(404).json({ error: 'Question not found' });
+    const displayName = authorName?.trim() || req.user.name || req.user.email.split('@')[0];
+    prod.faqs[qIdx].answers = prod.faqs[qIdx].answers || [];
+    prod.faqs[qIdx].answers.push({ user: req.user._id, authorName: displayName, body: body.trim(), isOfficial: false, helpful: 0, helpfulBy: [], createdAt: new Date() });
+    await prod.save();
+    res.json({ ok: true, faqs: prod.faqs });
+  } catch (err) {
+    console.error('POST /api/products/:id/questions/:qIdx/answers error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Edit own community answer
+router.put('/:id/questions/:qIdx/answers/:aIdx', requireUser, async (req, res) => {
+  try {
+    const { body } = req.body;
+    if (!body?.trim()) return res.status(400).json({ error: 'Answer body is required' });
+    const prod = await Product.findById(req.params.id);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    const qIdx = Number(req.params.qIdx);
+    const aIdx = Number(req.params.aIdx);
+    if (qIdx < 0 || qIdx >= prod.faqs.length) return res.status(404).json({ error: 'Question not found' });
+    const answers = prod.faqs[qIdx].answers || [];
+    if (aIdx < 0 || aIdx >= answers.length) return res.status(404).json({ error: 'Answer not found' });
+    const ans = answers[aIdx];
+    if (ans.isOfficial) return res.status(403).json({ error: 'Cannot edit the official seller answer.' });
+    if (ans.user?.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'You can only edit your own answers.' });
+    ans.body = body.trim();
+    await prod.save();
+    res.json({ ok: true, faqs: prod.faqs });
+  } catch (err) {
+    console.error('PUT /api/products/:id/questions/:qIdx/answers/:aIdx error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Toggle helpful vote on a specific answer
+router.post('/:id/questions/:qIdx/answers/:aIdx/helpful', requireUser, async (req, res) => {
   try {
     const prod = await Product.findById(req.params.id);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
-    const idx = Number(req.params.index);
-    if (idx < 0 || idx >= prod.faqs.length) return res.status(404).json({ error: 'Question not found' });
-    const faq = prod.faqs[idx];
+    const qIdx = Number(req.params.qIdx);
+    const aIdx = Number(req.params.aIdx);
+    if (qIdx < 0 || qIdx >= prod.faqs.length) return res.status(404).json({ error: 'Question not found' });
+    const answers = prod.faqs[qIdx].answers || [];
+    if (aIdx < 0 || aIdx >= answers.length) return res.status(404).json({ error: 'Answer not found' });
+    const ans = answers[aIdx];
     const uid = req.user._id.toString();
-    const already = (faq.helpfulBy || []).map(String).includes(uid);
+    const already = (ans.helpfulBy || []).map(String).includes(uid);
     if (already) {
-      faq.helpfulBy = (faq.helpfulBy || []).filter(id => id.toString() !== uid);
-      faq.helpful = Math.max(0, (faq.helpful || 1) - 1);
+      ans.helpfulBy = (ans.helpfulBy || []).filter(id => id.toString() !== uid);
+      ans.helpful = Math.max(0, (ans.helpful || 1) - 1);
     } else {
-      faq.helpfulBy = [...(faq.helpfulBy || []), req.user._id];
-      faq.helpful = (faq.helpful || 0) + 1;
+      ans.helpfulBy = [...(ans.helpfulBy || []), req.user._id];
+      ans.helpful = (ans.helpful || 0) + 1;
     }
     await prod.save();
-    res.json({ ok: true, helpful: faq.helpful, voted: !already, faqs: prod.faqs });
+    res.json({ ok: true, helpful: ans.helpful, voted: !already, faqs: prod.faqs });
   } catch (err) {
-    console.error('POST /api/products/:id/questions/:index/helpful error:', err);
+    console.error('POST /api/products/:id/questions/:qIdx/answers/:aIdx/helpful error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -294,22 +340,50 @@ router.post('/:id/questions/:index/helpful', requireUser, async (req, res) => {
 // Admin: answer or edit any question
 router.put('/admin-questions/:productId/:index', requireAdmin, async (req, res) => {
   try {
-    const { question, answer } = req.body;
+    const { question, officialAnswer } = req.body;
+    const adminName = req.admin.name || req.admin.email?.split('@')[0] || 'Admin';
     const prod = await Product.findById(req.params.productId);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
     const idx = Number(req.params.index);
     if (idx < 0 || idx >= prod.faqs.length) return res.status(404).json({ error: 'Question not found' });
     const faq = prod.faqs[idx];
     if (question !== undefined) faq.question = question.trim();
-    if (answer !== undefined) {
-      faq.answer = answer.trim();
-      faq.answeredBy = req.admin.name || req.admin.email?.split('@')[0] || 'Admin';
-      faq.answeredAt = new Date();
+    if (officialAnswer !== undefined) {
+      faq.answers = faq.answers || [];
+      const existingIdx = faq.answers.findIndex(a => a.isOfficial);
+      if (officialAnswer.trim() === '') {
+        if (existingIdx >= 0) faq.answers.splice(existingIdx, 1);
+      } else if (existingIdx >= 0) {
+        faq.answers[existingIdx].body = officialAnswer.trim();
+        faq.answers[existingIdx].authorName = adminName;
+        faq.answers[existingIdx].createdAt = new Date();
+      } else {
+        faq.answers.unshift({ body: officialAnswer.trim(), isOfficial: true, authorName: adminName, helpful: 0, helpfulBy: [], createdAt: new Date() });
+      }
     }
     await prod.save();
     res.json({ ok: true, faqs: prod.faqs });
   } catch (err) {
     console.error('PUT /api/products/admin-questions/:productId/:index error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Admin: delete a specific answer
+router.delete('/admin-questions/:productId/:qIdx/answers/:aIdx', requireAdmin, async (req, res) => {
+  try {
+    const prod = await Product.findById(req.params.productId);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+    const qIdx = Number(req.params.qIdx);
+    const aIdx = Number(req.params.aIdx);
+    if (qIdx < 0 || qIdx >= prod.faqs.length) return res.status(404).json({ error: 'Question not found' });
+    const answers = prod.faqs[qIdx].answers || [];
+    if (aIdx < 0 || aIdx >= answers.length) return res.status(404).json({ error: 'Answer not found' });
+    prod.faqs[qIdx].answers.splice(aIdx, 1);
+    await prod.save();
+    res.json({ ok: true, faqs: prod.faqs });
+  } catch (err) {
+    console.error('DELETE /api/products/admin-questions/:productId/:qIdx/answers/:aIdx error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
