@@ -76,6 +76,18 @@ app.use('/api/products', productRoutes);//here have all of the product related r
 
 app.use('/api/blog', blogRoutes);//here have all of the blog related routes like add blog, update blog, delete blog, get blogs etc.
 
+// Public: list active occasion sections (used by homepage)
+app.get('/api/occasions', async (req, res) => {
+  try {
+    const { default: OccasionSection } = await import('./models/OccasionSection.js');
+    const items = await OccasionSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /api/occasions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

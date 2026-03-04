@@ -697,4 +697,90 @@ router.post('/reset', async (req, res) => {
   }
 });
 
+// ─── Occasion Sections (admin CRUD) ───────────────────────────────────────────
+
+// GET  /api/admin/occasions  — list all sections sorted by order
+router.get('/occasions', requireAdmin, async (req, res) => {
+  try {
+    const OccasionSection = (await import('../models/OccasionSection.js')).default;
+    const items = await OccasionSection.find().sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /occasions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/occasions  — create a new section
+router.post('/occasions', requireAdmin, async (req, res) => {
+  try {
+    const OccasionSection = (await import('../models/OccasionSection.js')).default;
+    const payload = req.body || {};
+    const last = await OccasionSection.findOne().sort({ order: -1 });
+    payload.order = last ? last.order + 1 : 0;
+    const section = new OccasionSection(payload);
+    await section.save();
+    res.json({ ok: true, section });
+  } catch (err) {
+    console.error('POST /occasions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/occasions/:id  — single section
+router.get('/occasions/:id', requireAdmin, async (req, res) => {
+  try {
+    const OccasionSection = (await import('../models/OccasionSection.js')).default;
+    const section = await OccasionSection.findById(req.params.id);
+    if (!section) return res.status(404).json({ error: 'Not found' });
+    res.json({ section });
+  } catch (err) {
+    console.error('GET /occasions/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/occasions/:id  — update section (title, cards, isActive, order, etc.)
+router.put('/occasions/:id', requireAdmin, async (req, res) => {
+  try {
+    const OccasionSection = (await import('../models/OccasionSection.js')).default;
+    const updates = { ...req.body, updatedAt: Date.now() };
+    const section = await OccasionSection.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+    if (!section) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, section });
+  } catch (err) {
+    console.error('PUT /occasions/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/occasions/:id  — permanently delete a section
+router.delete('/occasions/:id', requireAdmin, async (req, res) => {
+  try {
+    const OccasionSection = (await import('../models/OccasionSection.js')).default;
+    const section = await OccasionSection.findByIdAndDelete(req.params.id);
+    if (!section) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /occasions/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/occasions/reorder  — update order for multiple sections at once
+// body: [ { _id, order }, … ]
+router.put('/occasions-reorder', requireAdmin, async (req, res) => {
+  try {
+    const OccasionSection = (await import('../models/OccasionSection.js')).default;
+    const items = req.body || [];
+    await Promise.all(items.map(({ _id, order }) =>
+      OccasionSection.findByIdAndUpdate(_id, { order })
+    ));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /occasions-reorder error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
