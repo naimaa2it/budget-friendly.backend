@@ -65,7 +65,7 @@ mongoose.connect(MONGODB_URI)
 console.log('Using MongoDB URI:', process.env.MONGODB_URI ? 'MONGODB_URI' : (process.env.MONGO_URI ? 'MONGO_URI' : 'default localhost'));
 
 app.get("/", (req, res) => {
-  res.send("Welcome to YourHaat Backend!");
+  res.send("Welcome to Budget Friendly Backend!");
 });
 
 app.use('/api/auth', authRoutes);// here have all of the auth related routes like login, register, logout, refresh token etc.

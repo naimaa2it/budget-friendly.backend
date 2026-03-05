@@ -12,7 +12,7 @@ const PaymentProvidersSchema = new mongoose.Schema({
 }, { _id: false });
 
 const SettingsSchema = new mongoose.Schema({
-  storeName: { type: String, default: 'YourHaat' },
+  storeName: { type: String, default: 'Budget Friendly' },
   storeEmail: { type: String, default: '' },
   currency: { type: String, default: 'INR' },
   taxPercent: { type: Number, default: 0 },

@@ -1,7 +1,7 @@
 {
   "name": "yourhaatbackend",
   "version": "1.0.0",
-  "description": "Backend for YourHaat application",
+  "description": "Backend for Budget Friendly application",
   "type": "module",
   "main": "index.js",
   "scripts": {
