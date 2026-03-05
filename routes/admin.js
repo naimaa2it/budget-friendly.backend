@@ -488,7 +488,8 @@ router.post('/login', async (req, res) => {
     await admin.save();
 
     const token = createToken(admin);
-    res.cookie('token', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    // SameSite=none + Secure required for cross-origin cookie (Vercel frontend ↔ Render backend)
+    res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true });
     
     console.log(`Admin logged in: ${admin.email} (${admin.role})`);
     res.json({ user: { email: admin.email, name: admin.name, role: admin.role, image: null } });

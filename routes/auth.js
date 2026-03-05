@@ -33,7 +33,8 @@ router.post('/firebase-login', async (req, res) => {
     const user = await User.findOneAndUpdate({ email }, update, { upsert: true, new: true, setDefaultsOnInsert: true });
 
     const token = createToken(user);
-    res.cookie('token', token, { httpOnly: true, sameSite: 'lax' });
+    // SameSite=none + Secure required for cross-origin cookie (Vercel frontend ↔ Render backend)
+    res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true });
     res.json({ user: { email: user.email, name: user.name, role: user.role, image: user.image } });
   } catch (err) {
     console.error('firebase-login error:', err);
@@ -42,7 +43,7 @@ router.post('/firebase-login', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', { httpOnly: true, sameSite: 'none', secure: true });
   res.json({ ok: true });
 });
 
