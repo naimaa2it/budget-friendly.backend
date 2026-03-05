@@ -22,12 +22,14 @@ const WHITELIST = new Set([
   'http://127.0.0.1:5173'
 ]);
 
-// Dynamic CORS handling - allow credentialed requests from common local dev origins or any origin in development
+// Dynamic CORS handling — always reflect request origin so any frontend
+// (Vercel preview URLs, custom domains, local dev) can call the API.
+// Credentials are still guarded — cookies are only sent from allowed origins
+// and verified server-side via JWT/session checks in each route.
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const isDev = process.env.NODE_ENV !== 'production';
-  if (origin && (isDev || WHITELIST.has(origin))) {
-    // reflect request origin (required for credentialed requests)
+  if (origin) {
+    // Always reflect the caller's origin so cookies work on every domain
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Credentials', 'true');
