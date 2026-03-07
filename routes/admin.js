@@ -956,6 +956,60 @@ router.put('/banners-reorder', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Popup (admin CRUD – singleton) ──────────────────────────────────────────
+
+// GET current popup settings
+router.get('/popup', requireAdmin, async (req, res) => {
+  try {
+    const Popup = (await import('../models/Popup.js')).default;
+    const popup = await Popup.findOne();
+    res.json({ popup: popup || null });
+  } catch (err) {
+    console.error('GET /popup error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT (upsert) popup settings
+router.put('/popup', requireAdmin, async (req, res) => {
+  try {
+    const Popup = (await import('../models/Popup.js')).default;
+    const { image, link, isActive } = req.body;
+    let popup = await Popup.findOne();
+    if (popup) {
+      if (image !== undefined) popup.image = image;
+      if (link !== undefined) popup.link = link;
+      if (isActive !== undefined) popup.isActive = isActive;
+      await popup.save();
+    } else {
+      popup = await new Popup({ image, link, isActive }).save();
+    }
+    res.json({ ok: true, popup });
+  } catch (err) {
+    console.error('PUT /popup error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE popup image (reset to empty)
+router.delete('/popup', requireAdmin, async (req, res) => {
+  try {
+    const Popup = (await import('../models/Popup.js')).default;
+    const popup = await Popup.findOne();
+    if (popup?.image?.public_id) {
+      try {
+        ensureCloudinaryConfigured();
+        await cloudinary.uploader.destroy(popup.image.public_id, { resource_type: 'image' });
+      } catch (e) { console.warn('Cloudinary delete failed for popup image:', e?.message); }
+    }
+    await Popup.deleteMany();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /popup error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ─── Media Library (Cloudinary) ────────────────────────────────────────────────
 
 // GET /api/admin/media?folder=&next_cursor=&q=

@@ -133,6 +133,18 @@ app.get('/api/banners', async (req, res) => {
   }
 });
 
+// Public: get active popup (used by frontend on page load)
+app.get('/api/popup', async (req, res) => {
+  try {
+    const { default: Popup } = await import('./models/Popup.js');
+    const popup = await Popup.findOne({ isActive: true });
+    res.json({ popup: popup || null });
+  } catch (err) {
+    console.error('GET /api/popup error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
