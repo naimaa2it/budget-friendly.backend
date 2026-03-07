@@ -52,6 +52,9 @@ router.put('/profile', requireUser, upload.single('image'), async (req, res) => 
     if (typeof name !== 'undefined') u.name = name;
     if (typeof mobile !== 'undefined') u.mobile = mobile;
     if (typeof dob !== 'undefined') u.dob = dob;
+    if (typeof req.body?.newsletterSubscribed !== 'undefined') {
+      u.newsletterSubscribed = req.body.newsletterSubscribed === 'true' || req.body.newsletterSubscribed === true;
+    }
 
     // handle image removal request (only if no new file is being uploaded)
     const wantsRemoveImage = removeImage === '1' || removeImage === 'true';
