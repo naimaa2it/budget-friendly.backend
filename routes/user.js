@@ -192,4 +192,27 @@ router.delete('/addresses/:id', requireUser, async (req, res) => {
   }
 });
 
+// newsletter subscribe / unsubscribe
+router.post('/subscribe', requireUser, async (req, res) => {
+  try {
+    req.user.newsletterSubscribed = true;
+    await req.user.save();
+    res.json({ ok: true, subscribed: true });
+  } catch (err) {
+    console.error('POST /user/subscribe error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/unsubscribe', requireUser, async (req, res) => {
+  try {
+    req.user.newsletterSubscribed = false;
+    await req.user.save();
+    res.json({ ok: true, subscribed: false });
+  } catch (err) {
+    console.error('POST /user/unsubscribe error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
