@@ -13,6 +13,7 @@ const UserSchema = new mongoose.Schema({
   isVerified: { type: Boolean, default: false },
   resetToken: { type: String },
   resetExpires: { type: Date },
+  newsletterSubscribed: { type: Boolean, default: false },
   addresses: [
     {
       _id: { type: mongoose.Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
