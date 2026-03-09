@@ -11,5 +11,3 @@ cd yourhaatbackend
 npm install       # if you haven't already
 npm run seed       # connects to MONGODB_URI or localhost and populates sample data
 ```
-
-The script clears existing categories/products and writes a small tree.  You can edit `seed.js` if you need different samples.
