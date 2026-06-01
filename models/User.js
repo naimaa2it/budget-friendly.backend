@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
@@ -7,8 +7,12 @@ const UserSchema = new mongoose.Schema({
   dob: { type: String },
   image: { type: String },
   imagePublicId: { type: String },
-  role: { type: String, enum: ['user', 'admin', 'moderator'], default: 'user' },
-  provider: { type: String, enum: ['firebase', 'google', 'local'], default: 'local' },
+  role: { type: String, enum: ["user", "admin", "moderator"], default: "user" },
+  provider: {
+    type: String,
+    enum: ["firebase", "google", "local"],
+    default: "local",
+  },
   hashedPassword: { type: String },
   isVerified: { type: Boolean, default: false },
   resetToken: { type: String },
@@ -16,17 +20,26 @@ const UserSchema = new mongoose.Schema({
   newsletterSubscribed: { type: Boolean, default: false },
   addresses: [
     {
-      _id: { type: mongoose.Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
+      _id: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: () => new mongoose.Types.ObjectId(),
+      },
       fullName: String,
       email: String,
       phone: String,
       city: String,
       zone: String,
       address: String,
-      type: { type: String, enum: ['Home', 'Office'], default: 'Home' }
-    }
+      type: { type: String, enum: ["Home", "Office"], default: "Home" },
+    },
   ],
-  createdAt: { type: Date, default: Date.now }
+  tags: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CustomerTag",
+    },
+  ],
+  createdAt: { type: Date, default: Date.now },
 });
 
-export default mongoose.models.User || mongoose.model('User', UserSchema);
+export default mongoose.models.User || mongoose.model("User", UserSchema);
