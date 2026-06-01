@@ -4,6 +4,7 @@ import Product from '../models/Product.js';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import sharp from 'sharp';
+import { createClient } from 'redis';
 
 let cloudinaryConfigured = false;
 const ensureCloudinaryConfigured = () => {
@@ -20,10 +21,36 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const router = express.Router();
 
+// Optional Redis caching (configure with REDIS_URL)
+let redisClient;
+if (process.env.REDIS_URL) {
+  try {
+    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisClient.connect().catch(err => console.error('Redis connect error:', err));
+  } catch (err) {
+    console.error('Redis init error:', err);
+    redisClient = null;
+  }
+}
+
+//get products with optional filters: ?q=search&categoryId=123&badge=best-seller&flag=featured&page=1&limit=20&status=published&sort=position&minPrice=10&maxPrice=100&brand=BrandA&minRating=4
 // Public product listing with pagination, search, category filter
 router.get('/', async (req, res) => {
   try {
-    const { q, categoryId, badge, page = 1, limit = 20, status = 'published' } = req.query;
+    const {
+      q,
+      categoryId,
+      badge,
+      flag,
+      page = 1,
+      limit = 20,
+      status = 'published',
+      sort = 'position',
+      minPrice,
+      maxPrice,
+      brand,
+      minRating,
+    } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
     const filter = {};
     if (status) filter.status = status;
@@ -34,18 +61,71 @@ router.get('/', async (req, res) => {
       else if (ids.length > 1) filter.categoryId = { $in: ids };
     }
     if (badge) filter.badges = badge;
+    // boolean flag fields — whitelist to prevent injection
+    const FLAG_MAP = { featured: 'featured', coupon: 'coupon', 'flash-sale': 'flashSale', clearance: 'clearance', 'free-shipping': 'freeShipping' };
+    if (flag && FLAG_MAP[flag]) filter[FLAG_MAP[flag]] = true;
     if (q) filter.$or = [
       { title: new RegExp(q, 'i') },
       { description: new RegExp(q, 'i') },
       { tags: new RegExp(q, 'i') }
     ];
 
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      filter.price = {};
+      if (minPrice !== undefined && minPrice !== '') filter.price.$gte = Number(minPrice);
+      if (maxPrice !== undefined && maxPrice !== '') filter.price.$lte = Number(maxPrice);
+      if (Object.keys(filter.price).length === 0) delete filter.price;
+    }
+
+    if (brand) {
+      const brands = String(brand).split(',').map(v => v.trim()).filter(Boolean);
+      if (brands.length === 1) filter.department = brands[0];
+      else if (brands.length > 1) filter.department = { $in: brands };
+    }
+
+    if (minRating !== undefined && minRating !== '') {
+      filter.averageRating = { $gte: Number(minRating) };
+    }
+
+    const sortMap = {
+      position: { updatedAt: -1 },
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      nameAsc: { title: 1 },
+      nameDesc: { title: -1 },
+      priceHigh: { price: -1 },
+      priceLow: { price: 1 },
+    };
+    const sortBy = sortMap[sort] || sortMap.position;
+
+    // Try cache
+    const cacheKey = `products:${Buffer.from(JSON.stringify(req.query || {})).toString('base64')}`;
+    if (redisClient && redisClient.isOpen) {
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) return res.json(JSON.parse(cached));
+      } catch (e) {
+        // ignore cache errors
+        console.error('Redis GET error:', e);
+      }
+    }
+
     const [items, total] = await Promise.all([
-      Product.find(filter).sort({ updatedAt: -1 }).skip(Number(skip)).limit(Number(limit)),
+      Product.find(filter).sort(sortBy).skip(Number(skip)).limit(Number(limit)).lean(),
       Product.countDocuments(filter)
     ]);
 
-    res.json({ items, total, page: Number(page), limit: Number(limit) });
+    const payload = { items, total, page: Number(page), limit: Number(limit) };
+    // store in cache (short TTL)
+    if (redisClient && redisClient.isOpen) {
+      try {
+        await redisClient.setEx(cacheKey, Number(process.env.PRODUCTS_CACHE_TTL || 60), JSON.stringify(payload));
+      } catch (e) {
+        console.error('Redis SET error:', e);
+      }
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error('GET /api/products error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -110,8 +190,28 @@ router.get('/admin-reviews', requireAdmin, async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const prod = await Product.findById(req.params.id);
+    const prodCacheKey = `product:${req.params.id}`;
+    if (redisClient && redisClient.isOpen) {
+      try {
+        const cached = await redisClient.get(prodCacheKey);
+        if (cached) return res.json({ product: JSON.parse(cached) });
+      } catch (e) {
+        console.error('Redis GET error:', e);
+      }
+    }
+
+    const prod = await Product.findById(req.params.id)
+      .populate('frequentlyBoughtTogether', 'title price compareAtPrice images slug availability _id')
+      .lean();
     if (!prod) return res.status(404).json({ error: 'Not found' });
+    // cache product detail for a bit longer
+    if (redisClient && redisClient.isOpen) {
+      try {
+        await redisClient.setEx(prodCacheKey, Number(process.env.PRODUCT_CACHE_TTL || 300), JSON.stringify(prod));
+      } catch (e) {
+        console.error('Redis SET error:', e);
+      }
+    }
     res.json({ product: prod });
   } catch (err) {
     console.error('GET /api/products/:id error:', err);

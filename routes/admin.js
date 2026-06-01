@@ -8,6 +8,8 @@ import Admin from '../models/Admin.js';
 import User from '../models/User.js';
 import Product from '../models/Product.js';
 import BlogPost from '../models/BlogPost.js';
+import BlogCategory from '../models/BlogCategory.js';
+import Order from '../models/Order.js';
 import sharp from 'sharp';
 import categoryRoutes from './category.js';
 
@@ -80,7 +82,7 @@ router.post('/check-email', async (req, res) => {
   }
 });
 
-// Image upload to Cloudinary (admin-only) — optimized server-side with sharp
+// Image/Video upload to Cloudinary (admin-only) — optimized server-side with sharp
 router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     ensureCloudinaryConfigured(); // configure on first use
@@ -93,42 +95,76 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
       return res.status(500).json({ error: 'Server upload not configured (Cloudinary credentials missing).' });
     }
 
-    const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
-    const quality = Number(process.env.IMG_QUALITY) || 75;
+    // Get folder from request body or query (default to products)
+    const folder = req.body.folder || req.query.folder || 'yourhaat/products';
+    
+    // Detect if file is a video based on mimetype
+    const isVideo = req.file.mimetype.startsWith('video/');
+    const resourceType = isVideo ? 'video' : 'image';
 
-    // optimize image with sharp (resize, rotate, convert to webp)
-    let optimizedBuffer;
-    try {
-      optimizedBuffer = await sharp(req.file.buffer)
-        .rotate()
-        .resize({ width: maxWidth, withoutEnlargement: true })
-        .webp({ quality })
-        .toBuffer();
-    } catch (sharpErr) {
-      console.error('Sharp image processing error:', sharpErr);
-      return res.status(400).json({ error: 'Invalid image file or unsupported format.' });
-    }
+    // For images: optimize with sharp (resize, rotate, convert to webp)
+    if (resourceType === 'image') {
+      const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
+      const quality = Number(process.env.IMG_QUALITY) || 75;
 
-    const streamUpload = (buffer) =>
-      new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream({
-          folder: process.env.CLOUDINARY_FOLDER || 'yourhaat/products',
-          resource_type: 'image'
-        }, (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
+      let optimizedBuffer;
+      try {
+        optimizedBuffer = await sharp(req.file.buffer)
+          .rotate()
+          .resize({ width: maxWidth, withoutEnlargement: true })
+          .webp({ quality })
+          .toBuffer();
+      } catch (sharpErr) {
+        console.error('Sharp image processing error:', sharpErr);
+        return res.status(400).json({ error: 'Invalid image file or unsupported format.' });
+      }
+
+      const streamUpload = (buffer) =>
+        new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream({
+            folder,
+            resource_type: 'image'
+          }, (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          });
+          stream.end(buffer);
         });
-        stream.end(buffer);
-      });
 
-    const result = await streamUpload(optimizedBuffer);
-    res.json({ ok: true, asset: {
-      public_id: result.public_id,
-      url: result.secure_url || result.url,
-      width: result.width,
-      height: result.height,
-      format: result.format
-    }});
+      const result = await streamUpload(optimizedBuffer);
+      res.json({ ok: true, asset: {
+        public_id: result.public_id,
+        url: result.secure_url || result.url,
+        width: result.width,
+        height: result.height,
+        format: result.format,
+        resourceType: 'image'
+      }});
+    } else {
+      // For videos: upload directly without processing
+      const streamUpload = (buffer) =>
+        new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream({
+            folder,
+            resource_type: 'video'
+          }, (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          });
+          stream.end(buffer);
+        });
+
+      const result = await streamUpload(req.file.buffer);
+      res.json({ ok: true, asset: {
+        public_id: result.public_id,
+        url: result.secure_url || result.url,
+        width: result.width,
+        height: result.height,
+        format: result.format,
+        duration: result.duration,
+        resourceType: 'video'
+      }});
+    }
   } catch (err) {
     console.error('Upload error:', err instanceof Error ? err.stack : err);
     res.status(500).json({ error: err.message || 'Upload failed' });
@@ -137,6 +173,26 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
 
 // Category routes moved to `routes/category.js`
 router.use('/categories', categoryRoutes);
+
+// Public: top-banner + adsense config (no auth — used by frontend)
+router.get('/top-banner', async (req, res) => {
+  try {
+    const SettingModel = (await import('../models/Setting.js')).default;
+    const s = await SettingModel.findOne().lean();
+    res.json({
+      enabled: s?.topBannerEnabled || false,
+      html: s?.topBannerEnabled ? (s.topBannerHtml || '') : '',
+      config: s?.topBannerEnabled ? (s.topBannerConfig || {}) : {},
+      adsenseEnabled: s?.adsenseEnabled || false,
+      adsensePublisherId: s?.adsensePublisherId || '',
+      adsenseSlot: s?.adsenseSlot || '',
+      websiteLogo: s?.websiteLogo || {},
+      megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : []
+    });
+  } catch (err) {
+    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, megaMenuTags: [] });
+  }
+});
 
 // Settings (admin area)
 router.get('/settings', requireAdmin, async (req, res) => {
@@ -174,7 +230,20 @@ router.get('/products', requireAdmin, async (req, res) => {
     const { page = 1, limit = 20, q, categoryId, status } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
     const filter = {};
-    if (status) filter.status = status;
+
+    if (status === 'draft') {
+      filter.status = 'draft';
+      filter.createdBy = req.admin._id;
+    } else if (status) {
+      filter.status = status;
+    } else {
+      // Default: show published/archived + current admin drafts (no other admin drafts)
+      filter.$or = [
+        { status: { $ne: 'draft' } },
+        { createdBy: req.admin._id }
+      ];
+    }
+
     if (categoryId) {
       // accept one id or comma-separated list
       const ids = String(categoryId).split(',').map(id => id.trim()).filter(Boolean);
@@ -197,6 +266,11 @@ router.get('/products', requireAdmin, async (req, res) => {
 router.post('/products', requireAdmin, async (req, res) => {
   try {
     let payload = req.body || {};
+
+    // ensure drafts and new products are attributed to the current admin
+    if (!payload.createdBy) {
+      payload.createdBy = req.admin._id;
+    }
 
     // perform a bit of defensive cleanup/validation so the database error is
     // easier for the client to understand.  This mirrors some of the logic
@@ -248,8 +322,12 @@ router.post('/products', requireAdmin, async (req, res) => {
 
 router.get('/products/:id', requireAdmin, async (req, res) => {
   try {
-    const p = await Product.findById(req.params.id);
+    const p = await Product.findById(req.params.id)
+      .populate('frequentlyBoughtTogether', 'title price compareAtPrice images slug availability _id');
     if (!p) return res.status(404).json({ error: 'Not found' });
+    if (p.status === 'draft' && p.createdBy && p.createdBy.toString() !== req.admin._id.toString()) {
+      return res.status(403).json({ error: 'Access denied to this draft' });
+    }
     res.json({ product: p });
   } catch (err) {
     console.error('Admin GET /products/:id error:', err);
@@ -295,6 +373,10 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
     // Load existing product to detect removed images
     const existing = await Product.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    if (existing.status === 'draft' && existing.createdBy && existing.createdBy.toString() !== req.admin._id.toString()) {
+      return res.status(403).json({ error: 'Cannot edit another administrator\'s draft' });
+    }
 
     // Determine images removed by comparing public_id lists
     if (Array.isArray(existing.images) && Array.isArray(updates.images)) {
@@ -382,7 +464,7 @@ router.get('/blog', requireAdmin, async (req, res) => {
     if (q) filter.$or = [ { title: new RegExp(q, 'i') }, { excerpt: new RegExp(q, 'i') }, { content: new RegExp(q, 'i') } ];
 
     const [items, total] = await Promise.all([
-      BlogPost.find(filter).sort({ updatedAt: -1 }).skip(Number(skip)).limit(Number(limit)),
+      BlogPost.find(filter).populate('categories').sort({ updatedAt: -1 }).skip(Number(skip)).limit(Number(limit)),
       BlogPost.countDocuments(filter)
     ]);
     res.json({ items, total, page: Number(page), limit: Number(limit) });
@@ -405,10 +487,21 @@ router.post('/blog', requireAdmin, async (req, res) => {
   }
 });
 
+// Get all unique tags from blog posts (must be BEFORE /blog/:id route)
+router.get('/blog/tags', requireAdmin, async (req, res) => {
+  try {
+    const tags = await BlogPost.distinct('tags');
+    res.json({ tags: tags.filter(t => t).sort() });
+  } catch (err) {
+    console.error('Admin GET /blog/tags error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get single post (admin)
 router.get('/blog/:id', requireAdmin, async (req, res) => {
   try {
-    const p = await BlogPost.findById(req.params.id);
+    const p = await BlogPost.findById(req.params.id).populate('categories');
     if (!p) return res.status(404).json({ error: 'Not found' });
     res.json({ post: p });
   } catch (err) {
@@ -439,6 +532,76 @@ router.delete('/blog/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, post: p });
   } catch (err) {
     console.error('Admin DELETE /blog/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- Blog Categories (admin) ---
+
+// List all blog categories
+router.get('/blog-categories', requireAdmin, async (req, res) => {
+  try {
+    const categories = await BlogCategory.find().sort({ name: 1 });
+    res.json({ categories });
+  } catch (err) {
+    console.error('Admin GET /blog-categories error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create blog category
+router.post('/blog-categories', requireAdmin, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    
+    const category = new BlogCategory({ name, description });
+    await category.save();
+    res.json({ ok: true, category });
+  } catch (err) {
+    console.error('Admin POST /blog-categories error:', err);
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Category name already exists' });
+    }
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update blog category
+router.put('/blog-categories/:id', requireAdmin, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const updates = {};
+    if (name) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    
+    const category = await BlogCategory.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!category) return res.status(404).json({ error: 'Category not found' });
+    res.json({ ok: true, category });
+  } catch (err) {
+    console.error('Admin PUT /blog-categories/:id error:', err);
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Category name already exists' });
+    }
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete blog category
+router.delete('/blog-categories/:id', requireAdmin, async (req, res) => {
+  try {
+    const category = await BlogCategory.findByIdAndDelete(req.params.id);
+    if (!category) return res.status(404).json({ error: 'Category not found' });
+    
+    // Remove category from all blog posts
+    await BlogPost.updateMany(
+      { categories: req.params.id },
+      { $pull: { categories: req.params.id } }
+    );
+    
+    res.json({ ok: true, category });
+  } catch (err) {
+    console.error('Admin DELETE /blog-categories/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -570,8 +733,8 @@ router.put('/admins/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Deactivate / archive admin (admin-only)
-router.delete('/admins/:id', requireAdmin, async (req, res) => {
+// Deactivate admin (admin-only)
+router.put('/admins/:id/deactivate', requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     if (req.admin._id.toString() === req.params.id) return res.status(400).json({ error: 'Cannot deactivate yourself' });
@@ -579,15 +742,29 @@ router.delete('/admins/:id', requireAdmin, async (req, res) => {
     if (!a) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, admin: { _id: a._id, isActive: a.isActive } });
   } catch (err) {
+    console.error('PUT /admins/:id/deactivate error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete admin (admin-only)
+router.delete('/admins/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin._id.toString() === req.params.id) return res.status(400).json({ error: 'Cannot delete yourself' });
+    const a = await Admin.findById(req.params.id);
+    if (!a) return res.status(404).json({ error: 'Not found' });
+    await Admin.deleteOne({ _id: a._id });
+    res.json({ ok: true });
+  } catch (err) {
     console.error('DELETE /admins/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// --- User management (admin-only) -------------------------------------------------
+// --- User management -------------------------------------------------
 router.get('/users', requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     const { q = '', limit = 200 } = req.query;
     const filter = {};
     if (q) filter.$or = [ { email: new RegExp(q, 'i') }, { name: new RegExp(q, 'i') } ];
@@ -599,10 +776,9 @@ router.get('/users', requireAdmin, async (req, res) => {
   }
 });
 
-// Get single user (admin)
+// Get single user
 router.get('/users/:id', requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     const u = await User.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires');
     if (!u) return res.status(404).json({ error: 'Not found' });
     res.json({ user: u });
@@ -870,6 +1046,92 @@ router.put('/featured-reorder', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Promo Strip Items (admin CRUD) ─────────────────────────────────────────
+
+// GET /api/admin/promo-strip — list all promo strip items sorted by order
+router.get('/promo-strip', requireAdmin, async (req, res) => {
+  try {
+    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
+    const items = await PromoStripItem.find().sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /promo-strip error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/promo-strip — create a new promo strip item
+router.post('/promo-strip', requireAdmin, async (req, res) => {
+  try {
+    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
+    const payload = req.body || {};
+    const last = await PromoStripItem.findOne().sort({ order: -1 });
+    payload.order = last ? last.order + 1 : 0;
+    const item = new PromoStripItem(payload);
+    await item.save();
+    res.json({ ok: true, item });
+  } catch (err) {
+    console.error('POST /promo-strip error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/promo-strip/:id — single promo strip item
+router.get('/promo-strip/:id', requireAdmin, async (req, res) => {
+  try {
+    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
+    const item = await PromoStripItem.findById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json({ item });
+  } catch (err) {
+    console.error('GET /promo-strip/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/promo-strip/:id — update promo strip item
+router.put('/promo-strip/:id', requireAdmin, async (req, res) => {
+  try {
+    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
+    const updates = { ...req.body, updatedAt: Date.now() };
+    const item = await PromoStripItem.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, item });
+  } catch (err) {
+    console.error('PUT /promo-strip/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/promo-strip/:id — delete promo strip item
+router.delete('/promo-strip/:id', requireAdmin, async (req, res) => {
+  try {
+    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
+    const item = await PromoStripItem.findByIdAndDelete(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /promo-strip/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/promo-strip-reorder — batch update order
+// body: [ { _id, order }, … ]
+router.put('/promo-strip-reorder', requireAdmin, async (req, res) => {
+  try {
+    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
+    const items = req.body || [];
+    await Promise.all(items.map(({ _id, order }) =>
+      PromoStripItem.findByIdAndUpdate(_id, { order })
+    ));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /promo-strip-reorder error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ─── Banners (admin CRUD) ─────────────────────────────────────────────────────
 
 router.get('/banners', requireAdmin, async (req, res) => {
@@ -952,6 +1214,91 @@ router.put('/banners-reorder', requireAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('PUT /banners-reorder error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Promo Panels (admin CRUD – for Popular Picks left panel) ────────────────
+
+router.get('/promo-panels', requireAdmin, async (req, res) => {
+  try {
+    const PromoPanel = (await import('../models/PromoPanel.js')).default;
+    const items = await PromoPanel.find().sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /promo-panels error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/promo-panels', requireAdmin, async (req, res) => {
+  try {
+    const PromoPanel = (await import('../models/PromoPanel.js')).default;
+    const payload = req.body || {};
+    const last = await PromoPanel.findOne().sort({ order: -1 });
+    payload.order = last ? last.order + 1 : 0;
+    const panel = new PromoPanel(payload);
+    await panel.save();
+    res.json({ ok: true, panel });
+  } catch (err) {
+    console.error('POST /promo-panels error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/promo-panels/:id', requireAdmin, async (req, res) => {
+  try {
+    const PromoPanel = (await import('../models/PromoPanel.js')).default;
+    const panel = await PromoPanel.findById(req.params.id);
+    if (!panel) return res.status(404).json({ error: 'Not found' });
+    res.json({ panel });
+  } catch (err) {
+    console.error('GET /promo-panels/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/promo-panels/:id', requireAdmin, async (req, res) => {
+  try {
+    const PromoPanel = (await import('../models/PromoPanel.js')).default;
+    const updates = { ...req.body, updatedAt: Date.now() };
+    const panel = await PromoPanel.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!panel) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, panel });
+  } catch (err) {
+    console.error('PUT /promo-panels/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/promo-panels/:id', requireAdmin, async (req, res) => {
+  try {
+    const PromoPanel = (await import('../models/PromoPanel.js')).default;
+    const panel = await PromoPanel.findByIdAndDelete(req.params.id);
+    if (!panel) return res.status(404).json({ error: 'Not found' });
+    if (panel.image?.public_id) {
+      try {
+        ensureCloudinaryConfigured();
+        await cloudinary.uploader.destroy(panel.image.public_id, { resource_type: 'image' });
+      } catch (e) { console.warn('Cloudinary delete failed for promo panel image:', e?.message); }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /promo-panels/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/promo-panels-reorder', requireAdmin, async (req, res) => {
+  try {
+    const PromoPanel = (await import('../models/PromoPanel.js')).default;
+    const items = req.body || [];
+    await Promise.all(items.map(({ _id, order }) =>
+      PromoPanel.findByIdAndUpdate(_id, { order })
+    ));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /promo-panels-reorder error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1088,4 +1435,419 @@ router.delete('/media', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Discounts / Offers (admin CRUD) ─────────────────────────────────────────
+
+router.get('/discounts', requireAdmin, async (req, res) => {
+  try {
+    const Discount = (await import('../models/Discount.js')).default;
+    const items = await Discount.find().sort({ order: 1, createdAt: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /discounts error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/discounts', requireAdmin, async (req, res) => {
+  try {
+    const Discount = (await import('../models/Discount.js')).default;
+    const payload = req.body || {};
+    const last = await Discount.findOne().sort({ order: -1 });
+    payload.order = last ? last.order + 1 : 0;
+    const item = new Discount(payload);
+    await item.save();
+    res.json({ ok: true, item });
+  } catch (err) {
+    console.error('POST /discounts error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/discounts-reorder', requireAdmin, async (req, res) => {
+  try {
+    const Discount = (await import('../models/Discount.js')).default;
+    const items = req.body || [];
+    await Promise.all(items.map(({ _id, order }) => Discount.findByIdAndUpdate(_id, { order })));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /discounts-reorder error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/discounts/:id', requireAdmin, async (req, res) => {
+  try {
+    const Discount = (await import('../models/Discount.js')).default;
+    const updates = { ...req.body, updatedAt: Date.now() };
+    const item = await Discount.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, item });
+  } catch (err) {
+    console.error('PUT /discounts/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/discounts/:id', requireAdmin, async (req, res) => {
+  try {
+    const Discount = (await import('../models/Discount.js')).default;
+    const item = await Discount.findByIdAndDelete(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /discounts/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Waitlist routes
+router.get('/waitlist', requireAdmin, async (req, res) => {
+  try {
+    const Waitlist = (await import('../models/Waitlist.js')).default;
+    const { productId, notified } = req.query;
+    const filter = {};
+    if (productId) filter.productId = productId;
+    if (notified !== undefined) filter.notified = notified === 'true';
+    const entries = await Waitlist.find(filter).sort({ createdAt: -1 });
+    res.json({ entries });
+  } catch (err) {
+    console.error('GET /waitlist error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/waitlist/:id/notified', requireAdmin, async (req, res) => {
+  try {
+    const Waitlist = (await import('../models/Waitlist.js')).default;
+    const entry = await Waitlist.findByIdAndUpdate(req.params.id, { notified: true }, { new: true });
+    if (!entry) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, entry });
+  } catch (err) {
+    console.error('PUT /waitlist/:id/notified error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/waitlist/:id', requireAdmin, async (req, res) => {
+  try {
+    const Waitlist = (await import('../models/Waitlist.js')).default;
+    const entry = await Waitlist.findByIdAndDelete(req.params.id);
+    if (!entry) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /waitlist/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Admin Orders ─────────────────────────────────────────────────────────────
+
+// GET /api/admin/dashboard-overview
+router.get('/dashboard-overview', requireAdmin, async (req, res) => {
+  try {
+    const now = new Date();
+
+    const startOfDay = (date) => {
+      const d = new Date(date);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    };
+
+    const addDays = (date, days) => {
+      const d = new Date(date);
+      d.setDate(d.getDate() + days);
+      return d;
+    };
+
+    const todayStart = startOfDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const yesterdayStart = addDays(todayStart, -1);
+    const last7Start = addDays(todayStart, -6);
+    const last30Start = addDays(todayStart, -29);
+
+    const summarizeRange = async (start, end) => {
+      const match = { createdAt: { $gte: start, $lt: end } };
+      const [count, salesAgg, profitAgg, pending] = await Promise.all([
+        Order.countDocuments(match),
+        Order.aggregate([
+          { $match: { ...match, status: { $nin: ['cancelled', 'failed'] } } },
+          { $group: { _id: null, total: { $sum: '$total' } } },
+        ]),
+        Order.aggregate([
+          { $match: { ...match, status: { $nin: ['cancelled', 'failed'] } } },
+          { $group: { _id: null, total: { $sum: { $subtract: ['$subtotal', '$discount'] } } } },
+        ]),
+        Order.countDocuments({ ...match, status: 'pending' }),
+      ]);
+
+      return {
+        orders: count,
+        sales: salesAgg[0]?.total || 0,
+        profit: profitAgg[0]?.total || 0,
+        pending,
+      };
+    };
+
+    const [
+      totalOrders,
+      pendingOrders,
+      processingOrders,
+      statusCountsAgg,
+      salesAgg,
+      profitAgg,
+      recentOrders,
+      unpaidOnlineOrders,
+      todaySummary,
+      yesterdaySummary,
+      last7Summary,
+      last30Summary,
+      topProductsAgg,
+      hourlyRevenueAgg,
+      trackedProducts,
+    ] = await Promise.all([
+      Order.countDocuments(),
+      Order.countDocuments({ status: 'pending' }),
+      Order.countDocuments({ status: 'processing' }),
+      Order.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Order.aggregate([
+        { $match: { status: { $nin: ['cancelled', 'failed'] } } },
+        { $group: { _id: null, total: { $sum: '$total' } } },
+      ]),
+      Order.aggregate([
+        { $match: { status: { $nin: ['cancelled', 'failed'] } } },
+        { $group: { _id: null, total: { $sum: { $subtract: ['$subtotal', '$discount'] } } } },
+      ]),
+      Order.find({}).sort({ createdAt: -1 }).limit(8).lean(),
+      Order.countDocuments({ paymentMethod: { $in: ['online', 'bkash'] }, paymentStatus: 'unpaid' }),
+      summarizeRange(todayStart, tomorrowStart),
+      summarizeRange(yesterdayStart, todayStart),
+      summarizeRange(last7Start, tomorrowStart),
+      summarizeRange(last30Start, tomorrowStart),
+      Order.aggregate([
+        { $match: { createdAt: { $gte: last30Start, $lt: tomorrowStart }, status: { $nin: ['cancelled', 'failed'] } } },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.productId',
+            title: { $first: '$items.title' },
+            unitsSold: { $sum: '$items.quantity' },
+            revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+          },
+        },
+        { $sort: { unitsSold: -1, revenue: -1 } },
+        { $limit: 8 },
+      ]),
+      Order.aggregate([
+        { $match: { createdAt: { $gte: todayStart, $lt: tomorrowStart }, status: { $nin: ['cancelled', 'failed'] } } },
+        {
+          $group: {
+            _id: { $hour: '$createdAt' },
+            revenue: { $sum: '$total' },
+            orders: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      Product.find({ status: { $ne: 'archived' } })
+        .select('title inventory variants updatedAt')
+        .lean(),
+    ]);
+
+    const statusCounts = statusCountsAgg.reduce((acc, row) => {
+      if (row?._id) acc[row._id] = row.count;
+      return acc;
+    }, {});
+
+    const hourlyMap = hourlyRevenueAgg.reduce((acc, row) => {
+      acc[row._id] = { revenue: row.revenue || 0, orders: row.orders || 0 };
+      return acc;
+    }, {});
+
+    const hourlyRevenue = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      revenue: hourlyMap[hour]?.revenue || 0,
+      orders: hourlyMap[hour]?.orders || 0,
+    }));
+
+    const lowStockThreshold = 5;
+    const stockRows = trackedProducts.map((product) => {
+      const variantTotal = Array.isArray(product.variants) && product.variants.length
+        ? product.variants.reduce((sum, variant) => sum + (Number(variant.inventory) || 0), 0)
+        : null;
+      const totalInventory = variantTotal !== null ? variantTotal : (Number(product.inventory) || 0);
+
+      return {
+        _id: product._id,
+        title: product.title,
+        totalInventory,
+        updatedAt: product.updatedAt,
+      };
+    });
+
+    const outOfStock = stockRows
+      .filter((row) => row.totalInventory <= 0)
+      .sort((a, b) => a.totalInventory - b.totalInventory)
+      .slice(0, 8);
+
+    const lowStock = stockRows
+      .filter((row) => row.totalInventory > 0 && row.totalInventory <= lowStockThreshold)
+      .sort((a, b) => a.totalInventory - b.totalInventory)
+      .slice(0, 8);
+
+    res.json({
+      overview: {
+        totalOrders,
+        totalSales: salesAgg[0]?.total || 0,
+        totalProfit: profitAgg[0]?.total || 0,
+        pendingOrders,
+      },
+      reports: {
+        today: todaySummary,
+        yesterday: yesterdaySummary,
+        last7Days: last7Summary,
+        last30Days: last30Summary,
+      },
+      orderFlow: {
+        created: totalOrders,
+        pending: statusCounts.pending || 0,
+        confirmed: statusCounts.confirmed || 0,
+        processing: statusCounts.processing || 0,
+        sentToCourier: statusCounts.shipped || 0,
+        delivered: statusCounts.delivered || 0,
+        cancelled: statusCounts.cancelled || 0,
+        failed: statusCounts.failed || 0,
+      },
+      recentOrders,
+      topSellingProducts: topProductsAgg,
+      hourlyRevenue,
+      stock: {
+        threshold: lowStockThreshold,
+        outOfStockCount: stockRows.filter((row) => row.totalInventory <= 0).length,
+        lowStockCount: stockRows.filter((row) => row.totalInventory > 0 && row.totalInventory <= lowStockThreshold).length,
+        outOfStock,
+        lowStock,
+      },
+      actionCenter: {
+        pendingOrders,
+        processingOrders,
+        unpaidOnlineOrders,
+        lowStockCount: stockRows.filter((row) => row.totalInventory > 0 && row.totalInventory <= lowStockThreshold).length,
+      },
+      generatedAt: now,
+    });
+  } catch (err) {
+    console.error('GET /admin/dashboard-overview error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/orders
+router.get('/orders', requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q } = req.query;
+    const filter = {};
+    if (status && status !== 'all') filter.status = status;
+    if (paymentStatus && paymentStatus !== 'all') filter.paymentStatus = paymentStatus;
+    if (paymentMethod && paymentMethod !== 'all') filter.paymentMethod = paymentMethod;
+    if (q) {
+      filter.$or = [
+        { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
+        { 'billingDetails.name': { $regex: q, $options: 'i' } },
+        { 'billingDetails.phone': { $regex: q, $options: 'i' } },
+        { userEmail: { $regex: q, $options: 'i' } },
+        { transactionId: { $regex: q, $options: 'i' } },
+      ].filter(c => Object.values(c)[0] !== null);
+    }
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [orders, total] = await Promise.all([
+      Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Order.countDocuments(filter),
+    ]);
+    // Summary counts
+    const [pending, confirmed, processing, shipped, delivered, cancelled, failed] = await Promise.all([
+      Order.countDocuments({ status: 'pending' }),
+      Order.countDocuments({ status: 'confirmed' }),
+      Order.countDocuments({ status: 'processing' }),
+      Order.countDocuments({ status: 'shipped' }),
+      Order.countDocuments({ status: 'delivered' }),
+      Order.countDocuments({ status: 'cancelled' }),
+      Order.countDocuments({ status: 'failed' }),
+    ]);
+    const revenueAgg = await Order.aggregate([
+      { $match: { status: { $nin: ['cancelled', 'failed'] } } },
+      { $group: { _id: null, total: { $sum: '$total' } } },
+    ]);
+    res.json({
+      orders,
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+      stats: {
+        all: total,
+        pending, confirmed, processing, shipped, delivered, cancelled, failed,
+        revenue: revenueAgg[0]?.total || 0,
+      },
+    });
+  } catch (err) {
+    console.error('GET /admin/orders error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/orders/:id
+router.get('/orders/:id', requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id).lean();
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    console.error('GET /admin/orders/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/orders/:id/status
+router.put('/orders/:id/status', requireAdmin, async (req, res) => {
+  try {
+    const VALID = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'failed', 'cancelled'];
+    const { status } = req.body;
+    if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    console.error('PUT /admin/orders/:id/status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/orders/:id/payment-status
+router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
+  try {
+    const VALID = ['unpaid', 'cod', 'paid', 'failed', 'cancelled'];
+    const { paymentStatus } = req.body;
+    if (!VALID.includes(paymentStatus)) return res.status(400).json({ error: 'Invalid payment status' });
+    const order = await Order.findByIdAndUpdate(req.params.id, { paymentStatus }, { new: true });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    console.error('PUT /admin/orders/:id/payment-status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/orders/:id
+router.delete('/orders/:id', requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /admin/orders/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
+

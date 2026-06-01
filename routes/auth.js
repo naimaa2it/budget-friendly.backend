@@ -10,7 +10,7 @@ const createToken = (user) => {
   return jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 };
 
-// Simple connectivity check for debugging
+// Simple ping route to verify server is running properly or not
 router.get('/ping', (req, res) => {
   res.json({ ok: true, time: Date.now(), origin: req.headers.origin, cookie: req.headers.cookie || null });
 });
@@ -42,11 +42,13 @@ router.post('/firebase-login', async (req, res) => {
   }
 });
 
+// Logout by clearing the token cookie
 router.post('/logout', (req, res) => {
   res.clearCookie('token', { httpOnly: true, sameSite: 'none', secure: true });
-  res.json({ ok: true });
+  res.json({ ok: 'Logged out successfully' });
 });
 
+// Get current user info based on token (used by frontend on page load to check if user is logged in)
 router.get('/me', async (req, res) => {
   try {
     const token = req.cookies?.token;

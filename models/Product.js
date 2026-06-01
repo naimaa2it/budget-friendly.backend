@@ -1,12 +1,18 @@
 import mongoose from 'mongoose';
 
 const VariantSchema = new mongoose.Schema({
-  title: { type: String },
+  name: { type: String }, // e.g., "Red - Large" or "16 inch"
+  color: {
+    name: { type: String }, // e.g., "Red"
+    hex: { type: String }   // e.g., "#FF0000"
+  },
+  size: { type: String }, // e.g., "L" or "16 inch"
   sku: { type: String },
   price: { type: Number, required: true },
   compareAtPrice: { type: Number },
   inventory: { type: Number, default: 0 },
-  attributes: { type: Object }, // e.g. { color: 'Black', size: 'M' }
+  // Keep attributes for backward compatibility and custom attributes
+  attributes: { type: Object }
 });
 
 const ImageSchema = new mongoose.Schema({
@@ -17,6 +23,13 @@ const ImageSchema = new mongoose.Schema({
   height: { type: Number },
   format: { type: String }
 });
+
+const IngredientSchema = new mongoose.Schema({
+  name: { type: String },        // common name
+  inciName: { type: String },    // INCI name for cosmetics
+  percentage: { type: Number },  // optional (e.g., 5 for 5%)
+  function: { type: String }     // e.g., 'humectant', 'exfoliant'
+}, { _id: false });
 
 const ProductSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -29,9 +42,38 @@ const ProductSchema = new mongoose.Schema({
   department: { type: String }, // Brand/department (e.g., ryans, asus, cosrx)
   tags: [{ type: String }],
   // admin-visible badges (e.g. best_seller, hot, new_arrival)
-  badges: [{ type: String, enum: ['best_seller','hot','new_arrival','trending','limited','popular_pics', 'deals_of_the_day'] , default: [] }],
+  badges: [{ type: String, trim: true, lowercase: true, default: [] }],
   // category-specific structured fields (brand, specs, material, sizes, etc.)
   specs: { type: Object },
+  // skincare-specific fields
+  ingredients: [IngredientSchema],
+  activeIngredients: [{ name: String, concentration: String, benefit: String }],
+  skinTypes: [{ type: String, enum: ['normal','dry','oily','combination','sensitive'] }],
+  suitableConcerns: [{ type: String }],
+  formulation: { type: String }, // serum, cream, gel, oil, cleanser, toner, mask, mist
+  volume: { value: { type: Number }, unit: { type: String, default: 'ml' } },
+  pH: { type: Number },
+  spf: { type: Number },
+  broadSpectrum: { type: Boolean, default: false },
+  dermatologistTested: { type: Boolean, default: false },
+  comedogenicRating: { type: Number, min: 0, max: 5 },
+  allergens: [{ type: String }],
+  fragranceFree: { type: Boolean, default: false },
+  parabenFree: { type: Boolean, default: false },
+  sulfateFree: { type: Boolean, default: false },
+  crueltyFree: { type: Boolean, default: false },
+  vegan: { type: Boolean, default: false },
+  directions: { type: String },
+  precautions: { type: String },
+  shelfLifeMonths: { type: Number },
+  manufactureDate: { type: Date },
+  expiryDate: { type: Date },
+  batchNumber: { type: String },
+  certifications: [{ type: String }],
+  highlightIngredients: [{ type: String }],
+  recommendedRoutineStep: [{ type: String }],
+  safetyNotes: { type: String },
+  testResults: { irritationRate: { type: Number }, userCount: { type: Number }, summary: { type: String } },
   status: { type: String, enum: ['draft', 'published', 'archived'], default: 'published' },
 
   // images & variants
@@ -41,21 +83,26 @@ const ProductSchema = new mongoose.Schema({
   // pricing & inventory
   price: { type: Number },
   compareAtPrice: { type: Number },
-  currency: { type: String, default: 'USD' },
   inventory: { type: Number, default: 0 },
   availability: { type: String, enum: ['in_stock', 'pre_order', 'upcoming', 'out_of_stock'], default: 'in_stock' },
 
-  // product-specific attributes
-  colors: [{ name: { type: String }, hex: { type: String } }],
-  sizes: [{ type: String }],
+  // DEPRECATED: colors and sizes are now stored in variants
+  // These fields are kept for backward compatibility but should not be used for new products
+  // colors: [{ name: { type: String }, hex: { type: String } }],
+  // sizes: [{ type: String }],
+  
   guidelines: { type: String }, // Rich HTML (care & handling instructions)
   specifications: { type: String }, // Rich HTML for the Specification tab
   featured: { type: Boolean, default: false },
+
+  // ownership + audit
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
 
   // promotion flags (admin toggles)
   coupon: { type: Boolean, default: false }, // eligible for coupons
   flashSale: { type: Boolean, default: false },
   clearance: { type: Boolean, default: false },
+  freeShipping: { type: Boolean, default: false },
 
   // sales / rewards / attributes
   monthlySold: { type: Number, default: 0 }, // bought in past month
@@ -125,6 +172,9 @@ const ProductSchema = new mongoose.Schema({
     }]
   }],
 
+  // frequently bought together (up to 6 product references)
+  frequentlyBoughtTogether: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+
   // seo + timestamps
   seo: {
     title: { type: String },
@@ -165,3 +215,9 @@ ProductSchema.pre('save', function () {
 });
 
 export default mongoose.models.Product || mongoose.model('Product', ProductSchema);
+
+// Indexes for faster skincare queries and text search
+ProductSchema.index({ title: 'text', slug: 'text', description: 'text', 'ingredients.inciName': 'text' });
+ProductSchema.index({ categoryId: 1, price: 1 });
+ProductSchema.index({ featured: 1, monthlySold: -1 });
+ProductSchema.index({ spf: 1 }, { sparse: true });
