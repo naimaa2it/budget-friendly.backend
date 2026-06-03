@@ -172,7 +172,10 @@ const resolveAndQuote = async (
     }
     const qty = Math.max(1, parseInt(ci.quantity) || 1);
 
-    let unitPrice = prod.price ?? 0;
+    let unitPrice =
+      prod.variants?.length && prod.variants[0]?.price != null
+        ? prod.variants[0].price
+        : (prod.price ?? 0);
     if (prod.variants?.length && (ci.color || ci.size)) {
       // Try new structure first (v.color.name, v.size)
       let variant = prod.variants.find((v) => {
@@ -447,7 +450,7 @@ const resolveVariantPrice = (product, color, size) => {
 
   return matchedVariant?.price != null
     ? matchedVariant.price
-    : (product.price ?? null);
+    : (product.variants[0]?.price ?? product.price ?? null);
 };
 
 // ── POST /api/orders/quote ───────────────────────────────────────────────────

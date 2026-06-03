@@ -6,6 +6,7 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
 import User from '../models/User.js';
+import CustomerTag from '../models/CustomerTag.js';
 import Product from '../models/Product.js';
 import Variation from '../models/Variation.js';
 import BlogPost from '../models/BlogPost.js';
@@ -875,13 +876,71 @@ router.delete('/admins/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// --- Customer tag management -----------------------------------------
+router.get('/customer-tags', requireAdmin, async (req, res) => {
+  try {
+    const items = await CustomerTag.find({}).sort({ name: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /customer-tags error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/customer-tags', requireAdmin, async (req, res) => {
+  try {
+    const { name, color, description } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Tag name is required' });
+    }
+    const tag = await CustomerTag.create({
+      name: String(name).trim(),
+      color: color || '#3B82F6',
+      description: description || '',
+    });
+    res.status(201).json({ tag });
+  } catch (err) {
+    console.error('POST /customer-tags error:', err);
+    res.status(500).json({ error: err.code === 11000 ? 'Tag already exists' : 'Server error' });
+  }
+});
+
+router.put('/customer-tags/:id', requireAdmin, async (req, res) => {
+  try {
+    const { name, color, description } = req.body || {};
+    const tag = await CustomerTag.findById(req.params.id);
+    if (!tag) return res.status(404).json({ error: 'Not found' });
+    if (typeof name !== 'undefined') tag.name = String(name).trim();
+    if (typeof color !== 'undefined') tag.color = color || '#3B82F6';
+    if (typeof description !== 'undefined') tag.description = description || '';
+    await tag.save();
+    res.json({ ok: true, tag });
+  } catch (err) {
+    console.error('PUT /customer-tags/:id error:', err);
+    res.status(500).json({ error: err.code === 11000 ? 'Tag already exists' : 'Server error' });
+  }
+});
+
+router.delete('/customer-tags/:id', requireAdmin, async (req, res) => {
+  try {
+    const tag = await CustomerTag.findById(req.params.id);
+    if (!tag) return res.status(404).json({ error: 'Not found' });
+    await CustomerTag.deleteOne({ _id: tag._id });
+    await User.updateMany({ tags: tag._id }, { $pull: { tags: tag._id } });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /customer-tags/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // --- User management -------------------------------------------------
 router.get('/users', requireAdmin, async (req, res) => {
   try {
     const { q = '', limit = 200 } = req.query;
     const filter = {};
     if (q) filter.$or = [ { email: new RegExp(q, 'i') }, { name: new RegExp(q, 'i') } ];
-    const items = await User.find(filter).select('-hashedPassword -resetToken -resetExpires').sort({ createdAt: -1 }).limit(Number(limit));
+    const items = await User.find(filter).select('-hashedPassword -resetToken -resetExpires').populate('tags').sort({ createdAt: -1 }).limit(Number(limit));
     res.json({ items });
   } catch (err) {
     console.error('GET /users error:', err);
@@ -892,7 +951,7 @@ router.get('/users', requireAdmin, async (req, res) => {
 // Get single user
 router.get('/users/:id', requireAdmin, async (req, res) => {
   try {
-    const u = await User.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires');
+    const u = await User.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires').populate('tags');
     if (!u) return res.status(404).json({ error: 'Not found' });
     res.json({ user: u });
   } catch (err) {
@@ -904,13 +963,15 @@ router.get('/users/:id', requireAdmin, async (req, res) => {
 router.put('/users/:id', requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, isVerified } = req.body || {};
+    const { name, isVerified, tags } = req.body || {};
     const u = await User.findById(req.params.id);
     if (!u) return res.status(404).json({ error: 'Not found' });
     if (typeof name !== 'undefined') u.name = name;
     if (typeof isVerified !== 'undefined') u.isVerified = !!isVerified;
+    if (Array.isArray(tags)) u.tags = tags.filter(Boolean);
     await u.save();
-    res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt } });
+    await u.populate('tags');
+    res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt, tags: u.tags } });
   } catch (err) {
     console.error('PUT /users/:id error:', err);
     res.status(500).json({ error: 'Server error' });

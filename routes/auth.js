@@ -30,12 +30,12 @@ router.post('/firebase-login', async (req, res) => {
       isVerified: true
     };
 
-    const user = await User.findOneAndUpdate({ email }, update, { upsert: true, new: true, setDefaultsOnInsert: true });
+    const user = await User.findOneAndUpdate({ email }, update, { upsert: true, new: true, setDefaultsOnInsert: true }).populate('tags');
 
     const token = createToken(user);
     // SameSite=none + Secure required for cross-origin cookie (Vercel frontend ↔ Render backend)
     res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true });
-    res.json({ user: { email: user.email, name: user.name, role: user.role, image: user.image } });
+    res.json({ user: { email: user.email, name: user.name, role: user.role, image: user.image, tags: user.tags || [] } });
   } catch (err) {
     console.error('firebase-login error:', err);
     res.status(500).json({ error: err.message || 'Server error' });
@@ -68,7 +68,7 @@ router.get('/me', async (req, res) => {
       }
     } else {
       // Regular user
-      user = await User.findById(payload.id).select('-hashedPassword -resetToken -resetExpires');
+      user = await User.findById(payload.id).select('-hashedPassword -resetToken -resetExpires').populate('tags');
     }
     
     if (!user) return res.json({ user: null });
