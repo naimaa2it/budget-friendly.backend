@@ -36,6 +36,7 @@ const isDhaka = (city) =>
  */
 const calcBaseShipping = (sub, city) => {
   if (sub >= 999) return 0;
+  if (!city) return 0;
   return isDhaka(city) ? 70 : 130;
 };
 
@@ -491,7 +492,10 @@ router.post("/", async (req, res) => {
       !Array.isArray(clientItems) ||
       !clientItems.length ||
       !billingDetails?.name ||
-      !billingDetails?.phone
+      !billingDetails?.phone ||
+      !billingDetails?.city ||
+      !billingDetails?.zone ||
+      !billingDetails?.address
     ) {
       return res.status(400).json({ error: "Missing required order fields" });
     }
