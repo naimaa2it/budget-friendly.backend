@@ -567,7 +567,11 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
         Barcode.findOne({ code: nextBarcode }),
         Product.findOne({ barcode: nextBarcode, _id: { $ne: existing._id } }).select('_id title'),
       ]);
-      if ((duplicateBarcode && String(duplicateBarcode.product || "") !== String(existing._id)) || duplicateProduct) {
+      const barcodeOwnedByOtherProduct =
+        duplicateBarcode &&
+        duplicateBarcode.product &&
+        String(duplicateBarcode.product) !== String(existing._id);
+      if (barcodeOwnedByOtherProduct || duplicateProduct) {
         return res.status(409).json({ error: 'Barcode already exists' });
       }
       updates.barcode = nextBarcode;
