@@ -7,6 +7,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
 import User from '../models/User.js';
 import Product from '../models/Product.js';
+import Variation from '../models/Variation.js';
 import BlogPost from '../models/BlogPost.js';
 import BlogCategory from '../models/BlogCategory.js';
 import Order from '../models/Order.js';
@@ -15,6 +16,9 @@ import categoryRoutes from './category.js';
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
+
+const normalizeVariationOptionValue = (option) =>
+  String((option && typeof option === 'object' ? option.value : option) ?? '').trim();
 
 const createToken = (admin) => {
   const payload = { id: admin._id, role: admin.role, type: 'admin' };
@@ -259,6 +263,115 @@ router.get('/products', requireAdmin, async (req, res) => {
     res.json({ items, total, page: Number(page), limit: Number(limit) });
   } catch (err) {
     console.error('Admin GET /products error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Product variation catalog, used by dashboard product forms.
+router.get('/variations', requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(50, Math.max(1, Number(req.query.per_page || req.query.limit) || 50));
+    const skip = (page - 1) * perPage;
+    const [items, total] = await Promise.all([
+      Variation.find({}).sort({ name: 1 }).skip(skip).limit(perPage).lean(),
+      Variation.countDocuments({}),
+    ]);
+    const data = items.map((item) => ({
+      id: item._id,
+      _id: item._id,
+      name: item.name,
+      options: (item.options || []).map((option) => ({
+        id: option._id,
+        _id: option._id,
+        value: option.value,
+      })),
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+    }));
+    res.json({
+      success: true,
+      message: 'Variations retrieved successfully',
+      result: {
+        data,
+        meta: {
+          current_page: page,
+          from: total ? skip + 1 : null,
+          last_page: Math.max(1, Math.ceil(total / perPage)),
+          per_page: perPage,
+          to: skip + data.length,
+          total,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Admin GET /variations error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/variations', requireAdmin, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Variation name is required' });
+    const optionValues = Array.isArray(req.body?.options)
+      ? req.body.options.map(normalizeVariationOptionValue).filter(Boolean)
+      : [];
+    const seen = new Set();
+    const options = optionValues
+      .filter((value) => {
+        const key = value.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((value) => ({ value }));
+    const variation = await Variation.create({ name, options, createdBy: req.admin._id });
+    res.json({ ok: true, variation });
+  } catch (err) {
+    if (err?.code === 11000) return res.status(409).json({ error: 'Variation already exists' });
+    console.error('Admin POST /variations error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/variations/:id', requireAdmin, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Variation name is required' });
+    const optionValues = Array.isArray(req.body?.options)
+      ? req.body.options.map(normalizeVariationOptionValue).filter(Boolean)
+      : [];
+    const seen = new Set();
+    const options = optionValues
+      .filter((value) => {
+        const key = value.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((value) => ({ value }));
+    const variation = await Variation.findByIdAndUpdate(
+      req.params.id,
+      { $set: { name, options } },
+      { new: true, runValidators: true },
+    );
+    if (!variation) return res.status(404).json({ error: 'Variation not found' });
+    res.json({ ok: true, variation });
+  } catch (err) {
+    if (err?.code === 11000) return res.status(409).json({ error: 'Variation already exists' });
+    console.error('Admin PUT /variations/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/variations/:id', requireAdmin, async (req, res) => {
+  try {
+    const deleted = await Variation.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Variation not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin DELETE /variations/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1850,4 +1963,3 @@ router.delete('/orders/:id', requireAdmin, async (req, res) => {
 });
 
 export default router;
-
