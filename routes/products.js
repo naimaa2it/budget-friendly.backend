@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import Product from '../models/Product.js';
+import Barcode from '../models/Barcode.js';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import sharp from 'sharp';
@@ -18,6 +19,8 @@ const ensureCloudinaryConfigured = () => {
   }
 };
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const normalizeBarcodeCode = (value) =>
+  String(value || "").trim().replace(/\s+/g, "");
 
 const router = express.Router();
 
@@ -184,6 +187,32 @@ router.get('/admin-reviews', requireAdmin, async (req, res) => {
     res.json({ ok: true, rows });
   } catch (err) {
     console.error('GET /api/products/admin-reviews error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/barcode/:code', async (req, res) => {
+  try {
+    const code = normalizeBarcodeCode(req.params.code);
+    if (!code) return res.status(400).json({ error: 'Barcode code is required' });
+
+    const barcodeRecord = await Barcode.findOne({ code, isActive: true })
+      .populate('product', 'title price compareAtPrice images slug availability barcode sku status')
+      .lean();
+    if (barcodeRecord?.product && normalizeBarcodeCode(barcodeRecord.product.barcode) === code) {
+      return res.json({ product: barcodeRecord.product, barcode: barcodeRecord });
+    }
+
+    const product = await Product.findOne({ barcode: code })
+      .populate('frequentlyBoughtTogether', 'title price compareAtPrice images slug availability _id')
+      .lean();
+    if (product) {
+      return res.json({ product, barcode: barcodeRecord || null });
+    }
+
+    return res.status(404).json({ error: 'Barcode not found' });
+  } catch (err) {
+    console.error('GET /api/products/barcode/:code error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

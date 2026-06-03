@@ -7,6 +7,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
 import User from '../models/User.js';
 import CustomerTag from '../models/CustomerTag.js';
+import Barcode from '../models/Barcode.js';
 import Product from '../models/Product.js';
 import Variation from '../models/Variation.js';
 import BlogPost from '../models/BlogPost.js';
@@ -20,6 +21,62 @@ const SALT_ROUNDS = 12; // Increased from 10 for better security
 
 const normalizeVariationOptionValue = (option) =>
   String((option && typeof option === 'object' ? option.value : option) ?? '').trim();
+const normalizeBarcodeCode = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, "");
+
+const generateBarcodeCode = () => {
+  const base = `${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`;
+  return base.slice(0, 12);
+};
+
+const syncProductBarcode = async ({ productId, productTitle, barcode, createdBy }) => {
+  const code = normalizeBarcodeCode(barcode);
+  if (!code) return null;
+
+  const existing = await Barcode.findOne({ code });
+  if (existing && existing.product && existing.product.toString() !== String(productId)) {
+    const err = new Error("Barcode already exists");
+    err.status = 409;
+    throw err;
+  }
+
+  const record = await Barcode.findOneAndUpdate(
+    { code },
+    {
+      $set: {
+        code,
+        label: productTitle || existing?.label || "",
+        product: productId,
+        productTitle: productTitle || "",
+        createdBy: createdBy || existing?.createdBy || null,
+        isActive: true,
+      },
+    },
+    { upsert: true, new: true, runValidators: true },
+  );
+
+  await Barcode.updateMany(
+    { product: productId, code: { $ne: code } },
+    { $set: { product: null, productTitle: "" } },
+  );
+  await Product.updateOne(
+    { _id: productId },
+    { $set: { barcode: code } },
+  );
+
+  return record;
+};
+
+const detachBarcodeFromProduct = async (productId, keepCode = null) => {
+  const filter = { product: productId };
+  if (keepCode) {
+    filter.code = { $ne: keepCode };
+  }
+  await Barcode.updateMany(filter, { $set: { product: null, productTitle: "" } });
+  await Product.updateOne({ _id: productId }, { $unset: { barcode: "" } });
+};
 
 const createToken = (admin) => {
   const payload = { id: admin._id, role: admin.role, type: 'admin' };
@@ -380,6 +437,7 @@ router.delete('/variations/:id', requireAdmin, async (req, res) => {
 router.post('/products', requireAdmin, async (req, res) => {
   try {
     let payload = req.body || {};
+    const nextBarcode = normalizeBarcodeCode(payload.barcode);
 
     // ensure drafts and new products are attributed to the current admin
     if (!payload.createdBy) {
@@ -414,6 +472,19 @@ router.post('/products', requireAdmin, async (req, res) => {
       }
     }
 
+    if (nextBarcode) {
+      const [duplicateBarcode, duplicateProduct] = await Promise.all([
+        Barcode.findOne({ code: nextBarcode }),
+        Product.findOne({ barcode: nextBarcode }).select('_id title'),
+      ]);
+      if ((duplicateBarcode && duplicateBarcode.product) || duplicateProduct) {
+        return res.status(409).json({ error: 'Barcode already exists' });
+      }
+      payload.barcode = nextBarcode;
+    } else {
+      delete payload.barcode;
+    }
+
     // If categoryId provided, resolve and store category name on product for backward compatibility
     if (payload.categoryId) {
       try {
@@ -427,6 +498,19 @@ router.post('/products', requireAdmin, async (req, res) => {
 
     const p = new Product(payload);
     await p.save();
+    if (nextBarcode) {
+      try {
+        await syncProductBarcode({
+          productId: p._id,
+          productTitle: p.title,
+          barcode: nextBarcode,
+          createdBy: req.admin._id,
+        });
+      } catch (barcodeErr) {
+        await Product.deleteOne({ _id: p._id });
+        return res.status(barcodeErr.status || 409).json({ error: barcodeErr.message || 'Barcode already exists' });
+      }
+    }
     res.json({ ok: true, product: p });
   } catch (err) {
     console.error('Admin POST /products error:', err);
@@ -452,6 +536,7 @@ router.get('/products/:id', requireAdmin, async (req, res) => {
 router.put('/products/:id', requireAdmin, async (req, res) => {
   try {
     const updates = req.body || {};
+    const nextBarcode = normalizeBarcodeCode(updates.barcode);
 
     // parse stringified customization options if needed
     if (updates.customization && typeof updates.customization.options === 'string') {
@@ -473,6 +558,23 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
       }
     }
 
+    // Load existing product first so barcode ownership can be validated before updating.
+    const existing = await Product.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    if (nextBarcode) {
+      const [duplicateBarcode, duplicateProduct] = await Promise.all([
+        Barcode.findOne({ code: nextBarcode }),
+        Product.findOne({ barcode: nextBarcode, _id: { $ne: existing._id } }).select('_id title'),
+      ]);
+      if ((duplicateBarcode && String(duplicateBarcode.product || "") !== String(existing._id)) || duplicateProduct) {
+        return res.status(409).json({ error: 'Barcode already exists' });
+      }
+      updates.barcode = nextBarcode;
+    } else {
+      updates.barcode = undefined;
+    }
+
     // If categoryId present, resolve name
     if (updates.categoryId) {
       try {
@@ -483,10 +585,6 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
         // ignore
       }
     }
-
-    // Load existing product to detect removed images
-    const existing = await Product.findById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
 
     if (existing.status === 'draft' && existing.createdBy && existing.createdBy.toString() !== req.admin._id.toString()) {
       return res.status(403).json({ error: 'Cannot edit another administrator\'s draft' });
@@ -518,6 +616,23 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
     // Apply updates and return updated product
     const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
+    if (nextBarcode) {
+      await syncProductBarcode({
+        productId: p._id,
+        productTitle: p.title,
+        barcode: nextBarcode,
+        createdBy: req.admin._id,
+      });
+      const oldBarcode = normalizeBarcodeCode(existing.barcode);
+      if (oldBarcode && oldBarcode !== nextBarcode) {
+        await Barcode.updateOne(
+          { code: oldBarcode, product: p._id },
+          { $set: { product: null, productTitle: "" } },
+        );
+      }
+    } else {
+      await detachBarcodeFromProduct(p._id);
+    }
     res.json({ ok: true, product: p });
   } catch (err) {
     console.error('Admin PUT /products/:id error:', err);
@@ -552,6 +667,7 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
         }
       }
 
+      await detachBarcodeFromProduct(p._id);
       await Product.deleteOne({ _id: p._id });
       return res.json({ ok: true });
     }
@@ -559,6 +675,7 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     // soft-delete: set status=archived
     const p = await Product.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
+    await detachBarcodeFromProduct(p._id);
     res.json({ ok: true, product: p });
   } catch (err) {
     console.error('Admin DELETE /products/:id error:', err);
@@ -930,6 +1047,147 @@ router.delete('/customer-tags/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('DELETE /customer-tags/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- Barcode management ----------------------------------------------
+router.get('/barcodes', requireAdmin, async (req, res) => {
+  try {
+    const { q = '', code = '', limit = 100, page = 1 } = req.query;
+    const filter = {};
+    const term = String(code || q || "").trim();
+    if (term) {
+      filter.$or = [
+        { code: new RegExp(term, 'i') },
+        { label: new RegExp(term, 'i') },
+        { productTitle: new RegExp(term, 'i') },
+      ];
+    }
+    const skip = (Math.max(1, Number(page)) - 1) * Math.min(500, Number(limit) || 100);
+    const pageSize = Math.min(500, Math.max(1, Number(limit) || 100));
+    const [items, total] = await Promise.all([
+      Barcode.find(filter).populate('product', 'title images barcode sku status').sort({ updatedAt: -1 }).skip(skip).limit(pageSize),
+      Barcode.countDocuments(filter),
+    ]);
+    const normalizedItems = items.map((item) => {
+      const linkedBarcode = normalizeBarcodeCode(item.product?.barcode);
+      if (!item.product || linkedBarcode !== item.code) {
+        return { ...item.toObject(), product: null };
+      }
+      return item.toObject();
+    });
+    res.json({ items: normalizedItems, total, page: Number(page), limit: pageSize });
+  } catch (err) {
+    console.error('GET /barcodes error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/barcodes', requireAdmin, async (req, res) => {
+  try {
+    const code = normalizeBarcodeCode(req.body?.code || generateBarcodeCode());
+    const label = String(req.body?.label || "").trim();
+    const notes = String(req.body?.notes || "").trim();
+    const productId = req.body?.product || null;
+
+    const [exists, existingProduct] = await Promise.all([
+      Barcode.findOne({ code }),
+      productId ? Product.findById(productId).select('_id title barcode') : Promise.resolve(null),
+    ]);
+    if (exists) return res.status(409).json({ error: 'Barcode already exists' });
+    if (productId && !existingProduct) return res.status(404).json({ error: 'Linked product not found' });
+    if (productId && existingProduct?.barcode && normalizeBarcodeCode(existingProduct.barcode) !== code) {
+      return res.status(409).json({ error: 'Product already has a barcode' });
+    }
+
+    const item = await Barcode.create({
+      code,
+      label,
+      notes,
+      product: productId || null,
+      productTitle: req.body?.productTitle || "",
+      createdBy: req.admin._id,
+      isActive: true,
+    });
+    if (productId) {
+      await Barcode.updateMany(
+        { product: productId, code: { $ne: code } },
+        { $set: { product: null, productTitle: "" } },
+      );
+      await Product.updateOne({ _id: productId }, { $set: { barcode: code } });
+    }
+    res.status(201).json({ ok: true, item });
+  } catch (err) {
+    console.error('POST /barcodes error:', err);
+    res.status(500).json({ error: err.code === 11000 ? 'Barcode already exists' : 'Server error' });
+  }
+});
+
+router.put('/barcodes/:id', requireAdmin, async (req, res) => {
+  try {
+    const item = await Barcode.findById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+
+    const nextCode = req.body?.code !== undefined ? normalizeBarcodeCode(req.body.code) : item.code;
+    if (!nextCode) return res.status(400).json({ error: 'Barcode code is required' });
+    const previousCode = item.code;
+    const previousProductId = item.product ? String(item.product) : null;
+
+    if (nextCode !== item.code) {
+      const duplicate = await Barcode.findOne({ code: nextCode });
+      if (duplicate && duplicate._id.toString() !== item._id.toString()) {
+        return res.status(409).json({ error: 'Barcode already exists' });
+      }
+      item.code = nextCode;
+    }
+
+    if (req.body?.label !== undefined) item.label = String(req.body.label).trim();
+    if (req.body?.notes !== undefined) item.notes = String(req.body.notes).trim();
+    if (req.body?.product !== undefined) {
+      const nextProductId = req.body.product || null;
+      if (nextProductId && String(nextProductId) !== previousProductId) {
+        const nextProduct = await Product.findById(nextProductId).select('_id title barcode');
+        if (!nextProduct) return res.status(404).json({ error: 'Linked product not found' });
+        if (nextProduct.barcode && normalizeBarcodeCode(nextProduct.barcode) !== nextCode) {
+          return res.status(409).json({ error: 'Product already has a barcode' });
+        }
+      }
+      item.product = nextProductId;
+    }
+    if (req.body?.productTitle !== undefined) item.productTitle = String(req.body.productTitle || '').trim();
+    if (req.body?.isActive !== undefined) item.isActive = !!req.body.isActive;
+
+    await item.save();
+    if (previousProductId && previousProductId !== String(item.product || "")) {
+      await Product.updateOne({ _id: previousProductId, barcode: previousCode }, { $unset: { barcode: "" } });
+    }
+    if (item.product) {
+      await Barcode.updateMany(
+        { product: item.product, code: { $ne: item.code } },
+        { $set: { product: null, productTitle: "" } },
+      );
+      await Product.updateOne({ _id: item.product }, { $set: { barcode: item.code } });
+    }
+    await item.populate('product', 'title images barcode sku status');
+    res.json({ ok: true, item });
+  } catch (err) {
+    console.error('PUT /barcodes/:id error:', err);
+    res.status(500).json({ error: err.code === 11000 ? 'Barcode already exists' : 'Server error' });
+  }
+});
+
+router.delete('/barcodes/:id', requireAdmin, async (req, res) => {
+  try {
+    const item = await Barcode.findById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    if (item.product) {
+      await Product.updateOne({ _id: item.product, barcode: item.code }, { $unset: { barcode: "" } });
+    }
+    await Barcode.deleteOne({ _id: item._id });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /barcodes/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

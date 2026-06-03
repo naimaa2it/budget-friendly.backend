@@ -37,6 +37,7 @@ const ProductSchema = new mongoose.Schema({
   description: { type: String },
   detailedDescription: { type: String }, // Rich detailed description for product details page
   sku: { type: String, index: true }, // top-level SKU for single-variant products
+  barcode: { type: String, index: true, sparse: true },
   category: { type: String, default: 'general' },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   department: { type: String }, // Brand/department (e.g., ryans, asus, cosrx)
