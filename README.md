@@ -153,7 +153,29 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_app_specific_password
+
+# Optional — Pathao Merchant API (automatic courier status sync)
+# PATHAO_CLIENT_ID=
+# PATHAO_CLIENT_SECRET=
+# PATHAO_USERNAME=
+# PATHAO_PASSWORD=
+# PATHAO_WEBHOOK_SECRET=
+# SHIPMENT_SYNC_INTERVAL_MS=900000
 ```
+
+### Shipment tracking without a courier merchant account
+
+You can run the shop **without** Pathao/Steadfast merchant API credentials:
+
+1. **Admin → Orders** — set courier + consignment ID (or paste the public tracking URL from the courier SMS). Save shipment details.
+2. **Order status** — use the status dropdown (Processing → Shipped → Delivered). This updates the customer timeline on your site.
+3. **Customer** — sees **Track on Pathao** (or Steadfast/RedX) when a tracking link is saved; they check live status on the courier’s website.
+
+**Not available without merchant API:** automatic sync from courier, background status polling, Pathao webhooks.
+
+When you later get a **Pathao Merchant** account, add `PATHAO_CLIENT_ID`, `PATHAO_CLIENT_SECRET`, `PATHAO_USERNAME`, and `PATHAO_PASSWORD` to `.env`. Restart the server — **Sync from Courier** and periodic sync will start working.
+
+> Scraping public tracking pages is not supported (fragile, may violate courier terms). Steadfast/RedX merchant APIs can be added later similar to Pathao.
 
 ### Generate Secrets
 

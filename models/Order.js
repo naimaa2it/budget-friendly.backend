@@ -26,6 +26,28 @@ const AppliedCouponSchema = new mongoose.Schema({
   discountValue: Number,
 }, { _id: false });
 
+const TrackingEventSchema = new mongoose.Schema({
+  status: String,
+  message: String,
+  at: { type: Date, default: Date.now },
+  source: { type: String, enum: ['admin', 'courier', 'system'], default: 'courier' },
+}, { _id: false });
+
+const ShipmentSchema = new mongoose.Schema({
+  courier: {
+    type: String,
+    enum: ['pathao', 'steadfast', 'redx', 'sundarban', 'other'],
+    default: null,
+  },
+  trackingId: { type: String, default: null },
+  trackingUrl: { type: String, default: null },
+  courierStatus: { type: String, default: null },
+  handedToCourierAt: { type: Date, default: null },
+  deliveredAt: { type: Date, default: null },
+  lastSyncAt: { type: Date, default: null },
+  trackingEvents: { type: [TrackingEventSchema], default: [] },
+}, { _id: false });
+
 const OrderSchema = new mongoose.Schema({
   userId: { type: String, default: null },     // MongoDB _id as string (may be null for guests)
   userEmail: { type: String, default: null },
@@ -57,6 +79,7 @@ const OrderSchema = new mongoose.Schema({
   paidAmount: { type: Number, default: null },
   // COD orders auto-confirm 30 min after creation; cancellable before this time
   confirmAfter: { type: Date, default: null },
+  shipment: { type: ShipmentSchema, default: () => ({ trackingEvents: [] }) },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

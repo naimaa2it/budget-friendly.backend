@@ -17,6 +17,7 @@ import blogRoutes from './routes/blog.js';
 import userRoutes from './routes/user.js';
 import orderRoutes from './routes/orders.js';
 import couponRoutes from './routes/coupons.js';
+import { syncActiveShipments } from './lib/shipmentTracking.js';
 
 const app = express();
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
@@ -243,4 +244,19 @@ app.post('/api/waitlist', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+
+  const syncIntervalMs = Number(process.env.SHIPMENT_SYNC_INTERVAL_MS || 15 * 60 * 1000);
+  if (syncIntervalMs > 0) {
+    setInterval(async () => {
+      try {
+        const results = await syncActiveShipments(25);
+        const synced = results.filter((r) => r.ok && !r.skipped).length;
+        if (synced > 0) {
+          console.log(`Shipment sync: updated ${synced} order(s)`);
+        }
+      } catch (err) {
+        console.warn('Shipment sync job failed:', err.message);
+      }
+    }, syncIntervalMs);
+  }
 });

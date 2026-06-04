@@ -12,6 +12,7 @@ import {
   sendAdminOrderNotification,
   sendPaymentConfirmedEmail,
 } from "../lib/mailer.js";
+import { syncOrderShipment } from "../lib/shipmentTracking.js";
 
 const router = express.Router();
 
@@ -953,10 +954,81 @@ router.get("/my", async (req, res) => {
       toConfirm.forEach((o) => (o.status = "confirmed"));
     }
 
+    // Lazy sync courier tracking for in-transit orders (max 3 per request)
+    const toSync = orders
+      .filter(
+        (o) =>
+          o.shipment?.courier &&
+          o.shipment?.trackingId &&
+          ["shipped", "processing", "confirmed"].includes(o.status),
+      )
+      .slice(0, 3);
+
+    await Promise.all(
+      toSync.map(async (o) => {
+        try {
+          const result = await syncOrderShipment(o);
+          if (result.order) {
+            const idx = orders.findIndex(
+              (row) => String(row._id) === String(result.order._id),
+            );
+            if (idx >= 0) orders[idx] = result.order;
+          }
+        } catch (err) {
+          console.warn("Lazy shipment sync failed for order", o._id, err.message);
+        }
+      }),
+    );
+
     res.json({ orders });
   } catch (err) {
     console.error("GET /orders/my error:", err);
     res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+// ── POST /api/orders/webhooks/pathao — Pathao parcel status callback
+router.post("/webhooks/pathao", async (req, res) => {
+  try {
+    const secret = process.env.PATHAO_WEBHOOK_SECRET;
+    if (secret) {
+      const incoming = req.headers["x-pathao-signature"] || req.headers["x-webhook-secret"];
+      if (incoming !== secret) {
+        return res.status(401).json({ error: "Invalid webhook signature." });
+      }
+    }
+
+    const payload = req.body || {};
+    const consignmentId =
+      payload.consignment_id ||
+      payload.consignmentId ||
+      payload.tracking_id ||
+      payload.trackingId;
+    const courierStatus =
+      payload.order_status ||
+      payload.order_status_slug ||
+      payload.status ||
+      null;
+
+    if (!consignmentId) {
+      return res.status(400).json({ error: "consignment_id is required." });
+    }
+
+    const order = await Order.findOne({ "shipment.trackingId": String(consignmentId) });
+    if (!order) {
+      return res.status(404).json({ error: "Order not found for consignment." });
+    }
+
+    await syncOrderShipment(order, { force: true });
+    if (courierStatus) {
+      order.shipment.courierStatus = String(courierStatus);
+      await order.save();
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /orders/webhooks/pathao error:", err);
+    res.status(500).json({ error: "Webhook processing failed." });
   }
 });
 

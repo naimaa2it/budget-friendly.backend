@@ -15,6 +15,13 @@ import BlogCategory from '../models/BlogCategory.js';
 import Order from '../models/Order.js';
 import sharp from 'sharp';
 import categoryRoutes from './category.js';
+import { COURIER_IDS, defaultTrackingUrl } from '../lib/couriers/constants.js';
+import { getCourierSyncConfig, isCourierSyncConfigured } from '../lib/couriers/syncConfig.js';
+import {
+  appendAdminTrackingEvent,
+  appendManualTrackingEvent,
+  syncOrderShipment,
+} from '../lib/shipmentTracking.js';
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
@@ -2185,9 +2192,16 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
 // GET /api/admin/orders
 router.get('/orders', requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q } = req.query;
+    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking } =
+      req.query;
     const filter = {};
-    if (status && status !== 'all') filter.status = status;
+    if (needsTracking === 'true' || needsTracking === '1') {
+      filter.status = { $in: ['confirmed', 'processing', 'shipped'] };
+      filter.$or = [
+        { 'shipment.trackingUrl': { $in: [null, ''] } },
+        { 'shipment.trackingUrl': { $exists: false } },
+      ];
+    } else if (status && status !== 'all') filter.status = status;
     if (paymentStatus && paymentStatus !== 'all') filter.paymentStatus = paymentStatus;
     if (paymentMethod && paymentMethod !== 'all') filter.paymentMethod = paymentMethod;
     if (q) {
@@ -2273,6 +2287,115 @@ router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('PUT /admin/orders/:id/payment-status error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/couriers/sync-config — which couriers support API sync (for admin UI)
+router.get('/couriers/sync-config', requireAdmin, (req, res) => {
+  res.json(getCourierSyncConfig());
+});
+
+// PUT /api/admin/orders/:id/shipment — assign courier + tracking, mark handed over
+router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
+  try {
+    const { courier, trackingId, trackingUrl, markHandedOver = true } = req.body || {};
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    if (courier && !COURIER_IDS.includes(courier)) {
+      return res.status(400).json({ error: 'Invalid courier' });
+    }
+
+    if (!order.shipment) order.shipment = { trackingEvents: [] };
+
+    if (courier !== undefined) order.shipment.courier = courier || null;
+    if (trackingId !== undefined) order.shipment.trackingId = trackingId ? String(trackingId).trim() : null;
+
+    if (trackingUrl !== undefined) {
+      order.shipment.trackingUrl = trackingUrl ? String(trackingUrl).trim() : null;
+    } else if (trackingId && order.shipment.courier) {
+      order.shipment.trackingUrl =
+        defaultTrackingUrl(order.shipment.courier, order.shipment.trackingId) ||
+        order.shipment.trackingUrl;
+    }
+
+    const hasCourierRef =
+      Boolean(order.shipment.courier && order.shipment.trackingId);
+    const hasTrackingLink = Boolean(order.shipment.trackingUrl);
+    const shouldHandOver =
+      markHandedOver &&
+      !order.shipment.handedToCourierAt &&
+      (hasCourierRef || hasTrackingLink);
+
+    if (shouldHandOver) {
+      order.shipment.handedToCourierAt = new Date();
+      appendAdminTrackingEvent(order);
+      if (['confirmed', 'processing'].includes(order.status)) {
+        order.status = 'shipped';
+      }
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    console.error('PUT /admin/orders/:id/shipment error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/orders/:id/shipment/events — manual tracking line (no courier API)
+router.post('/orders/:id/shipment/events', requireAdmin, async (req, res) => {
+  try {
+    const { status, message } = req.body || {};
+    const label = message || status;
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: 'Event message or status is required.' });
+    }
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    appendManualTrackingEvent(order, {
+      status: status ? String(status).trim() : 'update',
+      message: String(label).trim(),
+    });
+    order.updatedAt = new Date();
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    console.error('POST /admin/orders/:id/shipment/events error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/orders/:id/shipment/sync — pull latest status from courier API
+router.post('/orders/:id/shipment/sync', requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.shipment?.courier || !order.shipment?.trackingId) {
+      return res.status(400).json({ error: 'Courier and tracking ID are required.' });
+    }
+
+    if (!isCourierSyncConfigured(order.shipment.courier)) {
+      return res.status(400).json({
+        error:
+          'Courier API sync is not configured. Update order status manually or add a tracking link for the customer.',
+        code: 'courier_api_not_configured',
+      });
+    }
+
+    const result = await syncOrderShipment(order, { force: true });
+    if (!result.ok) {
+      const message =
+        result.reason === 'courier_api_not_configured'
+          ? 'Courier API sync is not configured. Update order status manually or add a tracking link for the customer.'
+          : result.reason || 'Could not sync shipment.';
+      return res.status(400).json({ error: message, code: result.reason });
+    }
+    res.json(result.order);
+  } catch (err) {
+    console.error('POST /admin/orders/:id/shipment/sync error:', err);
+    res.status(502).json({ error: err.message || 'Courier sync failed.' });
   }
 });
 
