@@ -1060,12 +1060,15 @@ router.get('/barcodes', requireAdmin, async (req, res) => {
   try {
     const { q = '', code = '', limit = 100, page = 1 } = req.query;
     const filter = {};
-    const term = String(code || q || "").trim();
-    if (term) {
+    const exactCode = normalizeBarcodeCode(code);
+    const searchTerm = String(q || "").trim();
+    if (exactCode) {
+      filter.code = exactCode;
+    } else if (searchTerm) {
       filter.$or = [
-        { code: new RegExp(term, 'i') },
-        { label: new RegExp(term, 'i') },
-        { productTitle: new RegExp(term, 'i') },
+        { code: new RegExp(searchTerm, 'i') },
+        { label: new RegExp(searchTerm, 'i') },
+        { productTitle: new RegExp(searchTerm, 'i') },
       ];
     }
     const skip = (Math.max(1, Number(page)) - 1) * Math.min(500, Number(limit) || 100);
@@ -1077,7 +1080,7 @@ router.get('/barcodes', requireAdmin, async (req, res) => {
     const normalizedItems = items.map((item) => {
       const linkedBarcode = normalizeBarcodeCode(item.product?.barcode);
       if (!item.product || linkedBarcode !== item.code) {
-        return { ...item.toObject(), product: null };
+        return { ...item.toObject(), product: null, productTitle: "" };
       }
       return item.toObject();
     });
