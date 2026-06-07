@@ -15,7 +15,6 @@ import BlogCategory from '../models/BlogCategory.js';
 import Order from '../models/Order.js';
 import Courier from '../models/Courier.js';
 import TimelinePreset from '../models/TimelinePreset.js';
-import OrderAgent from '../models/OrderAgent.js';
 import { formatOrderIdSuffix } from '../lib/orderLookup.js';
 import sharp from 'sharp';
 import categoryRoutes from './category.js';
@@ -2474,13 +2473,71 @@ router.put('/orders/:id/status', requireAdmin, async (req, res) => {
 router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
   try {
     const VALID = ['unpaid', 'cod', 'paid', 'failed', 'cancelled'];
-    const { paymentStatus } = req.body;
+    const { paymentStatus, paidAmount } = req.body;
     if (!VALID.includes(paymentStatus)) return res.status(400).json({ error: 'Invalid payment status' });
-    const order = await Order.findByIdAndUpdate(req.params.id, { paymentStatus }, { new: true });
+    const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    res.json(order);
+    order.paymentStatus = paymentStatus;
+    if (typeof paidAmount !== 'undefined') {
+      order.paidAmount = Number(paidAmount) || 0;
+    } else if (paymentStatus === 'paid') {
+      order.paidAmount = order.total || 0;
+    }
+    order.updatedAt = new Date();
+    await order.save();
+    const customerUserId = await resolveCustomerUserId(order);
+    res.json({ ...order.toObject(), customerUserId });
   } catch (err) {
     console.error('PUT /admin/orders/:id/payment-status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/orders/:id/line-items — update items, shipping, discount; recalc totals
+router.put('/orders/:id/line-items', requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const { items, shipping, discount } = req.body || {};
+
+    if (Array.isArray(items)) {
+      if (items.length === 0) {
+        return res.status(400).json({ error: 'Order must have at least one item.' });
+      }
+      order.items = items.map((item) => ({
+        productId: item.productId || null,
+        title: String(item.title || '').trim() || 'Item',
+        price: Math.max(0, Number(item.price) || 0),
+        quantity: Math.max(1, Number(item.quantity) || 1),
+        image: item.image || null,
+        color: item.color || null,
+        size: item.size || null,
+        rewardPoints: Number(item.rewardPoints) || 0,
+      }));
+      order.subtotal = order.items.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0,
+      );
+    }
+
+    if (typeof shipping !== 'undefined') {
+      order.shipping = Math.max(0, Number(shipping) || 0);
+    }
+    if (typeof discount !== 'undefined') {
+      order.discount = Math.max(0, Number(discount) || 0);
+    }
+
+    order.total = Math.max(
+      0,
+      (order.subtotal || 0) + (order.shipping || 0) - (order.discount || 0),
+    );
+    order.updatedAt = new Date();
+    await order.save();
+    const customerUserId = await resolveCustomerUserId(order);
+    res.json({ ...order.toObject(), customerUserId });
+  } catch (err) {
+    console.error('PUT /orders/:id/line-items error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2561,121 +2618,6 @@ router.get('/rewards', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Order agent management ---------------------------------------------------
-router.get('/order-agents', requireAdmin, async (req, res) => {
-  try {
-    const items = await OrderAgent.find({}).sort({ name: 1 });
-    res.json({ items });
-  } catch (err) {
-    console.error('GET /order-agents error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.post('/order-agents', requireAdmin, async (req, res) => {
-  try {
-    const { name, phone, courierName, notes, isActive } = req.body || {};
-    if (!name?.trim() || !phone?.trim()) {
-      return res.status(400).json({ error: 'Agent name and phone are required.' });
-    }
-    const agent = await OrderAgent.create({
-      name: String(name).trim(),
-      phone: String(phone).trim(),
-      courierName: courierName ? String(courierName).trim() : '',
-      notes: notes || '',
-      isActive: isActive !== false,
-    });
-    res.status(201).json({ agent });
-  } catch (err) {
-    console.error('POST /order-agents error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// GET /api/admin/order-agents/:id/profile — rider stats and assigned order history
-router.get('/order-agents/:id/profile', requireAdmin, async (req, res) => {
-  try {
-    const agent = await OrderAgent.findById(req.params.id).lean();
-    if (!agent) return res.status(404).json({ error: 'Not found' });
-
-    const orders = await Order.find({
-      'assignedAgent.agentId': agent._id,
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const stats = {
-      totalOrders: orders.length,
-      delivered: 0,
-      failed: 0,
-      cancelled: 0,
-      others: 0,
-    };
-
-    for (const order of orders) {
-      if (order.status === 'delivered') stats.delivered += 1;
-      else if (order.status === 'failed') stats.failed += 1;
-      else if (order.status === 'cancelled') stats.cancelled += 1;
-      else stats.others += 1;
-    }
-
-    const total = stats.totalOrders || 1;
-    const percentages = {
-      deliveryRate: Math.round((stats.delivered / total) * 100),
-      failureRate: Math.round((stats.failed / total) * 100),
-      cancellationRate: Math.round((stats.cancelled / total) * 100),
-      inProgressRate: Math.round((stats.others / total) * 100),
-    };
-
-    res.json({
-      agent,
-      stats,
-      percentages,
-      orders: orders.map((order) => ({
-        ...order,
-        orderId: formatOrderIdSuffix(order._id),
-      })),
-    });
-  } catch (err) {
-    console.error('GET /order-agents/:id/profile error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.put('/order-agents/:id', requireAdmin, async (req, res) => {
-  try {
-    const { name, phone, courierName, notes, isActive } = req.body || {};
-    const agent = await OrderAgent.findById(req.params.id);
-    if (!agent) return res.status(404).json({ error: 'Not found' });
-    if (typeof name !== 'undefined') agent.name = String(name).trim();
-    if (typeof phone !== 'undefined') agent.phone = String(phone).trim();
-    if (typeof courierName !== 'undefined') agent.courierName = String(courierName || '').trim();
-    if (typeof notes !== 'undefined') agent.notes = notes || '';
-    if (typeof isActive !== 'undefined') agent.isActive = !!isActive;
-    await agent.save();
-    res.json({ ok: true, agent });
-  } catch (err) {
-    console.error('PUT /order-agents/:id error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.delete('/order-agents/:id', requireAdmin, async (req, res) => {
-  try {
-    const agent = await OrderAgent.findById(req.params.id);
-    if (!agent) return res.status(404).json({ error: 'Not found' });
-    await OrderAgent.deleteOne({ _id: agent._id });
-    await Order.updateMany(
-      { 'assignedAgent.agentId': agent._id },
-      { $set: { assignedAgent: null } },
-    );
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('DELETE /order-agents/:id error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 const PICKED_STATUSES = ['accepted', 'picked', 'approved'];
 
 // PUT /api/admin/orders/:id/pick — pick toggle assigns picker + status accepted
@@ -2746,71 +2688,6 @@ router.get('/admins/:id/pick-profile', requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('GET /admins/:id/pick-profile error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// PUT /api/admin/orders/:id/agent — assign order agent to an order
-router.put('/orders/:id/agent', requireAdmin, async (req, res) => {
-  try {
-    const { agentId, name, phone, courierName, clear, reason } = req.body || {};
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    const trimmedReason = String(reason || '').trim();
-    if (!trimmedReason) {
-      return res.status(400).json({ error: 'Assignment reason is required.' });
-    }
-    const changedBy = String(req.admin?._id || 'admin');
-
-    if (clear) {
-      const previousAgent = order.assignedAgent?.name || 'unknown';
-      order.assignedAgent = null;
-      appendStatusHistory(order, {
-        previousStatus: order.status,
-        newStatus: order.status,
-        reason: `Agent removed (${previousAgent}). Reason: ${trimmedReason}`,
-        changedBy,
-      });
-    } else if (agentId) {
-      const agent = await OrderAgent.findById(agentId);
-      if (!agent) return res.status(404).json({ error: 'Agent not found' });
-      order.assignedAgent = {
-        agentId: agent._id,
-        name: agent.name,
-        phone: agent.phone,
-        courierName: agent.courierName || '',
-        assignedAt: new Date(),
-      };
-      appendStatusHistory(order, {
-        previousStatus: order.status,
-        newStatus: order.status,
-        reason: `Agent assigned: ${agent.name}. Reason: ${trimmedReason}`,
-        changedBy,
-      });
-    } else if (name && phone) {
-      const resolvedName = String(name).trim();
-      order.assignedAgent = {
-        agentId: null,
-        name: resolvedName,
-        phone: String(phone).trim(),
-        courierName: courierName ? String(courierName).trim() : '',
-        assignedAt: new Date(),
-      };
-      appendStatusHistory(order, {
-        previousStatus: order.status,
-        newStatus: order.status,
-        reason: `Agent assigned: ${resolvedName}. Reason: ${trimmedReason}`,
-        changedBy,
-      });
-    } else {
-      return res.status(400).json({ error: 'Select an agent or provide name and phone.' });
-    }
-
-    order.updatedAt = new Date();
-    await order.save();
-    res.json(order);
-  } catch (err) {
-    console.error('PUT /orders/:id/agent error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
