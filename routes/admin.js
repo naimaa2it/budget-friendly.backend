@@ -27,7 +27,7 @@ import {
   buildTrackingUrl,
   isValidCourierSlug,
 } from '../lib/courierDefaults.js';
-import { applyOrderStatusChange } from '../lib/orderStatus.js';
+import { applyOrderStatusChange, appendStatusHistory } from '../lib/orderStatus.js';
 import {
   creditOrderRewardPoints,
   POINTS_PER_TK,
@@ -2416,10 +2416,11 @@ router.put('/orders/:id/status', requireAdmin, async (req, res) => {
     const VALID = ['pending', 'accepted', 'picked', 'approved', 'rejected', 'confirmed', 'processing', 'shipped', 'delivered', 'failed', 'cancelled'];
     const { status, reason } = req.body;
     if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    if (!String(reason || '').trim()) return res.status(400).json({ error: 'Reason is required' });
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     applyOrderStatusChange(order, status, {
-      reason: reason || '',
+      reason: String(reason || '').trim(),
       changedBy: String(req.admin?._id || 'admin'),
     });
     if (status === 'delivered') {
@@ -2705,12 +2706,24 @@ router.get('/admins/:id/pick-profile', requireAdmin, async (req, res) => {
 // PUT /api/admin/orders/:id/agent — assign order agent to an order
 router.put('/orders/:id/agent', requireAdmin, async (req, res) => {
   try {
-    const { agentId, name, phone, courierName, clear } = req.body || {};
+    const { agentId, name, phone, courierName, clear, reason } = req.body || {};
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
+    const trimmedReason = String(reason || '').trim();
+    if (!trimmedReason) {
+      return res.status(400).json({ error: 'Assignment reason is required.' });
+    }
+    const changedBy = String(req.admin?._id || 'admin');
 
     if (clear) {
+      const previousAgent = order.assignedAgent?.name || 'unknown';
       order.assignedAgent = null;
+      appendStatusHistory(order, {
+        previousStatus: order.status,
+        newStatus: order.status,
+        reason: `Agent removed (${previousAgent}). Reason: ${trimmedReason}`,
+        changedBy,
+      });
     } else if (agentId) {
       const agent = await OrderAgent.findById(agentId);
       if (!agent) return res.status(404).json({ error: 'Agent not found' });
@@ -2721,14 +2734,27 @@ router.put('/orders/:id/agent', requireAdmin, async (req, res) => {
         courierName: agent.courierName || '',
         assignedAt: new Date(),
       };
+      appendStatusHistory(order, {
+        previousStatus: order.status,
+        newStatus: order.status,
+        reason: `Agent assigned: ${agent.name}. Reason: ${trimmedReason}`,
+        changedBy,
+      });
     } else if (name && phone) {
+      const resolvedName = String(name).trim();
       order.assignedAgent = {
         agentId: null,
-        name: String(name).trim(),
+        name: resolvedName,
         phone: String(phone).trim(),
         courierName: courierName ? String(courierName).trim() : '',
         assignedAt: new Date(),
       };
+      appendStatusHistory(order, {
+        previousStatus: order.status,
+        newStatus: order.status,
+        reason: `Agent assigned: ${resolvedName}. Reason: ${trimmedReason}`,
+        changedBy,
+      });
     } else {
       return res.status(400).json({ error: 'Select an agent or provide name and phone.' });
     }
@@ -2738,6 +2764,96 @@ router.put('/orders/:id/agent', requireAdmin, async (req, res) => {
     res.json(order);
   } catch (err) {
     console.error('PUT /orders/:id/agent error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/orders/:id/customer — update order customer info and sync user profile/address
+router.put('/orders/:id/customer', requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const patch = req.body || {};
+    const current = order.billingDetails?.toObject?.() || order.billingDetails || {};
+    const nextBilling = {
+      ...current,
+      name: typeof patch.name !== 'undefined' ? String(patch.name || '').trim() : current.name,
+      phone: typeof patch.phone !== 'undefined' ? String(patch.phone || '').trim() : current.phone,
+      email: typeof patch.email !== 'undefined' ? String(patch.email || '').trim().toLowerCase() : current.email,
+      city: typeof patch.city !== 'undefined' ? String(patch.city || '').trim() : current.city,
+      zone: typeof patch.zone !== 'undefined' ? String(patch.zone || '').trim() : current.zone,
+      area: typeof patch.area !== 'undefined' ? String(patch.area || '').trim() : current.area,
+      address: typeof patch.address !== 'undefined' ? String(patch.address || '').trim() : current.address,
+      note: typeof patch.note !== 'undefined' ? String(patch.note || '').trim() : current.note,
+    };
+
+    if (!nextBilling.name || !nextBilling.phone) {
+      return res.status(400).json({ error: 'Name and phone are required.' });
+    }
+
+    order.billingDetails = nextBilling;
+    order.userEmail = nextBilling.email || order.userEmail || null;
+    order.updatedAt = new Date();
+    await order.save();
+
+    const shouldSyncUser = patch.syncUser !== false;
+    if (shouldSyncUser) {
+      let user = null;
+      if (order.userId) user = await User.findById(order.userId);
+      if (!user && nextBilling.email) {
+        user = await User.findOne({ email: nextBilling.email });
+      }
+      if (!user && nextBilling.phone) {
+        user = await User.findOne({ mobile: nextBilling.phone });
+      }
+
+      if (user) {
+        if (nextBilling.email && nextBilling.email !== user.email) {
+          const duplicate = await User.findOne({ email: nextBilling.email }).select('_id').lean();
+          if (duplicate && String(duplicate._id) !== String(user._id)) {
+            return res.status(400).json({ error: 'Cannot sync email: another user already uses it.' });
+          }
+          user.email = nextBilling.email;
+        }
+        user.name = nextBilling.name;
+        user.mobile = nextBilling.phone;
+
+        const addressLine = [nextBilling.address, nextBilling.area].filter(Boolean).join(', ').trim();
+        if (user.addresses?.length) {
+          const addr = user.addresses[0];
+          addr.fullName = nextBilling.name;
+          addr.email = nextBilling.email || user.email || '';
+          addr.phone = nextBilling.phone;
+          addr.city = nextBilling.city || '';
+          addr.zone = nextBilling.zone || '';
+          addr.address = addressLine || nextBilling.address || '';
+        } else {
+          user.addresses = [
+            {
+              fullName: nextBilling.name,
+              email: nextBilling.email || user.email || '',
+              phone: nextBilling.phone,
+              city: nextBilling.city || '',
+              zone: nextBilling.zone || '',
+              address: addressLine || nextBilling.address || '',
+              type: 'Home',
+            },
+          ];
+        }
+
+        await user.save();
+        if (!order.userId) {
+          order.userId = String(user._id);
+          await order.save();
+        }
+      }
+    }
+
+    const customerUserId = await resolveCustomerUserId(order);
+    res.json({ ...order.toObject(), customerUserId });
+  } catch (err) {
+    console.error('PUT /orders/:id/customer error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
