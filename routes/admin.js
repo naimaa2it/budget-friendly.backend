@@ -3386,7 +3386,10 @@ router.post('/orders/:id/book-courier', requireAdmin, async (req, res) => {
     res.json(order);
   } catch (err) {
     console.error('POST /orders/:id/book-courier error:', err);
-    res.status(502).json({ error: err.message || 'Courier booking failed' });
+    res.status(400).json({
+      error: err.message || 'Courier booking failed',
+      code: 'courier_api_error',
+    });
   }
 });
 
