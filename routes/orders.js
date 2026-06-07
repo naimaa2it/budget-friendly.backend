@@ -14,6 +14,13 @@ import {
 } from "../lib/mailer.js";
 import { syncOrderShipment } from "../lib/shipmentTracking.js";
 import { getCourierLabelMap } from "../lib/courierDefaults.js";
+import {
+  findOrderByIdOrSuffix,
+  findOrdersByPhone,
+  formatOrderIdSuffix,
+  phoneMatchesOrder,
+  toPublicTrackOrder,
+} from "../lib/orderLookup.js";
 
 const router = express.Router();
 
@@ -981,7 +988,12 @@ router.get("/my", async (req, res) => {
       }),
     );
 
-    res.json({ orders });
+    res.json({
+      orders: orders.map((o) => {
+        const obj = o.toObject ? o.toObject() : o;
+        return { ...obj, orderId: formatOrderIdSuffix(o._id) };
+      }),
+    });
   } catch (err) {
     console.error("GET /orders/my error:", err);
     res.status(401).json({ error: "Invalid token" });
@@ -1033,56 +1045,55 @@ router.post("/webhooks/pathao", async (req, res) => {
   }
 });
 
-function normalizePhone(phone) {
-  return String(phone || "").replace(/\D/g, "");
+async function lazyConfirmCodOrder(order) {
+  if (
+    order.status === "pending" &&
+    order.paymentMethod === "cash-on-delivery" &&
+    order.confirmAfter &&
+    order.confirmAfter <= new Date()
+  ) {
+    order.status = "confirmed";
+    order.updatedAt = new Date();
+    await order.save();
+  }
 }
 
-// ── GET /api/orders/track — public order tracking lookup
+// ── GET /api/orders/track — public order tracking lookup (order ID or phone)
 router.get("/track", async (req, res) => {
   try {
-    const { orderId, phone } = req.query;
-    if (!orderId || !phone) {
-      return res.status(400).json({ error: "Order ID and phone number are required." });
+    const orderId = String(req.query.orderId || "").trim();
+    const phone = String(req.query.phone || "").trim();
+
+    if (!orderId && !phone) {
+      return res.status(400).json({ error: "Enter order ID or phone number." });
     }
 
-    const order = await Order.findById(String(orderId).trim());
-    if (!order) return res.status(404).json({ error: "Order not found." });
+    let orders = [];
 
-    const orderPhone = normalizePhone(order.billingDetails?.phone);
-    const queryPhone = normalizePhone(phone);
-    if (!orderPhone || orderPhone !== queryPhone) {
-      return res.status(403).json({ error: "Phone number does not match this order." });
-    }
-
-    if (
-      order.status === "pending" &&
-      order.paymentMethod === "cash-on-delivery" &&
-      order.confirmAfter &&
-      order.confirmAfter <= new Date()
-    ) {
-      order.status = "confirmed";
-      order.updatedAt = new Date();
-      await order.save();
+    if (orderId) {
+      const order = await findOrderByIdOrSuffix(orderId);
+      if (!order) return res.status(404).json({ error: "Order not found." });
+      if (phone && !phoneMatchesOrder(order, phone)) {
+        return res.status(403).json({ error: "Phone number does not match this order." });
+      }
+      await lazyConfirmCodOrder(order);
+      orders = [order];
+    } else {
+      orders = await findOrdersByPhone(phone);
+      if (!orders.length) {
+        return res.status(404).json({ error: "No orders found for this phone number." });
+      }
+      for (const order of orders) {
+        await lazyConfirmCodOrder(order);
+      }
     }
 
     const courierLabels = await getCourierLabelMap();
+    const publicOrders = orders.map((o) => toPublicTrackOrder(o));
 
     res.json({
-      order: {
-        _id: order._id,
-        status: order.status,
-        paymentStatus: order.paymentStatus,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt,
-        items: order.items,
-        total: order.total,
-        billingDetails: {
-          name: order.billingDetails?.name,
-          phone: order.billingDetails?.phone,
-          city: order.billingDetails?.city,
-        },
-        shipment: order.shipment,
-      },
+      orders: publicOrders,
+      order: publicOrders[0] || null,
       courierLabels,
     });
   } catch (err) {

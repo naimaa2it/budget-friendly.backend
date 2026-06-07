@@ -15,6 +15,8 @@ import BlogCategory from '../models/BlogCategory.js';
 import Order from '../models/Order.js';
 import Courier from '../models/Courier.js';
 import TimelinePreset from '../models/TimelinePreset.js';
+import OrderAgent from '../models/OrderAgent.js';
+import { formatOrderIdSuffix } from '../lib/orderLookup.js';
 import sharp from 'sharp';
 import categoryRoutes from './category.js';
 import { defaultTrackingUrl } from '../lib/couriers/constants.js';
@@ -1277,6 +1279,21 @@ function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '');
 }
 
+async function resolveCustomerUserId(order) {
+  if (order.userId) return String(order.userId);
+  const email = order.billingDetails?.email || order.userEmail;
+  if (email) {
+    const u = await User.findOne({ email: String(email).toLowerCase() }).select('_id').lean();
+    if (u) return String(u._id);
+  }
+  const phone = order.billingDetails?.phone;
+  if (phone) {
+    const u = await User.findOne({ mobile: phone }).select('_id').lean();
+    if (u) return String(u._id);
+  }
+  return null;
+}
+
 function buildCustomerOrderFilter(user) {
   const or = [{ userId: String(user._id) }];
   if (user.email) {
@@ -1342,7 +1359,10 @@ router.get('/users/:id/profile', requireAdmin, async (req, res) => {
       stats,
       percentages,
       courierStats,
-      orders,
+      orders: orders.map((order) => ({
+        ...order,
+        orderId: formatOrderIdSuffix(order._id),
+      })),
     });
   } catch (err) {
     console.error('GET /users/:id/profile error:', err);
@@ -2300,10 +2320,17 @@ router.get('/orders', requireAdmin, async (req, res) => {
       ].filter(c => Object.values(c)[0] !== null);
     }
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const [orders, total] = await Promise.all([
+    const [ordersRaw, total] = await Promise.all([
       Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
       Order.countDocuments(filter),
     ]);
+    const orders = await Promise.all(
+      ordersRaw.map(async (order) => ({
+        ...order,
+        orderId: formatOrderIdSuffix(order._id),
+        customerUserId: await resolveCustomerUserId(order),
+      })),
+    );
     // Summary counts
     const [pending, confirmed, processing, shipped, delivered, cancelled, failed] = await Promise.all([
       Order.countDocuments({ status: 'pending' }),
@@ -2355,9 +2382,13 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
       ? await Courier.findOne({ slug: order.shipment.courier }).lean()
       : null;
 
+    const customerUserId = await resolveCustomerUserId(order);
+
     res.json({
       ...order,
+      orderId: formatOrderIdSuffix(order._id),
       customerTags,
+      customerUserId,
       courierName: courierDoc?.name || order.shipment?.courier || null,
     });
   } catch (err) {
@@ -2404,6 +2435,111 @@ router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
 // GET /api/admin/couriers/sync-config — which couriers support API sync (for admin UI)
 router.get('/couriers/sync-config', requireAdmin, (req, res) => {
   res.json(getCourierSyncConfig());
+});
+
+// --- Order agent management ---------------------------------------------------
+router.get('/order-agents', requireAdmin, async (req, res) => {
+  try {
+    const items = await OrderAgent.find({}).sort({ name: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /order-agents error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/order-agents', requireAdmin, async (req, res) => {
+  try {
+    const { name, phone, courierName, notes, isActive } = req.body || {};
+    if (!name?.trim() || !phone?.trim()) {
+      return res.status(400).json({ error: 'Agent name and phone are required.' });
+    }
+    const agent = await OrderAgent.create({
+      name: String(name).trim(),
+      phone: String(phone).trim(),
+      courierName: courierName ? String(courierName).trim() : '',
+      notes: notes || '',
+      isActive: isActive !== false,
+    });
+    res.status(201).json({ agent });
+  } catch (err) {
+    console.error('POST /order-agents error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/order-agents/:id', requireAdmin, async (req, res) => {
+  try {
+    const { name, phone, courierName, notes, isActive } = req.body || {};
+    const agent = await OrderAgent.findById(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Not found' });
+    if (typeof name !== 'undefined') agent.name = String(name).trim();
+    if (typeof phone !== 'undefined') agent.phone = String(phone).trim();
+    if (typeof courierName !== 'undefined') agent.courierName = String(courierName || '').trim();
+    if (typeof notes !== 'undefined') agent.notes = notes || '';
+    if (typeof isActive !== 'undefined') agent.isActive = !!isActive;
+    await agent.save();
+    res.json({ ok: true, agent });
+  } catch (err) {
+    console.error('PUT /order-agents/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/order-agents/:id', requireAdmin, async (req, res) => {
+  try {
+    const agent = await OrderAgent.findById(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Not found' });
+    await OrderAgent.deleteOne({ _id: agent._id });
+    await Order.updateMany(
+      { 'assignedAgent.agentId': agent._id },
+      { $set: { assignedAgent: null } },
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /order-agents/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/orders/:id/agent — assign order agent to an order
+router.put('/orders/:id/agent', requireAdmin, async (req, res) => {
+  try {
+    const { agentId, name, phone, courierName, clear } = req.body || {};
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    if (clear) {
+      order.assignedAgent = null;
+    } else if (agentId) {
+      const agent = await OrderAgent.findById(agentId);
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+      order.assignedAgent = {
+        agentId: agent._id,
+        name: agent.name,
+        phone: agent.phone,
+        courierName: agent.courierName || '',
+        assignedAt: new Date(),
+      };
+    } else if (name && phone) {
+      order.assignedAgent = {
+        agentId: null,
+        name: String(name).trim(),
+        phone: String(phone).trim(),
+        courierName: courierName ? String(courierName).trim() : '',
+        assignedAt: new Date(),
+      };
+    } else {
+      return res.status(400).json({ error: 'Select an agent or provide name and phone.' });
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    console.error('PUT /orders/:id/agent error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // --- Courier management -------------------------------------------------------
