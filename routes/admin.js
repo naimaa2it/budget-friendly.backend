@@ -13,10 +13,19 @@ import Variation from '../models/Variation.js';
 import BlogPost from '../models/BlogPost.js';
 import BlogCategory from '../models/BlogCategory.js';
 import Order from '../models/Order.js';
+import Courier from '../models/Courier.js';
+import TimelinePreset from '../models/TimelinePreset.js';
 import sharp from 'sharp';
 import categoryRoutes from './category.js';
-import { COURIER_IDS, defaultTrackingUrl } from '../lib/couriers/constants.js';
+import { defaultTrackingUrl } from '../lib/couriers/constants.js';
 import { getCourierSyncConfig, isCourierSyncConfigured } from '../lib/couriers/syncConfig.js';
+import {
+  ensureDefaultCouriers,
+  ensureDefaultTimelinePresets,
+  buildTrackingUrl,
+  isValidCourierSlug,
+} from '../lib/courierDefaults.js';
+import { applyOrderStatusChange } from '../lib/orderStatus.js';
 import {
   appendAdminTrackingEvent,
   appendManualTrackingEvent,
@@ -1264,6 +1273,83 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
   }
 });
 
+function normalizePhone(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function buildCustomerOrderFilter(user) {
+  const or = [{ userId: String(user._id) }];
+  if (user.email) {
+    or.push({ userEmail: user.email });
+    or.push({ 'billingDetails.email': user.email });
+  }
+  if (user.mobile) {
+    or.push({ 'billingDetails.phone': user.mobile });
+  }
+  return { $or: or };
+}
+
+// GET /api/admin/users/:id/profile — customer analytics and order history
+router.get('/users/:id/profile', requireAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('-hashedPassword -resetToken -resetExpires')
+      .populate('tags')
+      .lean();
+    if (!user) return res.status(404).json({ error: 'Not found' });
+
+    const orders = await Order.find(buildCustomerOrderFilter(user))
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const acceptedStatuses = new Set(['confirmed', 'processing', 'shipped', 'delivered']);
+    const stats = {
+      totalOrders: orders.length,
+      acceptedOrders: 0,
+      rejectedOrders: 0,
+      cancelledOrders: 0,
+      pendingOrders: 0,
+    };
+    const courierStats = {
+      pathao: 0,
+      steadfast: 0,
+      redx: 0,
+      other: 0,
+    };
+
+    for (const order of orders) {
+      if (order.status === 'pending') stats.pendingOrders += 1;
+      else if (order.status === 'cancelled') stats.cancelledOrders += 1;
+      else if (order.status === 'failed') stats.rejectedOrders += 1;
+      else if (acceptedStatuses.has(order.status)) stats.acceptedOrders += 1;
+
+      const courier = order.shipment?.courier;
+      if (courier === 'pathao') courierStats.pathao += 1;
+      else if (courier === 'steadfast') courierStats.steadfast += 1;
+      else if (courier === 'redx') courierStats.redx += 1;
+      else if (courier) courierStats.other += 1;
+    }
+
+    const total = stats.totalOrders || 1;
+    const percentages = {
+      acceptanceRate: Math.round((stats.acceptedOrders / total) * 100),
+      cancellationRate: Math.round((stats.cancelledOrders / total) * 100),
+      rejectionRate: Math.round((stats.rejectedOrders / total) * 100),
+    };
+
+    res.json({
+      user,
+      stats,
+      percentages,
+      courierStats,
+      orders,
+    });
+  } catch (err) {
+    console.error('GET /users/:id/profile error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin forgot password - returns token (in prod send an email)
 router.post('/forgot', async (req, res) => {
   try {
@@ -2253,7 +2339,27 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).lean();
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    res.json(order);
+
+    let customerTags = [];
+    if (order.userId) {
+      const user = await User.findById(order.userId).populate('tags').lean();
+      customerTags = user?.tags || [];
+    } else if (order.billingDetails?.email || order.userEmail) {
+      const email = order.billingDetails?.email || order.userEmail;
+      const user = await User.findOne({ email }).populate('tags').lean();
+      customerTags = user?.tags || [];
+    }
+
+    await ensureDefaultCouriers();
+    const courierDoc = order.shipment?.courier
+      ? await Courier.findOne({ slug: order.shipment.courier }).lean()
+      : null;
+
+    res.json({
+      ...order,
+      customerTags,
+      courierName: courierDoc?.name || order.shipment?.courier || null,
+    });
   } catch (err) {
     console.error('GET /admin/orders/:id error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -2264,10 +2370,15 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
 router.put('/orders/:id/status', requireAdmin, async (req, res) => {
   try {
     const VALID = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'failed', 'cancelled'];
-    const { status } = req.body;
+    const { status, reason } = req.body;
     if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
+    applyOrderStatusChange(order, status, {
+      reason: reason || '',
+      changedBy: String(req.admin?._id || 'admin'),
+    });
+    await order.save();
     res.json(order);
   } catch (err) {
     console.error('PUT /admin/orders/:id/status error:', err);
@@ -2295,6 +2406,138 @@ router.get('/couriers/sync-config', requireAdmin, (req, res) => {
   res.json(getCourierSyncConfig());
 });
 
+// --- Courier management -------------------------------------------------------
+router.get('/couriers', requireAdmin, async (req, res) => {
+  try {
+    await ensureDefaultCouriers();
+    const items = await Courier.find({}).sort({ sortOrder: 1, name: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /couriers error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/couriers', requireAdmin, async (req, res) => {
+  try {
+    const { name, slug, trackingUrlTemplate, sortOrder } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Courier name is required' });
+    }
+    const resolvedSlug =
+      (slug && String(slug).trim().toLowerCase()) ||
+      String(name).trim().toLowerCase().replace(/\s+/g, '_');
+    const courier = await Courier.create({
+      name: String(name).trim(),
+      slug: resolvedSlug,
+      trackingUrlTemplate: trackingUrlTemplate || '',
+      sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 50,
+      isSystem: false,
+    });
+    res.status(201).json({ courier });
+  } catch (err) {
+    console.error('POST /couriers error:', err);
+    res.status(500).json({ error: err.code === 11000 ? 'Courier slug already exists' : 'Server error' });
+  }
+});
+
+router.put('/couriers/:id', requireAdmin, async (req, res) => {
+  try {
+    const { name, slug, trackingUrlTemplate, sortOrder } = req.body || {};
+    const courier = await Courier.findById(req.params.id);
+    if (!courier) return res.status(404).json({ error: 'Not found' });
+    if (typeof name !== 'undefined') courier.name = String(name).trim();
+    if (typeof slug !== 'undefined' && !courier.isSystem) {
+      courier.slug = String(slug).trim().toLowerCase();
+    }
+    if (typeof trackingUrlTemplate !== 'undefined') {
+      courier.trackingUrlTemplate = trackingUrlTemplate || '';
+    }
+    if (typeof sortOrder !== 'undefined') courier.sortOrder = Number(sortOrder) || 0;
+    await courier.save();
+    res.json({ ok: true, courier });
+  } catch (err) {
+    console.error('PUT /couriers/:id error:', err);
+    res.status(500).json({ error: err.code === 11000 ? 'Courier slug already exists' : 'Server error' });
+  }
+});
+
+router.delete('/couriers/:id', requireAdmin, async (req, res) => {
+  try {
+    const courier = await Courier.findById(req.params.id);
+    if (!courier) return res.status(404).json({ error: 'Not found' });
+    if (courier.isSystem) {
+      return res.status(400).json({ error: 'Built-in couriers cannot be deleted' });
+    }
+    await Courier.deleteOne({ _id: courier._id });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /couriers/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --- Timeline preset management -----------------------------------------------
+router.get('/timeline-presets', requireAdmin, async (req, res) => {
+  try {
+    await ensureDefaultTimelinePresets();
+    const items = await TimelinePreset.find({}).sort({ sortOrder: 1, label: 1 });
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /timeline-presets error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/timeline-presets', requireAdmin, async (req, res) => {
+  try {
+    const { label, statusKey, sortOrder } = req.body || {};
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: 'Preset label is required' });
+    }
+    const resolvedKey =
+      (statusKey && String(statusKey).trim().toLowerCase()) ||
+      String(label).trim().toLowerCase().replace(/\s+/g, '_');
+    const preset = await TimelinePreset.create({
+      label: String(label).trim(),
+      statusKey: resolvedKey,
+      sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 50,
+    });
+    res.status(201).json({ preset });
+  } catch (err) {
+    console.error('POST /timeline-presets error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/timeline-presets/:id', requireAdmin, async (req, res) => {
+  try {
+    const { label, statusKey, sortOrder } = req.body || {};
+    const preset = await TimelinePreset.findById(req.params.id);
+    if (!preset) return res.status(404).json({ error: 'Not found' });
+    if (typeof label !== 'undefined') preset.label = String(label).trim();
+    if (typeof statusKey !== 'undefined') preset.statusKey = String(statusKey).trim().toLowerCase();
+    if (typeof sortOrder !== 'undefined') preset.sortOrder = Number(sortOrder) || 0;
+    await preset.save();
+    res.json({ ok: true, preset });
+  } catch (err) {
+    console.error('PUT /timeline-presets/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/timeline-presets/:id', requireAdmin, async (req, res) => {
+  try {
+    const preset = await TimelinePreset.findById(req.params.id);
+    if (!preset) return res.status(404).json({ error: 'Not found' });
+    await TimelinePreset.deleteOne({ _id: preset._id });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /timeline-presets/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // PUT /api/admin/orders/:id/shipment — assign courier + tracking, mark handed over
 router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
   try {
@@ -2302,7 +2545,7 @@ router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    if (courier && !COURIER_IDS.includes(courier)) {
+    if (courier && !(await isValidCourierSlug(courier))) {
       return res.status(400).json({ error: 'Invalid courier' });
     }
 
@@ -2314,7 +2557,10 @@ router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
     if (trackingUrl !== undefined) {
       order.shipment.trackingUrl = trackingUrl ? String(trackingUrl).trim() : null;
     } else if (trackingId && order.shipment.courier) {
+      await ensureDefaultCouriers();
+      const courierDoc = await Courier.findOne({ slug: order.shipment.courier }).lean();
       order.shipment.trackingUrl =
+        buildTrackingUrl(courierDoc?.trackingUrlTemplate, order.shipment.trackingId) ||
         defaultTrackingUrl(order.shipment.courier, order.shipment.trackingId) ||
         order.shipment.trackingUrl;
     }
@@ -2354,15 +2600,70 @@ router.post('/orders/:id/shipment/events', requireAdmin, async (req, res) => {
     }
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    appendManualTrackingEvent(order, {
-      status: status ? String(status).trim() : 'update',
-      message: String(label).trim(),
-    });
+    const normalizedStatus = status ? String(status).trim().toLowerCase() : '';
+    const isDelivered =
+      normalizedStatus === 'delivered' || /^delivered$/i.test(String(label).trim());
+
+    if (isDelivered) {
+      applyOrderStatusChange(order, 'delivered', {
+        reason: String(label).trim(),
+        changedBy: String(req.admin?._id || 'admin'),
+      });
+    } else {
+      appendManualTrackingEvent(order, {
+        status: normalizedStatus || 'update',
+        message: String(label).trim(),
+      });
+    }
     order.updatedAt = new Date();
     await order.save();
     res.json(order);
   } catch (err) {
     console.error('POST /admin/orders/:id/shipment/events error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/orders/:id/shipment/events/:index — edit manual tracking event
+router.put('/orders/:id/shipment/events/:index', requireAdmin, async (req, res) => {
+  try {
+    const index = parseInt(req.params.index, 10);
+    const { status, message } = req.body || {};
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const events = order.shipment?.trackingEvents || [];
+    if (index < 0 || index >= events.length) {
+      return res.status(404).json({ error: 'Tracking event not found' });
+    }
+    if (status) events[index].status = String(status).trim();
+    if (message) events[index].message = String(message).trim();
+    order.shipment.trackingEvents = events;
+    order.updatedAt = new Date();
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    console.error('PUT /orders/:id/shipment/events/:index error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/orders/:id/shipment/events/:index — remove tracking event
+router.delete('/orders/:id/shipment/events/:index', requireAdmin, async (req, res) => {
+  try {
+    const index = parseInt(req.params.index, 10);
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const events = order.shipment?.trackingEvents || [];
+    if (index < 0 || index >= events.length) {
+      return res.status(404).json({ error: 'Tracking event not found' });
+    }
+    events.splice(index, 1);
+    order.shipment.trackingEvents = events;
+    order.updatedAt = new Date();
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    console.error('DELETE /orders/:id/shipment/events/:index error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

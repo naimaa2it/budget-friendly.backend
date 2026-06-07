@@ -33,10 +33,17 @@ const TrackingEventSchema = new mongoose.Schema({
   source: { type: String, enum: ['admin', 'courier', 'system'], default: 'courier' },
 }, { _id: false });
 
+const StatusHistorySchema = new mongoose.Schema({
+  previousStatus: { type: String, default: null },
+  newStatus: { type: String, required: true },
+  reason: { type: String, default: '' },
+  changedBy: { type: String, default: 'system' },
+  at: { type: Date, default: Date.now },
+}, { _id: false });
+
 const ShipmentSchema = new mongoose.Schema({
   courier: {
     type: String,
-    enum: ['pathao', 'steadfast', 'redx', 'sundarban', 'other'],
     default: null,
   },
   trackingId: { type: String, default: null },
@@ -80,6 +87,7 @@ const OrderSchema = new mongoose.Schema({
   // COD orders auto-confirm 30 min after creation; cancellable before this time
   confirmAfter: { type: Date, default: null },
   shipment: { type: ShipmentSchema, default: () => ({ trackingEvents: [] }) },
+  statusHistory: { type: [StatusHistorySchema], default: [] },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

@@ -13,6 +13,7 @@ import {
   sendPaymentConfirmedEmail,
 } from "../lib/mailer.js";
 import { syncOrderShipment } from "../lib/shipmentTracking.js";
+import { getCourierLabelMap } from "../lib/courierDefaults.js";
 
 const router = express.Router();
 
@@ -1029,6 +1030,64 @@ router.post("/webhooks/pathao", async (req, res) => {
   } catch (err) {
     console.error("POST /orders/webhooks/pathao error:", err);
     res.status(500).json({ error: "Webhook processing failed." });
+  }
+});
+
+function normalizePhone(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+// ── GET /api/orders/track — public order tracking lookup
+router.get("/track", async (req, res) => {
+  try {
+    const { orderId, phone } = req.query;
+    if (!orderId || !phone) {
+      return res.status(400).json({ error: "Order ID and phone number are required." });
+    }
+
+    const order = await Order.findById(String(orderId).trim());
+    if (!order) return res.status(404).json({ error: "Order not found." });
+
+    const orderPhone = normalizePhone(order.billingDetails?.phone);
+    const queryPhone = normalizePhone(phone);
+    if (!orderPhone || orderPhone !== queryPhone) {
+      return res.status(403).json({ error: "Phone number does not match this order." });
+    }
+
+    if (
+      order.status === "pending" &&
+      order.paymentMethod === "cash-on-delivery" &&
+      order.confirmAfter &&
+      order.confirmAfter <= new Date()
+    ) {
+      order.status = "confirmed";
+      order.updatedAt = new Date();
+      await order.save();
+    }
+
+    const courierLabels = await getCourierLabelMap();
+
+    res.json({
+      order: {
+        _id: order._id,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        items: order.items,
+        total: order.total,
+        billingDetails: {
+          name: order.billingDetails?.name,
+          phone: order.billingDetails?.phone,
+          city: order.billingDetails?.city,
+        },
+        shipment: order.shipment,
+      },
+      courierLabels,
+    });
+  } catch (err) {
+    console.error("GET /orders/track error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
