@@ -28,6 +28,8 @@ import {
   isValidCourierSlug,
 } from '../lib/courierDefaults.js';
 import { applyOrderStatusChange, appendStatusHistory } from '../lib/orderStatus.js';
+import { computeCustomerAnalytics, summarizeOrdersForList } from '../lib/customerAnalytics.js';
+import { fetchLifetimeCourierStats } from '../lib/courierFraudCheck.js';
 import {
   creditOrderRewardPoints,
   POINTS_PER_TK,
@@ -1227,10 +1229,37 @@ router.delete('/barcodes/:id', requireAdmin, async (req, res) => {
 // --- User management -------------------------------------------------
 router.get('/users', requireAdmin, async (req, res) => {
   try {
-    const { q = '', limit = 200 } = req.query;
+    const { q = '', limit = 200, includeStats } = req.query;
     const filter = {};
-    if (q) filter.$or = [ { email: new RegExp(q, 'i') }, { name: new RegExp(q, 'i') } ];
-    const items = await User.find(filter).select('-hashedPassword -resetToken -resetExpires').populate('tags').sort({ createdAt: -1 }).limit(Number(limit));
+    if (q) {
+      filter.$or = [
+        { email: new RegExp(q, 'i') },
+        { name: new RegExp(q, 'i') },
+        { mobile: new RegExp(q, 'i') },
+      ];
+    }
+    const users = await User.find(filter)
+      .select('-hashedPassword -resetToken -resetExpires')
+      .populate('tags')
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .lean();
+
+    let items = users;
+    if (includeStats === '1' || includeStats === 'true') {
+      items = await Promise.all(
+        users.map(async (user) => {
+          const orders = await Order.find(buildCustomerOrderFilter(user))
+            .select('status shipment.courier')
+            .lean();
+          return {
+            ...user,
+            orderSummary: summarizeOrdersForList(orders),
+          };
+        }),
+      );
+    }
+
     res.json({ items });
   } catch (err) {
     console.error('GET /users error:', err);
@@ -1313,6 +1342,20 @@ function buildCustomerOrderFilter(user) {
   return { $or: or };
 }
 
+// GET /api/admin/phones/:phone/lifetime-stats — cross-platform courier fraud check by mobile
+router.get('/phones/:phone/lifetime-stats', requireAdmin, async (req, res) => {
+  try {
+    const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    const lifetime = await fetchLifetimeCourierStats(req.params.phone, {
+      skipCache: refresh,
+    });
+    res.json(lifetime);
+  } catch (err) {
+    console.error('GET /phones/:phone/lifetime-stats error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/admin/users/:id/profile — customer analytics and order history
 router.get('/users/:id/profile', requireAdmin, async (req, res) => {
   try {
@@ -1326,46 +1369,29 @@ router.get('/users/:id/profile', requireAdmin, async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const acceptedStatuses = new Set(['confirmed', 'processing', 'shipped', 'delivered']);
-    const stats = {
-      totalOrders: orders.length,
-      acceptedOrders: 0,
-      rejectedOrders: 0,
-      cancelledOrders: 0,
-      pendingOrders: 0,
-    };
-    const courierStats = {
-      pathao: 0,
-      steadfast: 0,
-      redx: 0,
-      other: 0,
-    };
+    const analytics = computeCustomerAnalytics(orders);
+    const includeLifetime =
+      req.query.lifetime === '1' || req.query.lifetime === 'true';
 
-    for (const order of orders) {
-      if (order.status === 'pending') stats.pendingOrders += 1;
-      else if (order.status === 'cancelled') stats.cancelledOrders += 1;
-      else if (order.status === 'failed') stats.rejectedOrders += 1;
-      else if (acceptedStatuses.has(order.status)) stats.acceptedOrders += 1;
-
-      const courier = order.shipment?.courier;
-      if (courier === 'pathao') courierStats.pathao += 1;
-      else if (courier === 'steadfast') courierStats.steadfast += 1;
-      else if (courier === 'redx') courierStats.redx += 1;
-      else if (courier) courierStats.other += 1;
+    let lifetime = null;
+    if (includeLifetime && user.mobile) {
+      const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+      lifetime = await fetchLifetimeCourierStats(user.mobile, { skipCache: refresh });
     }
-
-    const total = stats.totalOrders || 1;
-    const percentages = {
-      acceptanceRate: Math.round((stats.acceptedOrders / total) * 100),
-      cancellationRate: Math.round((stats.cancelledOrders / total) * 100),
-      rejectionRate: Math.round((stats.rejectedOrders / total) * 100),
-    };
 
     res.json({
       user,
-      stats,
-      percentages,
-      courierStats,
+      yourhaat: {
+        stats: analytics.stats,
+        percentages: analytics.percentages,
+        courierBreakdown: analytics.courierBreakdown,
+        risk: analytics.risk,
+      },
+      stats: analytics.stats,
+      percentages: analytics.percentages,
+      courierBreakdown: analytics.courierBreakdown,
+      risk: analytics.risk,
+      lifetime,
       orders: orders.map((order) => ({
         ...order,
         orderId: formatOrderIdSuffix(order._id),
