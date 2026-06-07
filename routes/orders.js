@@ -16,9 +16,7 @@ import { syncOrderShipment } from "../lib/shipmentTracking.js";
 import { getCourierLabelMap } from "../lib/courierDefaults.js";
 import {
   findOrderByIdOrSuffix,
-  findOrdersByPhone,
   formatOrderIdSuffix,
-  phoneMatchesOrder,
   toPublicTrackOrder,
 } from "../lib/orderLookup.js";
 
@@ -1058,42 +1056,25 @@ async function lazyConfirmCodOrder(order) {
   }
 }
 
-// ── GET /api/orders/track — public order tracking lookup (order ID or phone)
+// ── GET /api/orders/track — public order tracking lookup (order ID only)
 router.get("/track", async (req, res) => {
   try {
-    const orderId = String(req.query.orderId || "").trim();
-    const phone = String(req.query.phone || "").trim();
+    const orderId = String(req.query.orderId || "").trim().replace(/^#/, "");
 
-    if (!orderId && !phone) {
-      return res.status(400).json({ error: "Enter order ID or phone number." });
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID is required." });
     }
 
-    let orders = [];
+    const order = await findOrderByIdOrSuffix(orderId);
+    if (!order) return res.status(404).json({ error: "Order not found." });
 
-    if (orderId) {
-      const order = await findOrderByIdOrSuffix(orderId);
-      if (!order) return res.status(404).json({ error: "Order not found." });
-      if (phone && !phoneMatchesOrder(order, phone)) {
-        return res.status(403).json({ error: "Phone number does not match this order." });
-      }
-      await lazyConfirmCodOrder(order);
-      orders = [order];
-    } else {
-      orders = await findOrdersByPhone(phone);
-      if (!orders.length) {
-        return res.status(404).json({ error: "No orders found for this phone number." });
-      }
-      for (const order of orders) {
-        await lazyConfirmCodOrder(order);
-      }
-    }
+    await lazyConfirmCodOrder(order);
 
     const courierLabels = await getCourierLabelMap();
-    const publicOrders = orders.map((o) => toPublicTrackOrder(o));
+    const publicOrder = toPublicTrackOrder(order);
 
     res.json({
-      orders: publicOrders,
-      order: publicOrders[0] || null,
+      order: publicOrder,
       courierLabels,
     });
   } catch (err) {

@@ -2468,6 +2468,56 @@ router.post('/order-agents', requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/order-agents/:id/profile — rider stats and assigned order history
+router.get('/order-agents/:id/profile', requireAdmin, async (req, res) => {
+  try {
+    const agent = await OrderAgent.findById(req.params.id).lean();
+    if (!agent) return res.status(404).json({ error: 'Not found' });
+
+    const orders = await Order.find({
+      'assignedAgent.agentId': agent._id,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const stats = {
+      totalOrders: orders.length,
+      delivered: 0,
+      failed: 0,
+      cancelled: 0,
+      others: 0,
+    };
+
+    for (const order of orders) {
+      if (order.status === 'delivered') stats.delivered += 1;
+      else if (order.status === 'failed') stats.failed += 1;
+      else if (order.status === 'cancelled') stats.cancelled += 1;
+      else stats.others += 1;
+    }
+
+    const total = stats.totalOrders || 1;
+    const percentages = {
+      deliveryRate: Math.round((stats.delivered / total) * 100),
+      failureRate: Math.round((stats.failed / total) * 100),
+      cancellationRate: Math.round((stats.cancelled / total) * 100),
+      inProgressRate: Math.round((stats.others / total) * 100),
+    };
+
+    res.json({
+      agent,
+      stats,
+      percentages,
+      orders: orders.map((order) => ({
+        ...order,
+        orderId: formatOrderIdSuffix(order._id),
+      })),
+    });
+  } catch (err) {
+    console.error('GET /order-agents/:id/profile error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.put('/order-agents/:id', requireAdmin, async (req, res) => {
   try {
     const { name, phone, courierName, notes, isActive } = req.body || {};
