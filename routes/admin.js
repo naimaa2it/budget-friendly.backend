@@ -2314,7 +2314,11 @@ router.get('/orders', requireAdmin, async (req, res) => {
         { 'shipment.trackingUrl': { $in: [null, ''] } },
         { 'shipment.trackingUrl': { $exists: false } },
       ];
-    } else if (status && status !== 'all') filter.status = status;
+    } else if (status && status !== 'all') {
+      filter.status = status === 'accepted'
+        ? { $in: ['accepted', 'picked', 'approved'] }
+        : status;
+    }
     if (paymentStatus && paymentStatus !== 'all') filter.paymentStatus = paymentStatus;
     if (paymentMethod && paymentMethod !== 'all') filter.paymentMethod = paymentMethod;
     if (q) {
@@ -2339,8 +2343,10 @@ router.get('/orders', requireAdmin, async (req, res) => {
       })),
     );
     // Summary counts
-    const [pending, confirmed, processing, shipped, delivered, cancelled, failed] = await Promise.all([
+    const [pending, accepted, rejected, confirmed, processing, shipped, delivered, cancelled, failed] = await Promise.all([
       Order.countDocuments({ status: 'pending' }),
+      Order.countDocuments({ status: { $in: ['accepted', 'picked', 'approved'] } }),
+      Order.countDocuments({ status: 'rejected' }),
       Order.countDocuments({ status: 'confirmed' }),
       Order.countDocuments({ status: 'processing' }),
       Order.countDocuments({ status: 'shipped' }),
@@ -2358,7 +2364,7 @@ router.get('/orders', requireAdmin, async (req, res) => {
       pages: Math.ceil(total / parseInt(limit)),
       stats: {
         all: total,
-        pending, confirmed, processing, shipped, delivered, cancelled, failed,
+        pending, accepted, rejected, confirmed, processing, shipped, delivered, cancelled, failed,
         revenue: revenueAgg[0]?.total || 0,
       },
     });
@@ -2407,7 +2413,7 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
 // PUT /api/admin/orders/:id/status
 router.put('/orders/:id/status', requireAdmin, async (req, res) => {
   try {
-    const VALID = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'failed', 'cancelled'];
+    const VALID = ['pending', 'accepted', 'picked', 'approved', 'rejected', 'confirmed', 'processing', 'shipped', 'delivered', 'failed', 'cancelled'];
     const { status, reason } = req.body;
     if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
     const order = await Order.findById(req.params.id);
@@ -2622,6 +2628,80 @@ router.delete('/order-agents/:id', requireAdmin, async (req, res) => {
   }
 });
 
+const PICKED_STATUSES = ['accepted', 'picked', 'approved'];
+
+// PUT /api/admin/orders/:id/pick — pick toggle assigns picker + status accepted
+router.put('/orders/:id/pick', requireAdmin, async (req, res) => {
+  try {
+    const { pick } = req.body || {};
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const adminName = req.admin?.name || 'admin';
+    if (pick) {
+      if (order.pickedBy?.adminId && PICKED_STATUSES.includes(order.status)) {
+        if (order.pickedBy.adminId.toString() !== req.admin._id.toString()) {
+          return res.status(400).json({ error: `Already picked by ${order.pickedBy.name}` });
+        }
+      } else {
+        order.pickedBy = {
+          adminId: req.admin._id,
+          name: adminName,
+          pickedAt: new Date(),
+        };
+        applyOrderStatusChange(order, 'accepted', { changedBy: adminName });
+      }
+    } else {
+      if (
+        order.pickedBy?.adminId &&
+        order.pickedBy.adminId.toString() !== req.admin._id.toString() &&
+        req.admin.role !== 'admin'
+      ) {
+        return res.status(403).json({ error: 'Only the picker or an admin can unpick' });
+      }
+      order.pickedBy = null;
+      if (PICKED_STATUSES.includes(order.status)) {
+        applyOrderStatusChange(order, 'pending', { reason: 'Unpicked', changedBy: adminName });
+      }
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+    res.json({ ...order.toObject(), orderId: formatOrderIdSuffix(order._id) });
+  } catch (err) {
+    console.error('PUT /orders/:id/pick error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/admins/:id/pick-profile — orders picked by this authorized person
+router.get('/admins/:id/pick-profile', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const person = await Admin.findById(req.params.id).select('-hashedPassword');
+    if (!person) return res.status(404).json({ error: 'Not found' });
+
+    const ordersRaw = await Order.find({ 'pickedBy.adminId': person._id })
+      .sort({ 'pickedBy.pickedAt': -1, createdAt: -1 })
+      .limit(200)
+      .lean();
+
+    const orders = ordersRaw.map((o) => ({
+      ...o,
+      orderId: formatOrderIdSuffix(o._id),
+    }));
+
+    res.json({
+      person,
+      orders,
+      stats: { total: orders.length },
+    });
+  } catch (err) {
+    console.error('GET /admins/:id/pick-profile error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // PUT /api/admin/orders/:id/agent — assign order agent to an order
 router.put('/orders/:id/agent', requireAdmin, async (req, res) => {
   try {
@@ -2722,9 +2802,6 @@ router.delete('/couriers/:id', requireAdmin, async (req, res) => {
   try {
     const courier = await Courier.findById(req.params.id);
     if (!courier) return res.status(404).json({ error: 'Not found' });
-    if (courier.isSystem) {
-      return res.status(400).json({ error: 'Built-in couriers cannot be deleted' });
-    }
     await Courier.deleteOne({ _id: courier._id });
     res.json({ ok: true });
   } catch (err) {
@@ -2736,7 +2813,6 @@ router.delete('/couriers/:id', requireAdmin, async (req, res) => {
 // --- Timeline preset management -----------------------------------------------
 router.get('/timeline-presets', requireAdmin, async (req, res) => {
   try {
-    await ensureDefaultTimelinePresets();
     const items = await TimelinePreset.find({}).sort({ sortOrder: 1, label: 1 });
     res.json({ items });
   } catch (err) {

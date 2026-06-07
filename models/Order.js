@@ -76,6 +76,49 @@ const AssignedAgentSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const PickedBySchema = new mongoose.Schema(
+  {
+    adminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
+    name: { type: String, default: null },
+    pickedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+const FollowUpPersonSchema = new mongoose.Schema(
+  {
+    adminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
+    name: { type: String, default: null },
+    email: { type: String, default: null },
+    assignedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+const FollowUpHistorySchema = new mongoose.Schema(
+  {
+    action: {
+      type: String,
+      enum: ["assigned", "called", "accepted", "rejected"],
+      required: true,
+    },
+    reason: { type: String, default: "" },
+    notes: { type: String, default: "" },
+    byAdminId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    byName: { type: String, default: "" },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const ShipmentSchema = new mongoose.Schema(
   {
     courier: {
@@ -113,6 +156,10 @@ const OrderSchema = new mongoose.Schema({
     type: String,
     enum: [
       "pending",
+      "accepted",
+      "picked",
+      "approved",
+      "rejected",
       "confirmed",
       "processing",
       "shipped",
@@ -134,6 +181,14 @@ const OrderSchema = new mongoose.Schema({
   confirmAfter: { type: Date, default: null },
   shipment: { type: ShipmentSchema, default: () => ({ trackingEvents: [] }) },
   assignedAgent: { type: AssignedAgentSchema, default: null },
+  pickedBy: { type: PickedBySchema, default: null },
+  followUp: { type: FollowUpPersonSchema, default: null },
+  followUpStatus: {
+    type: String,
+    enum: ["unassigned", "assigned", "called", "accepted", "rejected"],
+    default: "unassigned",
+  },
+  followUpHistory: { type: [FollowUpHistorySchema], default: [] },
   rewardPointsEarned: { type: Number, default: 0 },
   rewardPointsRedeemed: { type: Number, default: 0 },
   rewardPointsDiscount: { type: Number, default: 0 },

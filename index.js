@@ -18,6 +18,7 @@ import userRoutes from './routes/user.js';
 import orderRoutes from './routes/orders.js';
 import couponRoutes from './routes/coupons.js';
 import { syncActiveShipments } from './lib/shipmentTracking.js';
+import { seedDefaultsIfEmpty } from './lib/courierDefaults.js';
 
 const app = express();
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
@@ -74,12 +75,14 @@ async function connectMongo() {
   try {
     await mongoose.connect(MONGODB_URI);
     console.log('MongoDB connected');
+    await seedDefaultsIfEmpty();
   } catch (err) {
     const isSrvLookupFailure = err?.syscall === 'querySrv' || err?.code === 'ECONNREFUSED';
     if (isSrvLookupFailure && MONGODB_URI_DIRECT) {
       console.warn('MongoDB SRV lookup failed; trying MONGODB_URI_DIRECT fallback...');
       await mongoose.connect(MONGODB_URI_DIRECT);
       console.log('MongoDB connected (direct URI fallback)');
+      await seedDefaultsIfEmpty();
       return;
     }
     console.error('MongoDB connection error', err);
