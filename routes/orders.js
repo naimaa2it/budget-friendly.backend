@@ -16,6 +16,8 @@ import { syncOrderShipment } from "../lib/shipmentTracking.js";
 import { getCourierLabelMap } from "../lib/courierDefaults.js";
 import {
   findOrderByIdOrSuffix,
+  findOrderByTrackingId,
+  findOrderByTrackingUrl,
   formatOrderIdSuffix,
   toPublicTrackOrder,
 } from "../lib/orderLookup.js";
@@ -1200,16 +1202,28 @@ async function lazyConfirmCodOrder(order) {
   }
 }
 
-// ── GET /api/orders/track — public order tracking lookup (order ID only)
+// ── GET /api/orders/track — public lookup by order ID, tracking ID, or tracking URL
 router.get("/track", async (req, res) => {
   try {
     const orderId = String(req.query.orderId || "").trim().replace(/^#/, "");
+    const trackingId = String(req.query.trackingId || "").trim();
+    const trackingUrl = String(req.query.trackingUrl || "").trim();
 
-    if (!orderId) {
-      return res.status(400).json({ error: "Order ID is required." });
+    if (!orderId && !trackingId && !trackingUrl) {
+      return res.status(400).json({
+        error: "Order ID, tracking ID, or tracking URL is required.",
+      });
     }
 
-    let order = await findOrderByIdOrSuffix(orderId);
+    let order = null;
+    if (orderId) {
+      order = await findOrderByIdOrSuffix(orderId);
+    } else if (trackingId) {
+      order = await findOrderByTrackingId(trackingId);
+    } else if (trackingUrl) {
+      order = await findOrderByTrackingUrl(trackingUrl);
+    }
+
     if (!order) {
       return res.status(404).json({
         error: "Order not found.",
