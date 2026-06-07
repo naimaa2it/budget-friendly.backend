@@ -1066,7 +1066,12 @@ router.get("/track", async (req, res) => {
     }
 
     const order = await findOrderByIdOrSuffix(orderId);
-    if (!order) return res.status(404).json({ error: "Order not found." });
+    if (!order) {
+      return res.status(404).json({
+        error: "Order not found.",
+        code: "order_not_found",
+      });
+    }
 
     await lazyConfirmCodOrder(order);
 
