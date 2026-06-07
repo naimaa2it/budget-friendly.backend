@@ -39,6 +39,7 @@ const UserSchema = new mongoose.Schema({
       ref: "CustomerTag",
     },
   ],
+  rewardPointsBalance: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
 });
 

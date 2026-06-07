@@ -19,6 +19,15 @@ import {
   formatOrderIdSuffix,
   toPublicTrackOrder,
 } from "../lib/orderLookup.js";
+import {
+  POINTS_PER_TK,
+  calcItemsRewardPoints,
+  calcLineRewardPoints,
+  deductUserRewardPoints,
+  refundUserRewardPoints,
+  creditOrderRewardPoints,
+  resolveRedeemablePoints,
+} from "../lib/rewards.js";
 
 const router = express.Router();
 
@@ -162,6 +171,7 @@ const resolveAndQuote = async (
   couponCodes,
   resolvedUserId,
   city,
+  pointsToRedeem = 0,
 ) => {
   const productIds = clientItems.map((i) => i.productId).filter(Boolean);
   const dbProducts = await Product.find({ _id: { $in: productIds } }).lean();
@@ -234,6 +244,7 @@ const resolveAndQuote = async (
       image: prod.images?.[0]?.url || null,
       color: ci.color || null,
       size: ci.size || null,
+      rewardPoints: Math.max(0, Number(prod.rewardPoints) || 0),
     });
   }
 
@@ -331,7 +342,30 @@ const resolveAndQuote = async (
 
   const shipping = couponGivesFreeShip ? 0 : baseShipping;
   const discount = totalCouponDiscount;
-  const total = Math.max(0, subtotal + shipping - discount);
+  const prePointsTotal = Math.max(0, subtotal + shipping - discount);
+  const rewardPointsEarned = calcItemsRewardPoints(items);
+
+  let availablePoints = 0;
+  let pointsRedeemed = 0;
+  let pointsDiscount = 0;
+
+  if (resolvedUserId) {
+    const userDoc = await User.findById(resolvedUserId)
+      .select("rewardPointsBalance")
+      .lean();
+    availablePoints = userDoc?.rewardPointsBalance || 0;
+    if (pointsToRedeem > 0) {
+      const redeem = resolveRedeemablePoints(
+        pointsToRedeem,
+        availablePoints,
+        prePointsTotal,
+      );
+      pointsRedeemed = redeem.pointsRedeemed;
+      pointsDiscount = redeem.pointsDiscount;
+    }
+  }
+
+  const total = Math.max(0, prePointsTotal - pointsDiscount);
 
   // Legacy fields for backwards compatibility (single coupon)
   const appliedCouponCode =
@@ -354,6 +388,11 @@ const resolveAndQuote = async (
     appliedCoupons,
     couponErrors,
     insideDhaka: isDhaka(city),
+    rewardPointsEarned,
+    availablePoints,
+    pointsRedeemed,
+    pointsDiscount,
+    pointsPerTk: POINTS_PER_TK,
   };
 };
 
@@ -462,7 +501,13 @@ const resolveVariantPrice = (product, color, size) => {
 // contents change or a coupon is applied, and displays ONLY these server values.
 router.post("/quote", async (req, res) => {
   try {
-    const { items: clientItems, couponCode, couponCodes, city } = req.body;
+    const {
+      items: clientItems,
+      couponCode,
+      couponCodes,
+      city,
+      pointsToRedeem,
+    } = req.body;
     if (!Array.isArray(clientItems) || !clientItems.length) {
       return res.status(400).json({ error: "No items provided." });
     }
@@ -474,6 +519,7 @@ router.post("/quote", async (req, res) => {
       codes,
       resolvedUserId,
       city || null,
+      pointsToRedeem || 0,
     );
     res.json(quote);
   } catch (err) {
@@ -493,6 +539,7 @@ router.post("/", async (req, res) => {
       paymentMethod,
       couponCode,
       couponCodes,
+      pointsToRedeem,
     } = req.body;
 
     if (
@@ -520,6 +567,7 @@ router.post("/", async (req, res) => {
         codes,
         resolvedUserId,
         orderCity,
+        pointsToRedeem || 0,
       );
     } catch (err) {
       return res.status(err.status || 400).json({ error: err.message });
@@ -533,7 +581,14 @@ router.post("/", async (req, res) => {
       total,
       appliedCouponCode,
       appliedCoupons,
+      rewardPointsEarned,
+      pointsRedeemed,
+      pointsDiscount,
     } = quote;
+
+    if (pointsRedeemed > 0 && !resolvedUserId) {
+      return res.status(400).json({ error: "Login required to use reward points." });
+    }
 
     const order = new Order({
       userId: resolvedUserId,
@@ -551,6 +606,9 @@ router.post("/", async (req, res) => {
           code: c.code,
           discountValue: c.discountValue,
         })) || [],
+      rewardPointsEarned: rewardPointsEarned || 0,
+      rewardPointsRedeemed: pointsRedeemed || 0,
+      rewardPointsDiscount: pointsDiscount || 0,
       status: "pending",
       paymentStatus: paymentMethod === "cash-on-delivery" ? "cod" : "unpaid",
       // COD orders auto-confirm 1 hour after placement; cancellable before this time
@@ -561,6 +619,10 @@ router.post("/", async (req, res) => {
     });
 
     await order.save();
+
+    if (resolvedUserId && pointsRedeemed > 0) {
+      await deductUserRewardPoints(resolvedUserId, pointsRedeemed);
+    }
 
     // Track coupon usage
     if (resolvedUserId && appliedCoupons?.length > 0) {
@@ -1148,6 +1210,10 @@ router.patch("/:id/cancel", async (req, res) => {
     order.paymentStatus = "cancelled";
     order.updatedAt = new Date();
     await order.save();
+
+    if (order.userId && order.rewardPointsRedeemed > 0) {
+      await refundUserRewardPoints(order.userId, order.rewardPointsRedeemed);
+    }
 
     res.json({ ok: true, order });
   } catch (err) {

@@ -29,6 +29,13 @@ import {
 } from '../lib/courierDefaults.js';
 import { applyOrderStatusChange } from '../lib/orderStatus.js';
 import {
+  creditOrderRewardPoints,
+  POINTS_PER_TK,
+  pointsToTk,
+  enrichOrderItemsWithRewardPoints,
+  calcItemsRewardPoints,
+} from '../lib/rewards.js';
+import {
   appendAdminTrackingEvent,
   appendManualTrackingEvent,
   syncOrderShipment,
@@ -2409,6 +2416,9 @@ router.put('/orders/:id/status', requireAdmin, async (req, res) => {
       reason: reason || '',
       changedBy: String(req.admin?._id || 'admin'),
     });
+    if (status === 'delivered') {
+      await creditOrderRewardPoints(order);
+    }
     await order.save();
     res.json(order);
   } catch (err) {
@@ -2435,6 +2445,66 @@ router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
 // GET /api/admin/couriers/sync-config — which couriers support API sync (for admin UI)
 router.get('/couriers/sync-config', requireAdmin, (req, res) => {
   res.json(getCourierSyncConfig());
+});
+
+// GET /api/admin/rewards — all users & orders with reward activity
+router.get('/rewards', requireAdmin, async (req, res) => {
+  try {
+    const users = await User.find({ rewardPointsBalance: { $gt: 0 } })
+      .select('name email rewardPointsBalance createdAt')
+      .sort({ rewardPointsBalance: -1 })
+      .limit(200)
+      .lean();
+
+    const orders = await Order.find({
+      $or: [
+        { rewardPointsEarned: { $gt: 0 } },
+        { rewardPointsRedeemed: { $gt: 0 } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .limit(300)
+      .lean();
+
+    const orderRows = [];
+    for (const order of orders) {
+      const items = await enrichOrderItemsWithRewardPoints(order.items);
+      orderRows.push({
+        _id: order._id,
+        orderId: formatOrderIdSuffix(order._id),
+        userId: order.userId,
+        customerName: order.billingDetails?.name,
+        status: order.status,
+        createdAt: order.createdAt,
+        rewardPointsEarned: order.rewardPointsEarned || calcItemsRewardPoints(items),
+        rewardPointsRedeemed: order.rewardPointsRedeemed || 0,
+        rewardPointsDiscount: order.rewardPointsDiscount || 0,
+        credited: Boolean(order.rewardPointsCredited),
+        items,
+      });
+    }
+
+    const totalBalance = users.reduce((s, u) => s + (u.rewardPointsBalance || 0), 0);
+    const totalRedeemed = orderRows.reduce((s, o) => s + (o.rewardPointsRedeemed || 0), 0);
+    const totalEarned = orderRows.reduce((s, o) => s + (o.rewardPointsEarned || 0), 0);
+
+    res.json({
+      pointsPerTk: POINTS_PER_TK,
+      stats: {
+        usersWithBalance: users.length,
+        totalBalance,
+        totalBalanceTk: pointsToTk(totalBalance),
+        totalEarned,
+        totalRedeemed,
+        ordersWithRewards: orderRows.length,
+      },
+      users,
+      orders: orderRows,
+    });
+  } catch (err) {
+    console.error('GET /admin/rewards error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // --- Order agent management ---------------------------------------------------

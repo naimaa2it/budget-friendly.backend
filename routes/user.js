@@ -4,6 +4,7 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import sharp from 'sharp';
 import User from '../models/User.js';
+import { buildUserRewardsSummary } from '../lib/rewards.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -214,6 +215,18 @@ router.post('/unsubscribe', requireUser, async (req, res) => {
     res.json({ ok: true, subscribed: false });
   } catch (err) {
     console.error('POST /user/unsubscribe error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/user/rewards — balance, order-based points breakdown
+router.get('/rewards', requireUser, async (req, res) => {
+  try {
+    const summary = await buildUserRewardsSummary(req.user._id);
+    if (!summary) return res.status(404).json({ error: 'User not found' });
+    res.json(summary);
+  } catch (err) {
+    console.error('GET /user/rewards error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
