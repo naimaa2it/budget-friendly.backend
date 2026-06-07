@@ -22,6 +22,16 @@ import categoryRoutes from './category.js';
 import { defaultTrackingUrl } from '../lib/couriers/constants.js';
 import { getCourierSyncConfig, isCourierSyncConfigured } from '../lib/couriers/syncConfig.js';
 import {
+  getCourierIntegration,
+  saveCourierCredentials,
+  maskCredentialsForSlug,
+  listBookableCouriers,
+  isIntegrationSlug,
+} from '../lib/courierCredentials.js';
+import { testCourierConnection } from '../lib/couriers/testConnection.js';
+import { bookParcelWithCourier } from '../lib/couriers/bookParcel.js';
+import { fetchRedxAreas } from '../lib/couriers/createRedxOrder.js';
+import {
   ensureDefaultCouriers,
   ensureDefaultTimelinePresets,
   buildTrackingUrl,
@@ -2476,8 +2486,19 @@ router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/couriers/sync-config — which couriers support API sync (for admin UI)
-router.get('/couriers/sync-config', requireAdmin, (req, res) => {
-  res.json(getCourierSyncConfig());
+router.get('/couriers/sync-config', requireAdmin, async (req, res) => {
+  res.json(await getCourierSyncConfig());
+});
+
+// GET /api/admin/couriers/booking-options — couriers ready for API parcel booking
+router.get('/couriers/booking-options', requireAdmin, async (req, res) => {
+  try {
+    const items = await listBookableCouriers();
+    res.json({ items });
+  } catch (err) {
+    console.error('GET /couriers/booking-options error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // GET /api/admin/rewards — all users & orders with reward activity
@@ -2952,6 +2973,170 @@ router.delete('/couriers/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/couriers/:id/integration — masked courier API credentials
+router.get('/couriers/:id/integration', requireAdmin, async (req, res) => {
+  try {
+    const courier = await Courier.findById(req.params.id).lean();
+    if (!courier) return res.status(404).json({ error: 'Not found' });
+
+    const integration = await getCourierIntegration(courier.slug);
+    res.json({
+      courier: {
+        _id: courier._id,
+        name: courier.name,
+        slug: courier.slug,
+        apiEnabled: courier.apiEnabled,
+        storeConfig: courier.storeConfig || {},
+        capabilities: courier.capabilities || {},
+        integrationStatus: courier.integrationStatus || null,
+      },
+      configured: integration.configured,
+      credentialSource: integration.source,
+      credentials: isIntegrationSlug(courier.slug)
+        ? maskCredentialsForSlug(courier.slug, integration.creds || {})
+        : {},
+    });
+  } catch (err) {
+    console.error('GET /couriers/:id/integration error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/couriers/:id/integration — save encrypted credentials
+router.put('/couriers/:id/integration', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const { apiEnabled, credentials, storeConfig, capabilities } = req.body || {};
+    const courier = await saveCourierCredentials(req.params.id, {
+      apiEnabled,
+      credentials,
+      storeConfig,
+      capabilities,
+    });
+    if (!courier) return res.status(404).json({ error: 'Not found' });
+
+    const integration = await getCourierIntegration(courier.slug);
+    res.json({
+      ok: true,
+      configured: integration.configured,
+      courier: {
+        _id: courier._id,
+        slug: courier.slug,
+        apiEnabled: courier.apiEnabled,
+        storeConfig: courier.storeConfig,
+        capabilities: courier.capabilities,
+      },
+      credentials: maskCredentialsForSlug(courier.slug, integration.creds || {}),
+    });
+  } catch (err) {
+    console.error('PUT /couriers/:id/integration error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/couriers/:id/test-connection
+router.post('/couriers/:id/test-connection', requireAdmin, async (req, res) => {
+  try {
+    const courier = await Courier.findById(req.params.id);
+    if (!courier) return res.status(404).json({ error: 'Not found' });
+    if (!isIntegrationSlug(courier.slug)) {
+      return res.status(400).json({ error: 'This courier does not support API integration' });
+    }
+
+    const integration = await getCourierIntegration(courier.slug);
+    if (!integration.creds) {
+      return res.status(400).json({ error: 'Credentials not configured' });
+    }
+
+    const result = await testCourierConnection(
+      courier.slug,
+      integration.creds,
+      integration.storeConfig,
+    );
+
+    courier.integrationStatus = {
+      lastTestedAt: new Date(),
+      lastTestOk: true,
+      lastTestMessage: result.message || 'Connected',
+    };
+    await courier.save();
+
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    try {
+      const courier = await Courier.findById(req.params.id);
+      if (courier) {
+        courier.integrationStatus = {
+          lastTestedAt: new Date(),
+          lastTestOk: false,
+          lastTestMessage: err.message || 'Connection failed',
+        };
+        await courier.save();
+      }
+    } catch {
+      /* ignore */
+    }
+    console.error('POST /couriers/:id/test-connection error:', err);
+    res.status(502).json({ error: err.message || 'Connection test failed' });
+  }
+});
+
+// GET /api/admin/couriers/:id/redx-areas — helper for RedX delivery area setup
+router.get('/couriers/:id/redx-areas', requireAdmin, async (req, res) => {
+  try {
+    const courier = await Courier.findById(req.params.id).lean();
+    if (!courier || courier.slug !== 'redx') {
+      return res.status(400).json({ error: 'RedX courier required' });
+    }
+    const integration = await getCourierIntegration('redx');
+    if (!integration.creds) {
+      return res.status(400).json({ error: 'RedX credentials not configured' });
+    }
+    const areas = await fetchRedxAreas(integration.creds, integration.storeConfig, {
+      districtName: req.query.district || req.query.district_name,
+    });
+    res.json({ items: areas });
+  } catch (err) {
+    console.error('GET /couriers/:id/redx-areas error:', err);
+    res.status(502).json({ error: err.message || 'Failed to load areas' });
+  }
+});
+
+// GET /api/admin/shipment-config — shop pickup + defaults
+router.get('/shipment-config', requireAdmin, async (req, res) => {
+  try {
+    const Setting = (await import('../models/Setting.js')).default;
+    let settings = await Setting.findOne().lean();
+    if (!settings) settings = {};
+    res.json({ shipmentConfig: settings.shipmentConfig || {} });
+  } catch (err) {
+    console.error('GET /shipment-config error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/shipment-config
+router.put('/shipment-config', requireAdmin, async (req, res) => {
+  try {
+    if (req.admin.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const { shipmentConfig } = req.body || {};
+    const Setting = (await import('../models/Setting.js')).default;
+    const settings = await Setting.findOneAndUpdate(
+      {},
+      { $set: { shipmentConfig: shipmentConfig || {} } },
+      { upsert: true, new: true },
+    );
+    res.json({ ok: true, shipmentConfig: settings.shipmentConfig });
+  } catch (err) {
+    console.error('PUT /shipment-config error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // --- Timeline preset management -----------------------------------------------
 router.get('/timeline-presets', requireAdmin, async (req, res) => {
   try {
@@ -3142,6 +3327,69 @@ router.delete('/orders/:id/shipment/events/:index', requireAdmin, async (req, re
   }
 });
 
+// POST /api/admin/orders/:id/book-courier — create parcel via courier API
+router.post('/orders/:id/book-courier', requireAdmin, async (req, res) => {
+  try {
+    const { courier, weight, codAmount, note, deliveryAreaId, deliveryAreaName, itemQuantity } =
+      req.body || {};
+    if (!courier) {
+      return res.status(400).json({ error: 'Courier is required' });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const result = await bookParcelWithCourier(order, courier, {
+      weight,
+      codAmount,
+      note,
+      deliveryAreaId,
+      deliveryAreaName,
+      itemQuantity,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({
+        error: result.error,
+        code: result.code || 'book_failed',
+      });
+    }
+
+    if (!order.shipment) order.shipment = { trackingEvents: [] };
+    order.shipment.courier = result.courier;
+    order.shipment.trackingId = result.consignmentId;
+    order.shipment.trackingUrl = result.trackingUrl;
+    order.shipment.bookedAt = new Date();
+    order.shipment.bookingSource = 'api';
+    order.shipment.handedToCourierAt = order.shipment.handedToCourierAt || new Date();
+    order.shipment.courierStatus = 'Booked';
+
+    const courierLabel = result.courier.charAt(0).toUpperCase() + result.courier.slice(1);
+    appendAdminTrackingEvent(
+      order,
+      `Parcel booked with ${courierLabel} — consignment #${result.consignmentId}`,
+      'booked',
+    );
+
+    const Setting = (await import('../models/Setting.js')).default;
+    const settings = await Setting.findOne().lean();
+    const nextStatus = settings?.shipmentConfig?.bookSetsStatus || 'shipped';
+    if (['confirmed', 'processing', 'accepted', 'picked', 'approved'].includes(order.status)) {
+      applyOrderStatusChange(order, nextStatus, {
+        reason: `Booked with ${courierLabel}`,
+        changedBy: req.admin?.name || String(req.admin?._id || 'admin'),
+      });
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    console.error('POST /orders/:id/book-courier error:', err);
+    res.status(502).json({ error: err.message || 'Courier booking failed' });
+  }
+});
+
 // POST /api/admin/orders/:id/shipment/sync — pull latest status from courier API
 router.post('/orders/:id/shipment/sync', requireAdmin, async (req, res) => {
   try {
@@ -3151,7 +3399,7 @@ router.post('/orders/:id/shipment/sync', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Courier and tracking ID are required.' });
     }
 
-    if (!isCourierSyncConfigured(order.shipment.courier)) {
+    if (!(await isCourierSyncConfigured(order.shipment.courier))) {
       return res.status(400).json({
         error:
           'Courier API sync is not configured. Update order status manually or add a tracking link for the customer.',

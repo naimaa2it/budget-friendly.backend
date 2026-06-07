@@ -51,6 +51,11 @@ const SettingsSchema = new mongoose.Schema({
     label: { type: String, trim: true },
     color: { type: String, trim: true }
   }],
+  shipmentConfig: {
+    pickupAddress: { type: String, default: '' },
+    defaultCourierSlug: { type: String, default: 'pathao' },
+    bookSetsStatus: { type: String, default: 'shipped' },
+  },
   updatedAt: { type: Date, default: Date.now }
 });
 

@@ -131,6 +131,12 @@ const ShipmentSchema = new mongoose.Schema(
     handedToCourierAt: { type: Date, default: null },
     deliveredAt: { type: Date, default: null },
     lastSyncAt: { type: Date, default: null },
+    bookedAt: { type: Date, default: null },
+    bookingSource: {
+      type: String,
+      enum: ['api', 'manual'],
+      default: null,
+    },
     trackingEvents: { type: [TrackingEventSchema], default: [] },
   },
   { _id: false },
