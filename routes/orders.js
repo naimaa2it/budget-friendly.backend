@@ -1022,15 +1022,14 @@ router.get("/my", async (req, res) => {
       toConfirm.forEach((o) => (o.status = "confirmed"));
     }
 
-    // Lazy sync courier tracking for in-transit orders (max 3 per request)
+    // Lazy sync courier tracking from live URLs (max 5 per request)
     const toSync = orders
       .filter(
         (o) =>
-          o.shipment?.courier &&
-          o.shipment?.trackingId &&
-          ["shipped", "processing", "confirmed"].includes(o.status),
+          (o.shipment?.trackingId || o.shipment?.trackingUrl) &&
+          !["delivered", "cancelled", "failed"].includes(o.status),
       )
-      .slice(0, 3);
+      .slice(0, 5);
 
     await Promise.all(
       toSync.map(async (o) => {
@@ -1057,6 +1056,89 @@ router.get("/my", async (req, res) => {
   } catch (err) {
     console.error("GET /orders/my error:", err);
     res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+// ── POST /api/orders/webhooks/steadfast — Steadfast tracking / delivery callbacks
+router.post("/webhooks/steadfast", async (req, res) => {
+  try {
+    const bearer = process.env.STEADFAST_WEBHOOK_BEARER || process.env.STEADFAST_BEARER_TOKEN;
+    if (bearer) {
+      const auth = req.headers.authorization || "";
+      if (auth !== `Bearer ${bearer}`) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+    }
+
+    const payload = req.body || {};
+    const trackingCode =
+      payload.tracking_code ||
+      payload.trackingCode ||
+      payload.tracking_id ||
+      null;
+    const consignmentId = payload.consignment_id || payload.consignmentId || null;
+    const message =
+      payload.tracking_message ||
+      payload.status ||
+      payload.message ||
+      "Courier update";
+    const atRaw = payload.updated_at || payload.updatedAt || new Date();
+
+    const filters = [];
+    if (trackingCode) filters.push({ "shipment.trackingId": String(trackingCode) });
+    if (consignmentId) filters.push({ "shipment.trackingId": String(consignmentId) });
+
+    if (!filters.length) {
+      return res.status(400).json({ error: "tracking_code or consignment_id required" });
+    }
+
+    const order = await Order.findOne({ $or: filters });
+    if (!order) {
+      return res.status(404).json({ error: "Order not found for tracking reference." });
+    }
+
+    if (!order.shipment) order.shipment = { trackingEvents: [] };
+    if (!order.shipment.courier) order.shipment.courier = "steadfast";
+
+    const event = {
+      status: payload.status_type || payload.notification_type || "update",
+      message: String(message),
+      at: new Date(atRaw),
+      source: "courier",
+    };
+
+    const existing = order.shipment.trackingEvents || [];
+    const dup = existing.some(
+      (e) =>
+        e.message === event.message &&
+        Math.abs(new Date(e.at) - event.at) < 60000,
+    );
+    if (!dup) {
+      order.shipment.trackingEvents = [...existing, event].sort(
+        (a, b) => new Date(a.at) - new Date(b.at),
+      );
+    }
+
+    order.shipment.courierStatus = String(message);
+    order.shipment.lastSyncAt = new Date();
+
+    const statusType = String(payload.status_type || "").toLowerCase();
+    if (statusType.includes("deliver")) {
+      order.status = "delivered";
+      order.shipment.deliveredAt = event.at;
+    } else if (statusType.includes("cancel")) {
+      order.status = "cancelled";
+    } else if (!["delivered", "cancelled", "failed"].includes(order.status)) {
+      order.status = "shipped";
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /orders/webhooks/steadfast error:", err);
+    res.status(500).json({ error: "Webhook processing failed." });
   }
 });
 
@@ -1127,7 +1209,7 @@ router.get("/track", async (req, res) => {
       return res.status(400).json({ error: "Order ID is required." });
     }
 
-    const order = await findOrderByIdOrSuffix(orderId);
+    let order = await findOrderByIdOrSuffix(orderId);
     if (!order) {
       return res.status(404).json({
         error: "Order not found.",
@@ -1136,6 +1218,15 @@ router.get("/track", async (req, res) => {
     }
 
     await lazyConfirmCodOrder(order);
+
+    try {
+      const syncResult = await syncOrderShipment(order, { force: false });
+      if (syncResult.ok && syncResult.order) {
+        order = syncResult.order;
+      }
+    } catch (syncErr) {
+      console.warn('Track lookup sync skipped:', syncErr.message);
+    }
 
     const courierLabels = await getCourierLabelMap();
     const publicOrder = toPublicTrackOrder(order);

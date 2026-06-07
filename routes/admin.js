@@ -2412,32 +2412,43 @@ router.get('/orders', requireAdmin, async (req, res) => {
 // GET /api/admin/orders/:id
 router.get('/orders/:id', requireAdmin, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id).lean();
+    let order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
+    if (order.shipment?.trackingId || order.shipment?.trackingUrl) {
+      try {
+        const syncResult = await syncOrderShipment(order, { force: false });
+        if (syncResult.ok && syncResult.order) order = syncResult.order;
+      } catch (syncErr) {
+        console.warn('Admin order view sync skipped:', syncErr.message);
+      }
+    }
+
+    const orderObj = order.toObject();
+
     let customerTags = [];
-    if (order.userId) {
-      const user = await User.findById(order.userId).populate('tags').lean();
+    if (orderObj.userId) {
+      const user = await User.findById(orderObj.userId).populate('tags').lean();
       customerTags = user?.tags || [];
-    } else if (order.billingDetails?.email || order.userEmail) {
-      const email = order.billingDetails?.email || order.userEmail;
+    } else if (orderObj.billingDetails?.email || orderObj.userEmail) {
+      const email = orderObj.billingDetails?.email || orderObj.userEmail;
       const user = await User.findOne({ email }).populate('tags').lean();
       customerTags = user?.tags || [];
     }
 
     await ensureDefaultCouriers();
-    const courierDoc = order.shipment?.courier
-      ? await Courier.findOne({ slug: order.shipment.courier }).lean()
+    const courierDoc = orderObj.shipment?.courier
+      ? await Courier.findOne({ slug: orderObj.shipment.courier }).lean()
       : null;
 
-    const customerUserId = await resolveCustomerUserId(order);
+    const customerUserId = await resolveCustomerUserId(orderObj);
 
     res.json({
-      ...order,
-      orderId: formatOrderIdSuffix(order._id),
+      ...orderObj,
+      orderId: formatOrderIdSuffix(orderObj._id),
       customerTags,
       customerUserId,
-      courierName: courierDoc?.name || order.shipment?.courier || null,
+      courierName: courierDoc?.name || orderObj.shipment?.courier || null,
     });
   } catch (err) {
     console.error('GET /admin/orders/:id error:', err);
@@ -3111,7 +3122,6 @@ router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
 
     if (shouldHandOver) {
       order.shipment.handedToCourierAt = new Date();
-      appendAdminTrackingEvent(order);
       if (['confirmed', 'processing'].includes(order.status)) {
         order.status = 'shipped';
       }
@@ -3119,6 +3129,16 @@ router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
 
     order.updatedAt = new Date();
     await order.save();
+
+    try {
+      const syncResult = await syncOrderShipment(order, { force: true });
+      if (syncResult.ok && syncResult.order) {
+        return res.json(syncResult.order);
+      }
+    } catch (syncErr) {
+      console.warn('Shipment save ok but courier sync failed:', syncErr.message);
+    }
+
     res.json(order);
   } catch (err) {
     console.error('PUT /admin/orders/:id/shipment error:', err);
@@ -3242,11 +3262,6 @@ router.post('/orders/:id/book-courier', requireAdmin, async (req, res) => {
     order.shipment.courierStatus = 'Booked';
 
     const courierLabel = result.courier.charAt(0).toUpperCase() + result.courier.slice(1);
-    appendAdminTrackingEvent(
-      order,
-      `Parcel booked with ${courierLabel} — consignment #${result.consignmentId}`,
-      'booked',
-    );
 
     const Setting = (await import('../models/Setting.js')).default;
     const settings = await Setting.findOne().lean();
@@ -3260,6 +3275,16 @@ router.post('/orders/:id/book-courier', requireAdmin, async (req, res) => {
 
     order.updatedAt = new Date();
     await order.save();
+
+    try {
+      const syncResult = await syncOrderShipment(order, { force: true });
+      if (syncResult.ok && syncResult.order) {
+        return res.json(syncResult.order);
+      }
+    } catch (syncErr) {
+      console.warn('Book courier ok but tracking sync failed:', syncErr.message);
+    }
+
     res.json(order);
   } catch (err) {
     console.error('POST /orders/:id/book-courier error:', err);
