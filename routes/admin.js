@@ -310,9 +310,12 @@ router.get('/tracking-config', async (req, res) => {
       tiktokPixel: s?.tiktokPixel?.active && s?.tiktokPixel?.installed
         ? { pixelId: s.tiktokPixel.pixelId }
         : null,
+      googleAdsense: s?.googleAdsense?.active && s?.googleAdsense?.installed
+        ? { publisherId: s.googleAdsense.publisherId, autoAds: s.googleAdsense.autoAds }
+        : null,
     });
   } catch (err) {
-    res.json({ facebookPixel: null, googleTagManager: null, googleAnalytics4: null, tiktokPixel: null });
+    res.json({ facebookPixel: null, googleTagManager: null, googleAnalytics4: null, tiktokPixel: null, googleAdsense: null });
   }
 });
 

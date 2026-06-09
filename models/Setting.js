@@ -103,6 +103,12 @@ const SettingsSchema = new mongoose.Schema({
     active: { type: Boolean, default: false },
     installed: { type: Boolean, default: false },
   },
+  googleAdsense: {
+    publisherId: { type: String, default: '' },
+    autoAds: { type: Boolean, default: false },
+    active: { type: Boolean, default: false },
+    installed: { type: Boolean, default: false },
+  },
   updatedAt: { type: Date, default: Date.now }
 });
 
