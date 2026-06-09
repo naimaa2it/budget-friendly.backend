@@ -201,6 +201,8 @@ const OrderSchema = new mongoose.Schema({
   rewardPointsCredited: { type: Boolean, default: false },
   rewardPointsCreditedAt: { type: Date, default: null },
   statusHistory: { type: [StatusHistorySchema], default: [] },
+  clientIp: { type: String, default: '' },
+  deviceId: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

@@ -542,6 +542,7 @@ router.post("/", async (req, res) => {
       couponCode,
       couponCodes,
       pointsToRedeem,
+      deviceId,
     } = req.body;
 
     if (
@@ -555,6 +556,78 @@ router.post("/", async (req, res) => {
     ) {
       return res.status(400).json({ error: "Missing required order fields" });
     }
+
+    // ── Fake Order Protection ─────────────────────────────────────────────────
+    try {
+      const Setting = (await import('../models/Setting.js')).default;
+      const fop = (await Setting.findOne().lean())?.fakeOrderProtection;
+      if (fop?.installed) {
+        const clientIp =
+          (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+          req.socket?.remoteAddress || '';
+        const phone = billingDetails.phone?.replace(/\s+/g, '') || '';
+        const now = new Date();
+
+        // Phone check
+        if (fop.phoneOrder?.enabled && phone) {
+          const phoneBlocklist = (fop.phoneOrder.blocklist || '')
+            .split(',').map(p => p.trim()).filter(Boolean);
+          if (phoneBlocklist.includes(phone)) {
+            return res.status(400).json({ error: 'এই নম্বর থেকে অর্ডার করা সম্ভব নয়।' });
+          }
+          const hours = Number(fop.phoneOrder.limitDuration) || 1;
+          const since = new Date(now - hours * 3600000);
+          const recentByPhone = await Order.countDocuments({
+            'billingDetails.phone': phone,
+            createdAt: { $gte: since },
+          });
+          if (recentByPhone > 0) {
+            return res.status(400).json({
+              error: `এই নম্বর থেকে গত ${hours} ঘণ্টার মধ্যে অর্ডার করা হয়েছে। পরে চেষ্টা করুন।`,
+            });
+          }
+        }
+
+        // IP check
+        if (fop.ipOrder?.enabled && clientIp) {
+          const ipBlocklist = (fop.ipOrder.blocklist || '')
+            .split(',').map(p => p.trim()).filter(Boolean);
+          if (ipBlocklist.includes(clientIp)) {
+            return res.status(400).json({ error: 'এই IP থেকে অর্ডার করা সম্ভব নয়।' });
+          }
+          const hours = Number(fop.ipOrder.limitDuration) || 1;
+          const since = new Date(now - hours * 3600000);
+          const recentByIp = await Order.countDocuments({
+            clientIp,
+            createdAt: { $gte: since },
+          });
+          if (recentByIp > 0) {
+            return res.status(400).json({
+              error: `এই ঠিকানা থেকে গত ${hours} ঘণ্টার মধ্যে অর্ডার করা হয়েছে। পরে চেষ্টা করুন।`,
+            });
+          }
+        }
+
+        // Device check
+        if (fop.deviceOrder?.enabled && deviceId) {
+          const hours = Number(fop.deviceOrder.limitDuration) || 1;
+          const since = new Date(now - hours * 3600000);
+          const recentByDevice = await Order.countDocuments({
+            deviceId,
+            createdAt: { $gte: since },
+          });
+          if (recentByDevice > 0) {
+            return res.status(400).json({
+              error: `এই ডিভাইস থেকে গত ${hours} ঘণ্টার মধ্যে অর্ডার করা হয়েছে। পরে চেষ্টা করুন।`,
+            });
+          }
+        }
+      }
+    } catch (fopErr) {
+      console.error('FakeOrderProtection check error:', fopErr);
+      // don't block order on protection check failure
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // userId always comes from the JWT — the client value is never trusted
     const resolvedUserId = getUserId(req) || null;
@@ -613,6 +686,8 @@ router.post("/", async (req, res) => {
       rewardPointsDiscount: pointsDiscount || 0,
       status: "pending",
       paymentStatus: paymentMethod === "cash-on-delivery" ? "cod" : "unpaid",
+      clientIp: (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '',
+      deviceId: deviceId || '',
       // COD orders auto-confirm 1 hour after placement; cancellable before this time
       confirmAfter:
         paymentMethod === "cash-on-delivery"

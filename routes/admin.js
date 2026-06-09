@@ -292,6 +292,30 @@ router.get('/top-banner', async (req, res) => {
   }
 });
 
+// Public: tracking pixel configs (no auth — loaded by storefront layout)
+router.get('/tracking-config', async (req, res) => {
+  try {
+    const SettingModel = (await import('../models/Setting.js')).default;
+    const s = await SettingModel.findOne().lean();
+    res.json({
+      facebookPixel: s?.facebookPixel?.active && s?.facebookPixel?.installed
+        ? { pixelId: s.facebookPixel.pixelId, browserSideTracking: s.facebookPixel.browserSideTracking }
+        : null,
+      googleTagManager: s?.googleTagManager?.active && s?.googleTagManager?.installed
+        ? { containerId: s.googleTagManager.containerId }
+        : null,
+      googleAnalytics4: s?.googleAnalytics4?.active && s?.googleAnalytics4?.installed
+        ? { measurementId: s.googleAnalytics4.measurementId }
+        : null,
+      tiktokPixel: s?.tiktokPixel?.active && s?.tiktokPixel?.installed
+        ? { pixelId: s.tiktokPixel.pixelId }
+        : null,
+    });
+  } catch (err) {
+    res.json({ facebookPixel: null, googleTagManager: null, googleAnalytics4: null, tiktokPixel: null });
+  }
+});
+
 // Settings (admin area)
 router.get('/settings', requireAdmin, async (req, res) => {
   try {
