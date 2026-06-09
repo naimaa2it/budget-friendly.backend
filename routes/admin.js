@@ -346,6 +346,107 @@ router.put('/settings', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Profit Margin ───────────────────────────────────────────────────────────
+
+router.get('/profit-margin', requireAdmin, async (req, res) => {
+  try {
+    const { q, filter = 'all', sort = 'margin_asc', page = 1, limit = 50 } = req.query;
+    const skip = (Math.max(1, Number(page)) - 1) * Number(limit);
+
+    const dbFilter = { status: { $ne: 'archived' } };
+    if (q) {
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      dbFilter.$or = [{ title: re }, { sku: re }];
+    }
+
+    const products = await Product.find(dbFilter)
+      .select('title sku images variants price buyingPrice category status')
+      .lean();
+
+    const calcMargin = (sellingPrice, buyingPrice) => {
+      const sp = Number(sellingPrice) || 0;
+      const bp = Number(buyingPrice) || 0;
+      if (!sp) return null;
+      if (!bp) return { sp, bp: 0, profit: null, marginPct: null, markupPct: null, hasData: false };
+      const profit = sp - bp;
+      const marginPct = (profit / sp) * 100;
+      const markupPct = bp > 0 ? (profit / bp) * 100 : null;
+      return { sp, bp, profit, marginPct, markupPct, hasData: true };
+    };
+
+    const rows = products.map((p) => {
+      const hasVariants = p.variants && p.variants.length > 0;
+      let variantMargins = [];
+      let aggregateMargin = null;
+
+      if (hasVariants) {
+        variantMargins = p.variants.map((v, i) => ({
+          index: i,
+          name: [v.color?.name, v.size].filter(Boolean).join(' / ') || v.name || `Variant ${i + 1}`,
+          sku: v.sku,
+          ...calcMargin(v.price || p.price, v.buyingPrice ?? p.buyingPrice),
+        }));
+        const validVariants = variantMargins.filter((v) => v.hasData);
+        if (validVariants.length) {
+          const avgMarginPct = validVariants.reduce((s, v) => s + v.marginPct, 0) / validVariants.length;
+          const totalProfit = validVariants.reduce((s, v) => s + (v.profit || 0), 0);
+          aggregateMargin = { marginPct: avgMarginPct, profit: totalProfit, hasData: true };
+        } else {
+          const anyHasSp = variantMargins.some((v) => v.sp > 0);
+          aggregateMargin = { hasData: false, noBuyingPrice: anyHasSp };
+        }
+      } else {
+        aggregateMargin = calcMargin(p.price, p.buyingPrice);
+      }
+
+      const marginPct = aggregateMargin?.marginPct ?? null;
+      const profitStatus =
+        !aggregateMargin?.hasData ? 'no_data' :
+        marginPct < 0 ? 'loss' :
+        marginPct === 0 ? 'breakeven' :
+        marginPct < 15 ? 'low' :
+        marginPct < 30 ? 'medium' : 'high';
+
+      return { ...p, hasVariants, variantMargins, aggregateMargin, marginPct, profitStatus };
+    });
+
+    let filtered = rows;
+    if (filter === 'no_buying_price') filtered = rows.filter((r) => !r.aggregateMargin?.hasData);
+    else if (filter === 'loss') filtered = rows.filter((r) => r.profitStatus === 'loss');
+    else if (filter === 'low') filtered = rows.filter((r) => r.profitStatus === 'low');
+    else if (filter === 'healthy') filtered = rows.filter((r) => ['medium', 'high'].includes(r.profitStatus));
+
+    filtered.sort((a, b) => {
+      const am = a.marginPct ?? -Infinity;
+      const bm = b.marginPct ?? -Infinity;
+      if (sort === 'margin_asc') return am - bm;
+      if (sort === 'margin_desc') return bm - am;
+      if (sort === 'profit_desc') return (b.aggregateMargin?.profit ?? -Infinity) - (a.aggregateMargin?.profit ?? -Infinity);
+      if (sort === 'name_asc') return a.title.localeCompare(b.title);
+      return 0;
+    });
+
+    const summary = {
+      total: rows.length,
+      no_data: rows.filter((r) => r.profitStatus === 'no_data').length,
+      loss: rows.filter((r) => r.profitStatus === 'loss').length,
+      low: rows.filter((r) => r.profitStatus === 'low').length,
+      medium: rows.filter((r) => r.profitStatus === 'medium').length,
+      high: rows.filter((r) => r.profitStatus === 'high').length,
+      avgMarginPct: (() => {
+        const valid = rows.filter((r) => r.marginPct != null);
+        return valid.length ? valid.reduce((s, r) => s + r.marginPct, 0) / valid.length : null;
+      })(),
+    };
+
+    const total = filtered.length;
+    res.json({ items: filtered.slice(skip, skip + Number(limit)), total, pages: Math.ceil(total / Number(limit)), summary });
+  } catch (err) {
+    console.error('GET /profit-margin error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ─── Inventory Management ────────────────────────────────────────────────────
 
 router.get('/inventory', requireAdmin, async (req, res) => {
