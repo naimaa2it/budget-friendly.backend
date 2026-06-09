@@ -2364,7 +2364,7 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
 // GET /api/admin/orders
 router.get('/orders', requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking } =
+    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking, hasNote } =
       req.query;
     const filter = {};
     if (needsTracking === 'true' || needsTracking === '1') {
@@ -2373,10 +2373,15 @@ router.get('/orders', requireAdmin, async (req, res) => {
         { 'shipment.trackingUrl': { $in: [null, ''] } },
         { 'shipment.trackingUrl': { $exists: false } },
       ];
+    } else if (status === 'incomplete') {
+      filter.status = { $in: ['pending', 'accepted', 'picked', 'approved', 'confirmed', 'processing', 'shipped'] };
     } else if (status && status !== 'all') {
       filter.status = status === 'accepted'
         ? { $in: ['accepted', 'picked', 'approved'] }
         : status;
+    }
+    if (hasNote === '1' || hasNote === 'true') {
+      filter['billingDetails.note'] = { $exists: true, $ne: '' };
     }
     if (paymentStatus && paymentStatus !== 'all') filter.paymentStatus = paymentStatus;
     if (paymentMethod && paymentMethod !== 'all') filter.paymentMethod = paymentMethod;
@@ -2429,6 +2434,40 @@ router.get('/orders', requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('GET /admin/orders error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/orders/timeline — recent status-change events across all orders
+router.get('/orders/timeline', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+    const orders = await Order.find(
+      { 'statusHistory.0': { $exists: true } },
+      { _id: 1, 'billingDetails.name': 1, 'billingDetails.phone': 1, status: 1, total: 1, statusHistory: 1, createdAt: 1 }
+    ).sort({ updatedAt: -1 }).limit(limit).lean();
+
+    const events = [];
+    for (const order of orders) {
+      for (const ev of (order.statusHistory || [])) {
+        events.push({
+          orderId: order._id,
+          orderIdShort: String(order._id).slice(-8).toUpperCase(),
+          customerName: order.billingDetails?.name || '—',
+          customerPhone: order.billingDetails?.phone || '',
+          orderTotal: order.total,
+          newStatus: ev.newStatus,
+          previousStatus: ev.previousStatus,
+          changedBy: ev.changedBy,
+          reason: ev.reason,
+          at: ev.at,
+        });
+      }
+    }
+    events.sort((a, b) => new Date(b.at) - new Date(a.at));
+    res.json({ events: events.slice(0, limit) });
+  } catch (err) {
+    console.error('GET /admin/orders/timeline error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
