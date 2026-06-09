@@ -281,9 +281,9 @@ router.get('/top-banner', async (req, res) => {
       enabled: s?.topBannerEnabled || false,
       html: s?.topBannerEnabled ? (s.topBannerHtml || '') : '',
       config: s?.topBannerEnabled ? (s.topBannerConfig || {}) : {},
-      adsenseEnabled: (s?.googleAdsense?.active && s?.googleAdsense?.autoAds) || s?.adsenseEnabled || false,
-      adsensePublisherId: s?.googleAdsense?.publisherId || s?.adsensePublisherId || '',
-      adsenseSlot: s?.googleAdsense?.adSlotId || s?.adsenseSlot || '',
+      adsenseEnabled: s?.adsenseEnabled || false,
+      adsensePublisherId: s?.adsensePublisherId || '',
+      adsenseSlot: s?.adsenseSlot || '',
       websiteLogo: s?.websiteLogo || {},
       megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : []
     });
