@@ -56,6 +56,50 @@ const SettingsSchema = new mongoose.Schema({
     defaultCourierSlug: { type: String, default: 'pathao' },
     bookSetsStatus: { type: String, default: 'shipped' },
   },
+  facebookPixel: {
+    pixelId: { type: String, default: '' },
+    accessToken: { type: String, default: '' },
+    testEventCode: { type: String, default: '' },
+    browserSideTracking: { type: Boolean, default: true },
+    serverSideTracking: { type: Boolean, default: false },
+    active: { type: Boolean, default: false },
+    installed: { type: Boolean, default: false },
+  },
+  googleTagManager: {
+    containerId: { type: String, default: '' },
+    active: { type: Boolean, default: false },
+    installed: { type: Boolean, default: false },
+  },
+  googleAnalytics4: {
+    measurementId: { type: String, default: '' },
+    active: { type: Boolean, default: false },
+    installed: { type: Boolean, default: false },
+  },
+  fakeOrderProtection: {
+    phoneOrder: {
+      enabled: { type: Boolean, default: true },
+      limitDuration: { type: Number, default: 1 },
+      blocklist: { type: String, default: '' },
+    },
+    ipOrder: {
+      enabled: { type: Boolean, default: true },
+      limitDuration: { type: Number, default: 1 },
+      blocklist: { type: String, default: '' },
+    },
+    deviceOrder: {
+      enabled: { type: Boolean, default: true },
+      limitDuration: { type: Number, default: 1 },
+    },
+    active: { type: Boolean, default: false },
+    installed: { type: Boolean, default: false },
+  },
+  tiktokPixel: {
+    pixelId: { type: String, default: '' },
+    accessToken: { type: String, default: '' },
+    testEventCode: { type: String, default: '' },
+    active: { type: Boolean, default: false },
+    installed: { type: Boolean, default: false },
+  },
   updatedAt: { type: Date, default: Date.now }
 });
 
