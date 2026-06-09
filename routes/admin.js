@@ -281,9 +281,9 @@ router.get('/top-banner', async (req, res) => {
       enabled: s?.topBannerEnabled || false,
       html: s?.topBannerEnabled ? (s.topBannerHtml || '') : '',
       config: s?.topBannerEnabled ? (s.topBannerConfig || {}) : {},
-      adsenseEnabled: s?.adsenseEnabled || false,
-      adsensePublisherId: s?.adsensePublisherId || '',
-      adsenseSlot: s?.adsenseSlot || '',
+      adsenseEnabled: (s?.googleAdsense?.active && s?.googleAdsense?.autoAds) || s?.adsenseEnabled || false,
+      adsensePublisherId: s?.googleAdsense?.publisherId || s?.adsensePublisherId || '',
+      adsenseSlot: s?.googleAdsense?.adSlotId || s?.adsenseSlot || '',
       websiteLogo: s?.websiteLogo || {},
       megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : []
     });
@@ -311,7 +311,12 @@ router.get('/tracking-config', async (req, res) => {
         ? { pixelId: s.tiktokPixel.pixelId }
         : null,
       googleAdsense: s?.googleAdsense?.active && s?.googleAdsense?.installed
-        ? { publisherId: s.googleAdsense.publisherId, autoAds: s.googleAdsense.autoAds }
+        ? {
+            publisherId: s.googleAdsense.publisherId,
+            adSlotId: s.googleAdsense.adSlotId || '',
+            autoAds: s.googleAdsense.autoAds,
+            pageSettings: s.googleAdsense.pageSettings || {},
+          }
         : null,
     });
   } catch (err) {

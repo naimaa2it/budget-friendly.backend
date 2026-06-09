@@ -105,9 +105,16 @@ const SettingsSchema = new mongoose.Schema({
   },
   googleAdsense: {
     publisherId: { type: String, default: '' },
+    adSlotId: { type: String, default: '' },
     autoAds: { type: Boolean, default: false },
     active: { type: Boolean, default: false },
     installed: { type: Boolean, default: false },
+    pageSettings: {
+      homepage: { type: Boolean, default: true },
+      productPage: { type: Boolean, default: true },
+      categoryPage: { type: Boolean, default: true },
+      blogPage: { type: Boolean, default: true },
+    },
   },
   updatedAt: { type: Date, default: Date.now }
 });
