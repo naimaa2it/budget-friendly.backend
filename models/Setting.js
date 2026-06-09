@@ -78,17 +78,20 @@ const SettingsSchema = new mongoose.Schema({
   fakeOrderProtection: {
     phoneOrder: {
       enabled: { type: Boolean, default: true },
-      limitDuration: { type: Number, default: 1 },
+      limitDuration: { type: Number, default: 5 },
+      limitDurationUnit: { type: String, default: 'minutes' },
       blocklist: { type: String, default: '' },
     },
     ipOrder: {
       enabled: { type: Boolean, default: true },
-      limitDuration: { type: Number, default: 1 },
+      limitDuration: { type: Number, default: 5 },
+      limitDurationUnit: { type: String, default: 'minutes' },
       blocklist: { type: String, default: '' },
     },
     deviceOrder: {
       enabled: { type: Boolean, default: true },
-      limitDuration: { type: Number, default: 1 },
+      limitDuration: { type: Number, default: 5 },
+      limitDurationUnit: { type: String, default: 'minutes' },
     },
     active: { type: Boolean, default: false },
     installed: { type: Boolean, default: false },

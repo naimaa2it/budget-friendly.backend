@@ -575,8 +575,11 @@ router.post("/", async (req, res) => {
           if (phoneBlocklist.includes(phone)) {
             return res.status(400).json({ error: 'এই নম্বর থেকে অর্ডার করা সম্ভব নয়।' });
           }
-          const minutes = Number(fop.phoneOrder.limitDuration) || 5;
-          const since = new Date(now - minutes * 60000);
+          const dur = Number(fop.phoneOrder.limitDuration) || 5;
+          const unit = fop.phoneOrder.limitDurationUnit || 'minutes';
+          const ms = unit === 'hours' ? dur * 3600000 : dur * 60000;
+          const minutes = unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
+          const since = new Date(now - ms);
           const recentByPhone = await Order.countDocuments({
             'billingDetails.phone': phone,
             createdAt: { $gte: since },
@@ -595,8 +598,11 @@ router.post("/", async (req, res) => {
           if (ipBlocklist.includes(clientIp)) {
             return res.status(400).json({ error: 'এই IP থেকে অর্ডার করা সম্ভব নয়।' });
           }
-          const minutes = Number(fop.ipOrder.limitDuration) || 5;
-          const since = new Date(now - minutes * 60000);
+          const dur = Number(fop.ipOrder.limitDuration) || 5;
+          const unit = fop.ipOrder.limitDurationUnit || 'minutes';
+          const ms = unit === 'hours' ? dur * 3600000 : dur * 60000;
+          const minutes = unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
+          const since = new Date(now - ms);
           const recentByIp = await Order.countDocuments({
             clientIp,
             createdAt: { $gte: since },
@@ -610,8 +616,11 @@ router.post("/", async (req, res) => {
 
         // Device check
         if (fop.deviceOrder?.enabled && deviceId) {
-          const minutes = Number(fop.deviceOrder.limitDuration) || 5;
-          const since = new Date(now - minutes * 60000);
+          const dur = Number(fop.deviceOrder.limitDuration) || 5;
+          const unit = fop.deviceOrder.limitDurationUnit || 'minutes';
+          const ms = unit === 'hours' ? dur * 3600000 : dur * 60000;
+          const minutes = unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
+          const since = new Date(now - ms);
           const recentByDevice = await Order.countDocuments({
             deviceId,
             createdAt: { $gte: since },
