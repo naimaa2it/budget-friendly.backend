@@ -575,15 +575,15 @@ router.post("/", async (req, res) => {
           if (phoneBlocklist.includes(phone)) {
             return res.status(400).json({ error: 'এই নম্বর থেকে অর্ডার করা সম্ভব নয়।' });
           }
-          const hours = Number(fop.phoneOrder.limitDuration) || 1;
-          const since = new Date(now - hours * 3600000);
+          const minutes = Number(fop.phoneOrder.limitDuration) || 5;
+          const since = new Date(now - minutes * 60000);
           const recentByPhone = await Order.countDocuments({
             'billingDetails.phone': phone,
             createdAt: { $gte: since },
           });
           if (recentByPhone > 0) {
             return res.status(400).json({
-              error: `এই নম্বর থেকে গত ${hours} ঘণ্টার মধ্যে অর্ডার করা হয়েছে। পরে চেষ্টা করুন।`,
+              error: `এই নম্বর থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${minutes} মিনিট পরে আবার চেষ্টা করুন।`,
             });
           }
         }
@@ -595,30 +595,30 @@ router.post("/", async (req, res) => {
           if (ipBlocklist.includes(clientIp)) {
             return res.status(400).json({ error: 'এই IP থেকে অর্ডার করা সম্ভব নয়।' });
           }
-          const hours = Number(fop.ipOrder.limitDuration) || 1;
-          const since = new Date(now - hours * 3600000);
+          const minutes = Number(fop.ipOrder.limitDuration) || 5;
+          const since = new Date(now - minutes * 60000);
           const recentByIp = await Order.countDocuments({
             clientIp,
             createdAt: { $gte: since },
           });
           if (recentByIp > 0) {
             return res.status(400).json({
-              error: `এই ঠিকানা থেকে গত ${hours} ঘণ্টার মধ্যে অর্ডার করা হয়েছে। পরে চেষ্টা করুন।`,
+              error: `এই লোকেশন থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${minutes} মিনিট পরে আবার চেষ্টা করুন।`,
             });
           }
         }
 
         // Device check
         if (fop.deviceOrder?.enabled && deviceId) {
-          const hours = Number(fop.deviceOrder.limitDuration) || 1;
-          const since = new Date(now - hours * 3600000);
+          const minutes = Number(fop.deviceOrder.limitDuration) || 5;
+          const since = new Date(now - minutes * 60000);
           const recentByDevice = await Order.countDocuments({
             deviceId,
             createdAt: { $gte: since },
           });
           if (recentByDevice > 0) {
             return res.status(400).json({
-              error: `এই ডিভাইস থেকে গত ${hours} ঘণ্টার মধ্যে অর্ডার করা হয়েছে। পরে চেষ্টা করুন।`,
+              error: `এই ডিভাইস থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${minutes} মিনিট পরে আবার চেষ্টা করুন।`,
             });
           }
         }
@@ -1428,7 +1428,7 @@ router.patch("/:id/edit", async (req, res) => {
         .json({ error: "The 30-minute edit window has passed." });
     }
 
-    const { note, address, phone, billingDetails, items } = req.body || {};
+    const { note, address, phone, billingDetails, items, addItems } = req.body || {};
     const billingPatch =
       billingDetails && typeof billingDetails === "object"
         ? billingDetails
@@ -1499,7 +1499,31 @@ router.patch("/:id/edit", async (req, res) => {
         }
       }
 
-      // Recalculate subtotal and total (keep shipping and discount)
+    }
+
+    // Add new products to the order
+    if (Array.isArray(addItems) && addItems.length > 0) {
+      for (const ni of addItems) {
+        if (!ni.productId) continue;
+        const prod = await Product.findById(ni.productId).lean();
+        if (!prod) continue;
+        const qty = Math.max(1, parseInt(ni.quantity) || 1);
+        const price = resolveVariantPrice(prod, ni.color, ni.size) ?? prod.price ?? 0;
+        order.items.push({
+          productId: prod._id,
+          title: prod.title,
+          price,
+          quantity: qty,
+          image: prod.images?.[0]?.url || null,
+          color: ni.color || null,
+          size: ni.size || null,
+          rewardPoints: Math.max(0, Number(prod.rewardPoints) || 0),
+        });
+      }
+    }
+
+    // Recalculate totals whenever items changed
+    if ((Array.isArray(items) && items.length > 0) || (Array.isArray(addItems) && addItems.length > 0)) {
       const newSubtotal = order.items.reduce(
         (sum, it) => sum + (it.price || 0) * it.quantity,
         0,
