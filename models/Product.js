@@ -111,6 +111,9 @@ const ProductSchema = new mongoose.Schema(
       enum: ["in_stock", "pre_order", "upcoming", "out_of_stock"],
       default: "in_stock",
     },
+    allowOverselling: { type: Boolean, default: false },
+    lowStockThreshold: { type: Number, default: 5 },
+    trackInventory: { type: Boolean, default: true },
 
     // DEPRECATED: colors and sizes are now stored in variants
     // These fields are kept for backward compatibility but should not be used for new products

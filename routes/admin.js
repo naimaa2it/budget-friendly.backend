@@ -346,6 +346,113 @@ router.put('/settings', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Inventory Management ────────────────────────────────────────────────────
+
+router.get('/inventory', requireAdmin, async (req, res) => {
+  try {
+    const { q, stockFilter, sort = 'stock_asc', page = 1, limit = 50 } = req.query;
+    const skip = (Math.max(1, Number(page)) - 1) * Number(limit);
+
+    const filter = { status: { $ne: 'archived' } };
+    if (q) {
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ title: re }, { sku: re }, { 'variants.sku': re }];
+    }
+
+    const allProducts = await Product.find(filter)
+      .select('title sku images variants inventory availability allowOverselling lowStockThreshold trackInventory updatedAt category status')
+      .lean();
+
+    const rows = allProducts.map((p) => {
+      const hasVariants = p.variants && p.variants.length > 0;
+      const totalStock = hasVariants
+        ? p.variants.reduce((s, v) => s + (Number(v.inventory) || 0), 0)
+        : (Number(p.inventory) || 0);
+      const threshold = p.lowStockThreshold ?? 5;
+      const stockStatus = totalStock <= 0 ? 'out_of_stock' : totalStock <= threshold ? 'low_stock' : 'in_stock';
+      return { ...p, totalStock, hasVariants, stockStatus };
+    });
+
+    let filtered = rows;
+    if (stockFilter === 'out_of_stock') filtered = rows.filter((r) => r.totalStock <= 0);
+    else if (stockFilter === 'low_stock') filtered = rows.filter((r) => r.totalStock > 0 && r.stockStatus === 'low_stock');
+    else if (stockFilter === 'in_stock') filtered = rows.filter((r) => r.totalStock > 0);
+
+    filtered.sort((a, b) => {
+      if (sort === 'stock_asc') return a.totalStock - b.totalStock;
+      if (sort === 'stock_desc') return b.totalStock - a.totalStock;
+      if (sort === 'name_asc') return a.title.localeCompare(b.title);
+      if (sort === 'name_desc') return b.title.localeCompare(a.title);
+      return 0;
+    });
+
+    const total = filtered.length;
+    const items = filtered.slice(skip, skip + Number(limit));
+
+    const summary = {
+      total: rows.length,
+      out_of_stock: rows.filter((r) => r.totalStock <= 0).length,
+      low_stock: rows.filter((r) => r.totalStock > 0 && r.stockStatus === 'low_stock').length,
+      in_stock: rows.filter((r) => r.totalStock > 0 && r.stockStatus === 'in_stock').length,
+    };
+
+    res.json({ items, total, pages: Math.ceil(total / Number(limit)), summary });
+  } catch (err) {
+    console.error('GET /inventory error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.patch('/inventory/bulk', requireAdmin, async (req, res) => {
+  try {
+    const { updates } = req.body;
+    if (!Array.isArray(updates)) return res.status(400).json({ error: 'updates must be array' });
+    const results = await Promise.all(updates.map(async ({ id, inventory, variantIndex }) => {
+      const p = await Product.findById(id);
+      if (!p) return { id, ok: false };
+      if (variantIndex != null && p.variants[variantIndex]) {
+        p.variants[variantIndex].inventory = Math.max(0, Number(inventory));
+      } else {
+        p.inventory = Math.max(0, Number(inventory));
+      }
+      await p.save();
+      return { id, ok: true };
+    }));
+    res.json({ ok: true, results });
+  } catch (err) {
+    console.error('PATCH /inventory/bulk error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.patch('/inventory/:id', requireAdmin, async (req, res) => {
+  try {
+    const { variantIndex, inventory, allowOverselling, lowStockThreshold, trackInventory, availability } = req.body;
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    if (variantIndex != null && product.variants[variantIndex]) {
+      if (inventory != null) product.variants[variantIndex].inventory = Math.max(0, Number(inventory));
+    } else {
+      if (inventory != null) product.inventory = Math.max(0, Number(inventory));
+    }
+    if (allowOverselling != null) product.allowOverselling = Boolean(allowOverselling);
+    if (lowStockThreshold != null) product.lowStockThreshold = Math.max(0, Number(lowStockThreshold));
+    if (trackInventory != null) product.trackInventory = Boolean(trackInventory);
+    if (availability) product.availability = availability;
+
+    await product.save();
+    const hasVariants = product.variants && product.variants.length > 0;
+    const totalStock = hasVariants
+      ? product.variants.reduce((s, v) => s + (Number(v.inventory) || 0), 0)
+      : Number(product.inventory) || 0;
+    res.json({ ok: true, totalStock, product: { _id: product._id, inventory: product.inventory, variants: product.variants, allowOverselling: product.allowOverselling, lowStockThreshold: product.lowStockThreshold, trackInventory: product.trackInventory, availability: product.availability } });
+  } catch (err) {
+    console.error('PATCH /inventory/:id error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin product management (protected)
 router.get('/products', requireAdmin, async (req, res) => {
   try {
