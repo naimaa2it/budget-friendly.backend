@@ -48,12 +48,11 @@ const isDhaka = (city) =>
 
 /**
  * Location-aware base shipping:
- *   - Free  when subtotal ≥ 999
- *   - 70 TK inside Dhaka
- *   - 130 TK outside Dhaka (or when city is unknown)
+ *   - 70 TK inside Dhaka city
+ *   - 130 TK for Savar and outside Dhaka
+ *   - 0 when city is unknown (not yet selected)
  */
 const calcBaseShipping = (sub, city) => {
-  if (sub >= 999) return 0;
   if (!city) return 0;
   return isDhaka(city) ? 70 : 130;
 };
@@ -166,7 +165,7 @@ const calculateCouponDiscount = (coupon, subtotal) => {
 // ── resolveAndQuote ───────────────────────────────────────────────────────────
 // Shared helper used by both /quote (read-only preview) and POST / (order save).
 // Fetches real prices from the DB, validates coupon(s), and returns the full
-// pricing breakdown. Supports multiple coupons (up to 3) if they are stackable.
+// pricing breakdown. Supports up to 2 stackable coupons (1 if cart has free-shipping product).
 // couponCodes can be a single code string or array of codes.
 const resolveAndQuote = async (
   clientItems,
@@ -251,7 +250,12 @@ const resolveAndQuote = async (
   }
 
   const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
-  const baseShipping = calcBaseShipping(subtotal, city);
+
+  // If any cart item has product-level free shipping, shipping is always 0
+  const hasFreeShipping = items.some(
+    (i) => productMap[i.productId.toString()]?.freeShipping === true,
+  );
+  const baseShipping = hasFreeShipping ? 0 : calcBaseShipping(subtotal, city);
 
   let totalCouponDiscount = 0;
   let couponGivesFreeShip = false;
@@ -268,8 +272,8 @@ const resolveAndQuote = async (
     }
   }
 
-  // Limit to 3 coupons max
-  codes = codes.slice(0, 3);
+  // If any product has free shipping, max 1 coupon; otherwise max 2
+  codes = hasFreeShipping ? codes.slice(0, 1) : codes.slice(0, 2);
 
   // Process each coupon code
   for (const code of codes) {
