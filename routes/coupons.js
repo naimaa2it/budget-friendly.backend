@@ -221,7 +221,6 @@ router.get('/', async (req, res) => {
       isNewUser: userDoc ? (Date.now() - new Date(userDoc.createdAt).getTime() < 30 * 24 * 60 * 60 * 1000) : false,
     });
   } catch (err) {
-    console.error('GET /api/coupons error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -307,7 +306,6 @@ router.get('/progress', async (req, res) => {
       isNewUser,
     });
   } catch (err) {
-    console.error('GET /api/coupons/progress error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

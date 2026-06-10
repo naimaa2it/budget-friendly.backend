@@ -64,8 +64,7 @@ router.put('/profile', requireUser, upload.single('image'), async (req, res) => 
         await ensureCloudinaryConfigured();
         await cloudinary.uploader.destroy(u.imagePublicId);
       } catch (delErr) {
-        console.warn('Failed to remove profile image from Cloudinary', delErr);
-      }
+        }
       u.image = undefined;
       u.imagePublicId = undefined;
     }
@@ -89,7 +88,6 @@ router.put('/profile', requireUser, upload.single('image'), async (req, res) => 
           .webp({ quality })
           .toBuffer();
       } catch (sharpErr) {
-        console.error('Sharp processing error on profile image:', sharpErr);
         return res.status(400).json({ error: 'Invalid image file' });
       }
 
@@ -115,7 +113,6 @@ router.put('/profile', requireUser, upload.single('image'), async (req, res) => 
         try {
           await cloudinary.uploader.destroy(u.imagePublicId);
         } catch (delErr) {
-          console.warn('Failed to remove old profile image from Cloudinary', delErr);
         }
       }
 
@@ -140,7 +137,6 @@ router.put('/profile', requireUser, upload.single('image'), async (req, res) => 
     };
     res.json({ ok: true, user: safe });
   } catch (err) {
-    console.error('PUT /user/profile error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -159,7 +155,6 @@ router.post('/addresses', requireUser, async (req, res) => {
     const added = req.user.addresses[req.user.addresses.length - 1];
     res.json({ ok: true, address: added });
   } catch (err) {
-    console.error('POST /user/addresses error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -172,7 +167,6 @@ router.put('/addresses/:id', requireUser, async (req, res) => {
     await req.user.save();
     res.json({ ok: true, address: addr });
   } catch (err) {
-    console.error('PUT /user/addresses/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -191,7 +185,6 @@ router.delete('/addresses/:id', requireUser, async (req, res) => {
     await req.user.save();
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /user/addresses/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -203,7 +196,6 @@ router.post('/subscribe', requireUser, async (req, res) => {
     await req.user.save();
     res.json({ ok: true, subscribed: true });
   } catch (err) {
-    console.error('POST /user/subscribe error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -214,7 +206,6 @@ router.post('/unsubscribe', requireUser, async (req, res) => {
     await req.user.save();
     res.json({ ok: true, subscribed: false });
   } catch (err) {
-    console.error('POST /user/unsubscribe error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -226,7 +217,6 @@ router.get('/rewards', requireUser, async (req, res) => {
     if (!summary) return res.status(404).json({ error: 'User not found' });
     res.json(summary);
   } catch (err) {
-    console.error('GET /user/rewards error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -153,7 +153,6 @@ const requireAdmin = async (req, res, next) => {
 // Admin / Moderator registration endpoint has been superseded by manual seeding.
 // Keeping route for compatibility, but reject all requests to prevent self-registration.
 router.post('/register', async (req, res) => {
-  console.warn(`Blocked attempt to access /api/admin/register from IP ${req.ip}`);
   return res.status(403).json({ error: 'Admin registration is disabled. Please contact an existing administrator.' });
 });
 
@@ -175,7 +174,6 @@ router.post('/check-email', async (req, res) => {
 
     res.json({ exists: false, ok: true });
   } catch (err) {
-    console.error('Email check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -189,7 +187,6 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
 
     // fail fast if Cloudinary is not configured correctly
     if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-      console.error('Cloudinary configuration missing');
       return res.status(500).json({ error: 'Server upload not configured (Cloudinary credentials missing).' });
     }
 
@@ -213,7 +210,6 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
           .webp({ quality })
           .toBuffer();
       } catch (sharpErr) {
-        console.error('Sharp image processing error:', sharpErr);
         return res.status(400).json({ error: 'Invalid image file or unsupported format.' });
       }
 
@@ -264,7 +260,6 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
       }});
     }
   } catch (err) {
-    console.error('Upload error:', err instanceof Error ? err.stack : err);
     res.status(500).json({ error: err.message || 'Upload failed' });
   }
 });
@@ -336,7 +331,6 @@ router.get('/settings', requireAdmin, async (req, res) => {
     }
     res.json({ settings });
   } catch (err) {
-    console.error('GET /settings error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -349,7 +343,6 @@ router.put('/settings', requireAdmin, async (req, res) => {
     const settings = await Setting.findOneAndUpdate({}, { $set: payload }, { upsert: true, new: true });
     res.json({ ok: true, settings });
   } catch (err) {
-    console.error('PUT /settings error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -370,6 +363,21 @@ router.get('/profit-margin', requireAdmin, async (req, res) => {
     const products = await Product.find(dbFilter)
       .select('title sku images variants price buyingPrice category status')
       .lean();
+
+    // Aggregate sold units + revenue per product from non-cancelled/returned orders
+    const soldAgg = await Order.aggregate([
+      { $match: { status: { $nin: ['cancelled', 'returned'] } } },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.productId',
+          unitsSold: { $sum: '$items.quantity' },
+          soldRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+        },
+      },
+    ]);
+    const soldMap = {};
+    soldAgg.forEach((s) => { if (s._id) soldMap[s._id] = s; });
 
     const calcMargin = (sellingPrice, buyingPrice) => {
       const sp = Number(sellingPrice) || 0;
@@ -415,7 +423,17 @@ router.get('/profit-margin', requireAdmin, async (req, res) => {
         marginPct < 15 ? 'low' :
         marginPct < 30 ? 'medium' : 'high';
 
-      return { ...p, hasVariants, variantMargins, aggregateMargin, marginPct, profitStatus };
+      // Per-product sold financials (COGS estimated from current buying price)
+      const sold = soldMap[p._id.toString()] || {};
+      const effBP = hasVariants && p.variants?.length
+        ? p.variants.reduce((s, v) => s + Number(v.buyingPrice ?? p.buyingPrice ?? 0), 0) / p.variants.length
+        : Number(p.buyingPrice ?? 0);
+      const unitsSold = sold.unitsSold || 0;
+      const soldRevenue = Math.round(sold.soldRevenue || 0);
+      const soldCOGS = Math.round(effBP * unitsSold);
+      const soldProfit = soldRevenue - soldCOGS;
+
+      return { ...p, hasVariants, variantMargins, aggregateMargin, marginPct, profitStatus, unitsSold, soldRevenue, soldCOGS, soldProfit };
     });
 
     let filtered = rows;
@@ -434,6 +452,10 @@ router.get('/profit-margin', requireAdmin, async (req, res) => {
       return 0;
     });
 
+    const totalSoldRevenue = Math.round(rows.reduce((s, r) => s + (r.soldRevenue || 0), 0));
+    const totalSoldCOGS = Math.round(rows.reduce((s, r) => s + (r.soldCOGS || 0), 0));
+    const totalSoldProfit = totalSoldRevenue - totalSoldCOGS;
+
     const summary = {
       total: rows.length,
       no_data: rows.filter((r) => r.profitStatus === 'no_data').length,
@@ -445,12 +467,117 @@ router.get('/profit-margin', requireAdmin, async (req, res) => {
         const valid = rows.filter((r) => r.marginPct != null);
         return valid.length ? valid.reduce((s, r) => s + r.marginPct, 0) / valid.length : null;
       })(),
+      totalSoldRevenue,
+      totalSoldCOGS,
+      totalSoldProfit,
+      netMarginPct: totalSoldRevenue > 0 ? Math.round((totalSoldProfit / totalSoldRevenue) * 1000) / 10 : null,
     };
 
     const total = filtered.length;
     res.json({ items: filtered.slice(skip, skip + Number(limit)), total, pages: Math.ceil(total / Number(limit)), summary });
   } catch (err) {
-    console.error('GET /profit-margin error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Profit Margin Analytics (monthly/yearly charts) ─────────────────────────
+
+router.get('/profit-margin/analytics', requireAdmin, async (req, res) => {
+  try {
+    const excludedStatuses = ['cancelled', 'returned'];
+
+    // Last 24 months
+    const fromDate = new Date();
+    fromDate.setMonth(fromDate.getMonth() - 23);
+    fromDate.setDate(1);
+    fromDate.setHours(0, 0, 0, 0);
+
+    const itemAgg = await Order.aggregate([
+      { $match: { status: { $nin: excludedStatuses }, createdAt: { $gte: fromDate } } },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, productId: '$items.productId' },
+          revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+          units: { $sum: '$items.quantity' },
+        },
+      },
+    ]);
+
+    if (!itemAgg.length) {
+      return res.json({ monthly: [], yearly: [], totals: { revenue: 0, cogs: 0, profit: 0, marginPct: null, units: 0 } });
+    }
+
+    const productIds = [...new Set(itemAgg.map((r) => r._id.productId).filter(Boolean))];
+    const bpProducts = await Product.find({ _id: { $in: productIds } })
+      .select('_id buyingPrice variants')
+      .lean();
+
+    const bpMap = {};
+    bpProducts.forEach((p) => {
+      const pid = p._id.toString();
+      if (p.buyingPrice) {
+        bpMap[pid] = Number(p.buyingPrice);
+      } else if (p.variants?.length) {
+        const valid = p.variants.filter((v) => v.buyingPrice);
+        if (valid.length) bpMap[pid] = valid.reduce((s, v) => s + Number(v.buyingPrice), 0) / valid.length;
+      }
+    });
+
+    const periodMap = {};
+    itemAgg.forEach((row) => {
+      const key = `${row._id.year}-${String(row._id.month).padStart(2, '0')}`;
+      if (!periodMap[key]) periodMap[key] = { year: row._id.year, month: row._id.month, revenue: 0, cogs: 0, units: 0 };
+      const bp = bpMap[row._id.productId] || 0;
+      periodMap[key].revenue += row.revenue;
+      periodMap[key].cogs += bp * row.units;
+      periodMap[key].units += row.units;
+    });
+
+    const monthly = Object.entries(periodMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, d]) => {
+        const profit = d.revenue - d.cogs;
+        const hasCogs = d.cogs > 0;
+        return {
+          label: new Date(d.year, d.month - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          year: d.year,
+          month: d.month,
+          revenue: Math.round(d.revenue),
+          cogs: Math.round(d.cogs),
+          profit: Math.round(profit),
+          marginPct: hasCogs && d.revenue > 0 ? Math.round((profit / d.revenue) * 1000) / 10 : null,
+          units: d.units,
+        };
+      });
+
+    const yearlyMap = {};
+    monthly.forEach((m) => {
+      const y = String(m.year);
+      if (!yearlyMap[y]) yearlyMap[y] = { revenue: 0, cogs: 0, profit: 0, units: 0 };
+      yearlyMap[y].revenue += m.revenue;
+      yearlyMap[y].cogs += m.cogs;
+      yearlyMap[y].profit += m.profit;
+      yearlyMap[y].units += m.units;
+    });
+
+    const yearly = Object.entries(yearlyMap)
+      .sort()
+      .map(([year, d]) => ({
+        label: year,
+        year: parseInt(year),
+        ...d,
+        marginPct: d.cogs > 0 && d.revenue > 0 ? Math.round((d.profit / d.revenue) * 1000) / 10 : null,
+      }));
+
+    const totals = monthly.reduce(
+      (acc, m) => ({ revenue: acc.revenue + m.revenue, cogs: acc.cogs + m.cogs, profit: acc.profit + m.profit, units: acc.units + m.units }),
+      { revenue: 0, cogs: 0, profit: 0, units: 0 },
+    );
+    totals.marginPct = totals.revenue > 0 ? Math.round((totals.profit / totals.revenue) * 1000) / 10 : null;
+
+    res.json({ monthly, yearly, totals });
+  } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -507,7 +634,6 @@ router.get('/inventory', requireAdmin, async (req, res) => {
 
     res.json({ items, total, pages: Math.ceil(total / Number(limit)), summary });
   } catch (err) {
-    console.error('GET /inventory error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -529,7 +655,6 @@ router.patch('/inventory/bulk', requireAdmin, async (req, res) => {
     }));
     res.json({ ok: true, results });
   } catch (err) {
-    console.error('PATCH /inventory/bulk error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -557,7 +682,6 @@ router.patch('/inventory/:id', requireAdmin, async (req, res) => {
       : Number(product.inventory) || 0;
     res.json({ ok: true, totalStock, product: { _id: product._id, inventory: product.inventory, variants: product.variants, allowOverselling: product.allowOverselling, lowStockThreshold: product.lowStockThreshold, trackInventory: product.trackInventory, availability: product.availability } });
   } catch (err) {
-    console.error('PATCH /inventory/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -596,7 +720,6 @@ router.get('/products', requireAdmin, async (req, res) => {
     ]);
     res.json({ items, total, page: Number(page), limit: Number(limit) });
   } catch (err) {
-    console.error('Admin GET /products error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -639,7 +762,6 @@ router.get('/variations', requireAdmin, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Admin GET /variations error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -664,7 +786,6 @@ router.post('/variations', requireAdmin, async (req, res) => {
     res.json({ ok: true, variation });
   } catch (err) {
     if (err?.code === 11000) return res.status(409).json({ error: 'Variation already exists' });
-    console.error('Admin POST /variations error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -694,7 +815,6 @@ router.put('/variations/:id', requireAdmin, async (req, res) => {
     res.json({ ok: true, variation });
   } catch (err) {
     if (err?.code === 11000) return res.status(409).json({ error: 'Variation already exists' });
-    console.error('Admin PUT /variations/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -705,7 +825,6 @@ router.delete('/variations/:id', requireAdmin, async (req, res) => {
     if (!deleted) return res.status(404).json({ error: 'Variation not found' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('Admin DELETE /variations/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -789,7 +908,6 @@ router.post('/products', requireAdmin, async (req, res) => {
     }
     res.json({ ok: true, product: p });
   } catch (err) {
-    console.error('Admin POST /products error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -804,7 +922,6 @@ router.get('/products/:id', requireAdmin, async (req, res) => {
     }
     res.json({ product: p });
   } catch (err) {
-    console.error('Admin GET /products/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -881,14 +998,13 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
           ensureCloudinaryConfigured();
           for (const publicId of removed) {
             try {
-              console.log('Deleting removed product image from Cloudinary:', publicId);
               await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-            } catch (clErr) {
-              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            } catch {
+              // ignore Cloudinary errors
             }
           }
-        } catch (e) {
-          console.error('Error while removing images from Cloudinary:', e);
+        } catch {
+          // ignore Cloudinary errors
         }
       }
     }
@@ -915,7 +1031,6 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
     }
     res.json({ ok: true, product: p });
   } catch (err) {
-    console.error('Admin PUT /products/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -935,15 +1050,14 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
           for (const img of p.images) {
             if (img && img.public_id) {
               try {
-                console.log('Deleting product image from Cloudinary (force delete):', img.public_id);
                 await cloudinary.uploader.destroy(img.public_id, { resource_type: 'image' });
-              } catch (err) {
-                console.warn('Failed to delete Cloudinary image', img.public_id, err && err.message ? err.message : err);
+              } catch {
+                // ignore Cloudinary errors
               }
             }
           }
-        } catch (e) {
-          console.error('Cloudinary deletion error during product force-delete:', e);
+        } catch {
+          // ignore Cloudinary errors
         }
       }
 
@@ -958,7 +1072,6 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     await detachBarcodeFromProduct(p._id);
     res.json({ ok: true, product: p });
   } catch (err) {
-    console.error('Admin DELETE /products/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -980,7 +1093,6 @@ router.get('/blog', requireAdmin, async (req, res) => {
     ]);
     res.json({ items, total, page: Number(page), limit: Number(limit) });
   } catch (err) {
-    console.error('Admin GET /blog error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -993,7 +1105,6 @@ router.post('/blog', requireAdmin, async (req, res) => {
     await p.save();
     res.json({ ok: true, post: p });
   } catch (err) {
-    console.error('Admin POST /blog error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1004,7 +1115,6 @@ router.get('/blog/tags', requireAdmin, async (req, res) => {
     const tags = await BlogPost.distinct('tags');
     res.json({ tags: tags.filter(t => t).sort() });
   } catch (err) {
-    console.error('Admin GET /blog/tags error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1016,7 +1126,6 @@ router.get('/blog/:id', requireAdmin, async (req, res) => {
     if (!p) return res.status(404).json({ error: 'Not found' });
     res.json({ post: p });
   } catch (err) {
-    console.error('Admin GET /blog/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1030,7 +1139,6 @@ router.put('/blog/:id', requireAdmin, async (req, res) => {
     if (!p) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, post: p });
   } catch (err) {
-    console.error('Admin PUT /blog/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1042,7 +1150,6 @@ router.delete('/blog/:id', requireAdmin, async (req, res) => {
     if (!p) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, post: p });
   } catch (err) {
-    console.error('Admin DELETE /blog/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1055,7 +1162,6 @@ router.get('/blog-categories', requireAdmin, async (req, res) => {
     const categories = await BlogCategory.find().sort({ name: 1 });
     res.json({ categories });
   } catch (err) {
-    console.error('Admin GET /blog-categories error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1070,7 +1176,6 @@ router.post('/blog-categories', requireAdmin, async (req, res) => {
     await category.save();
     res.json({ ok: true, category });
   } catch (err) {
-    console.error('Admin POST /blog-categories error:', err);
     if (err.code === 11000) {
       return res.status(400).json({ error: 'Category name already exists' });
     }
@@ -1090,7 +1195,6 @@ router.put('/blog-categories/:id', requireAdmin, async (req, res) => {
     if (!category) return res.status(404).json({ error: 'Category not found' });
     res.json({ ok: true, category });
   } catch (err) {
-    console.error('Admin PUT /blog-categories/:id error:', err);
     if (err.code === 11000) {
       return res.status(400).json({ error: 'Category name already exists' });
     }
@@ -1112,7 +1216,6 @@ router.delete('/blog-categories/:id', requireAdmin, async (req, res) => {
     
     res.json({ ok: true, category });
   } catch (err) {
-    console.error('Admin DELETE /blog-categories/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1125,19 +1228,16 @@ router.post('/login', async (req, res) => {
     
     // Validate admin secret
     if (adminSecret !== process.env.ADMIN_SECRET) {
-      console.warn(`Failed admin login attempt from IP ${req.ip} - invalid secret`);
       return res.status(403).json({ error: 'Invalid admin secret' });
     }
 
     const admin = await Admin.findOne({ email: email.toLowerCase() });
     if (!admin || !admin.hashedPassword) {
-      console.warn(`Failed admin login attempt from IP ${req.ip} - admin not found: ${email}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Check if account is active
     if (!admin.isActive) {
-      console.warn(`Inactive admin login attempt: ${email}`);
       return res.status(403).json({ error: 'Account is disabled. Contact super admin.' });
     }
 
@@ -1150,7 +1250,6 @@ router.post('/login', async (req, res) => {
     // Verify password
     const ok = await bcrypt.compare(password, admin.hashedPassword);
     if (!ok) {
-      console.warn(`Failed admin login attempt from IP ${req.ip} - wrong password: ${email}`);
       await admin.incLoginAttempts();
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -1165,10 +1264,8 @@ router.post('/login', async (req, res) => {
     // SameSite=none + Secure required for cross-origin cookie (Vercel frontend ↔ Render backend)
     res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true });
     
-    console.log(`Admin logged in: ${admin.email} (${admin.role})`);
     res.json({ user: { email: admin.email, name: admin.name, role: admin.role, image: null } });
   } catch (err) {
-    console.error('Admin login error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1182,7 +1279,6 @@ router.get('/admins', requireAdmin, async (req, res) => {
     const items = await Admin.find().select('-hashedPassword -resetToken -resetExpires -loginAttempts');
     res.json({ items });
   } catch (err) {
-    console.error('GET /admins error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1195,7 +1291,6 @@ router.get('/admins/:id', requireAdmin, async (req, res) => {
     if (!a) return res.status(404).json({ error: 'Not found' });
     res.json({ admin: a });
   } catch (err) {
-    console.error('GET /admins/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1213,7 +1308,6 @@ router.post('/admins', requireAdmin, async (req, res) => {
     await admin.save();
     res.json({ ok: true, admin: { email: admin.email, name: admin.name, role: admin.role, _id: admin._id } });
   } catch (err) {
-    console.error('POST /admins error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1239,7 +1333,6 @@ router.put('/admins/:id', requireAdmin, async (req, res) => {
     await a.save();
     res.json({ ok: true, admin: { _id: a._id, name: a.name, email: a.email, role: a.role, isActive: a.isActive } });
   } catch (err) {
-    console.error('PUT /admins/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1253,7 +1346,6 @@ router.put('/admins/:id/deactivate', requireAdmin, async (req, res) => {
     if (!a) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, admin: { _id: a._id, isActive: a.isActive } });
   } catch (err) {
-    console.error('PUT /admins/:id/deactivate error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1268,7 +1360,6 @@ router.delete('/admins/:id', requireAdmin, async (req, res) => {
     await Admin.deleteOne({ _id: a._id });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /admins/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1279,7 +1370,6 @@ router.get('/customer-tags', requireAdmin, async (req, res) => {
     const items = await CustomerTag.find({}).sort({ name: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /customer-tags error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1297,7 +1387,6 @@ router.post('/customer-tags', requireAdmin, async (req, res) => {
     });
     res.status(201).json({ tag });
   } catch (err) {
-    console.error('POST /customer-tags error:', err);
     res.status(500).json({ error: err.code === 11000 ? 'Tag already exists' : 'Server error' });
   }
 });
@@ -1313,7 +1402,6 @@ router.put('/customer-tags/:id', requireAdmin, async (req, res) => {
     await tag.save();
     res.json({ ok: true, tag });
   } catch (err) {
-    console.error('PUT /customer-tags/:id error:', err);
     res.status(500).json({ error: err.code === 11000 ? 'Tag already exists' : 'Server error' });
   }
 });
@@ -1326,7 +1414,6 @@ router.delete('/customer-tags/:id', requireAdmin, async (req, res) => {
     await User.updateMany({ tags: tag._id }, { $pull: { tags: tag._id } });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /customer-tags/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1362,7 +1449,6 @@ router.get('/barcodes', requireAdmin, async (req, res) => {
     });
     res.json({ items: normalizedItems, total, page: Number(page), limit: pageSize });
   } catch (err) {
-    console.error('GET /barcodes error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1402,7 +1488,6 @@ router.post('/barcodes', requireAdmin, async (req, res) => {
     }
     res.status(201).json({ ok: true, item });
   } catch (err) {
-    console.error('POST /barcodes error:', err);
     res.status(500).json({ error: err.code === 11000 ? 'Barcode already exists' : 'Server error' });
   }
 });
@@ -1455,7 +1540,6 @@ router.put('/barcodes/:id', requireAdmin, async (req, res) => {
     await item.populate('product', 'title images barcode sku status');
     res.json({ ok: true, item });
   } catch (err) {
-    console.error('PUT /barcodes/:id error:', err);
     res.status(500).json({ error: err.code === 11000 ? 'Barcode already exists' : 'Server error' });
   }
 });
@@ -1470,7 +1554,6 @@ router.delete('/barcodes/:id', requireAdmin, async (req, res) => {
     await Barcode.deleteOne({ _id: item._id });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /barcodes/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1511,7 +1594,6 @@ router.get('/users', requireAdmin, async (req, res) => {
 
     res.json({ items });
   } catch (err) {
-    console.error('GET /users error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1523,7 +1605,6 @@ router.get('/users/:id', requireAdmin, async (req, res) => {
     if (!u) return res.status(404).json({ error: 'Not found' });
     res.json({ user: u });
   } catch (err) {
-    console.error('GET /users/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1542,7 +1623,6 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
     await u.populate('tags');
     res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, mobile: u.mobile, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt, tags: u.tags } });
   } catch (err) {
-    console.error('PUT /users/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1556,7 +1636,6 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
     await User.deleteOne({ _id: u._id });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /users/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1606,7 +1685,6 @@ router.get('/phones/:phone/lifetime-stats', requireAdmin, async (req, res) => {
     });
     res.json(lifetime);
   } catch (err) {
-    console.error('GET /phones/:phone/lifetime-stats error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1653,7 +1731,6 @@ router.get('/users/:id/profile', requireAdmin, async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error('GET /users/:id/profile error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1677,11 +1754,9 @@ router.post('/forgot', async (req, res) => {
     admin.resetExpires = Date.now() + 1000 * 60 * 30; // 30 minutes
     await admin.save();
 
-    console.log(`Password reset requested for admin: ${email}`);
     // TODO: send email with link containing token
     res.json({ ok: true, token, message: 'Reset token generated' });
   } catch (err) {
-    console.error('Admin forgot password error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1706,10 +1781,8 @@ router.post('/reset', async (req, res) => {
     user.lockUntil = undefined;
     await user.save();
 
-    console.log(`Password reset completed for admin: ${user.email}`);
     res.json({ ok: true, message: 'Password reset successful' });
   } catch (err) {
-    console.error('Admin password reset error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1723,7 +1796,6 @@ router.get('/occasions', requireAdmin, async (req, res) => {
     const items = await OccasionSection.find().sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /occasions error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1739,7 +1811,6 @@ router.post('/occasions', requireAdmin, async (req, res) => {
     await section.save();
     res.json({ ok: true, section });
   } catch (err) {
-    console.error('POST /occasions error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1752,7 +1823,6 @@ router.get('/occasions/:id', requireAdmin, async (req, res) => {
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json({ section });
   } catch (err) {
-    console.error('GET /occasions/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1766,7 +1836,6 @@ router.put('/occasions/:id', requireAdmin, async (req, res) => {
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, section });
   } catch (err) {
-    console.error('PUT /occasions/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1779,7 +1848,6 @@ router.delete('/occasions/:id', requireAdmin, async (req, res) => {
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /occasions/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1795,7 +1863,6 @@ router.put('/occasions-reorder', requireAdmin, async (req, res) => {
     ));
     res.json({ ok: true });
   } catch (err) {
-    console.error('PUT /occasions-reorder error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1809,7 +1876,6 @@ router.get('/featured', requireAdmin, async (req, res) => {
     const items = await FeaturedSection.find().sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /featured error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1825,7 +1891,6 @@ router.post('/featured', requireAdmin, async (req, res) => {
     await section.save();
     res.json({ ok: true, section });
   } catch (err) {
-    console.error('POST /featured error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1838,7 +1903,6 @@ router.get('/featured/:id', requireAdmin, async (req, res) => {
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json({ section });
   } catch (err) {
-    console.error('GET /featured/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1852,7 +1916,6 @@ router.put('/featured/:id', requireAdmin, async (req, res) => {
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, section });
   } catch (err) {
-    console.error('PUT /featured/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1865,7 +1928,6 @@ router.delete('/featured/:id', requireAdmin, async (req, res) => {
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /featured/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1881,7 +1943,6 @@ router.put('/featured-reorder', requireAdmin, async (req, res) => {
     ));
     res.json({ ok: true });
   } catch (err) {
-    console.error('PUT /featured-reorder error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1895,7 +1956,6 @@ router.get('/promo-strip', requireAdmin, async (req, res) => {
     const items = await PromoStripItem.find().sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /promo-strip error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1911,7 +1971,6 @@ router.post('/promo-strip', requireAdmin, async (req, res) => {
     await item.save();
     res.json({ ok: true, item });
   } catch (err) {
-    console.error('POST /promo-strip error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1924,7 +1983,6 @@ router.get('/promo-strip/:id', requireAdmin, async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json({ item });
   } catch (err) {
-    console.error('GET /promo-strip/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1938,7 +1996,6 @@ router.put('/promo-strip/:id', requireAdmin, async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, item });
   } catch (err) {
-    console.error('PUT /promo-strip/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1951,7 +2008,6 @@ router.delete('/promo-strip/:id', requireAdmin, async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /promo-strip/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1967,7 +2023,6 @@ router.put('/promo-strip-reorder', requireAdmin, async (req, res) => {
     ));
     res.json({ ok: true });
   } catch (err) {
-    console.error('PUT /promo-strip-reorder error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1980,7 +2035,6 @@ router.get('/banners', requireAdmin, async (req, res) => {
     const items = await Banner.find().sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /banners error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1995,7 +2049,6 @@ router.post('/banners', requireAdmin, async (req, res) => {
     await banner.save();
     res.json({ ok: true, banner });
   } catch (err) {
-    console.error('POST /banners error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2007,7 +2060,6 @@ router.get('/banners/:id', requireAdmin, async (req, res) => {
     if (!banner) return res.status(404).json({ error: 'Not found' });
     res.json({ banner });
   } catch (err) {
-    console.error('GET /banners/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2020,7 +2072,6 @@ router.put('/banners/:id', requireAdmin, async (req, res) => {
     if (!banner) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, banner });
   } catch (err) {
-    console.error('PUT /banners/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2035,11 +2086,10 @@ router.delete('/banners/:id', requireAdmin, async (req, res) => {
       try {
         ensureCloudinaryConfigured();
         await cloudinary.uploader.destroy(banner.image.public_id, { resource_type: 'image' });
-      } catch (e) { console.warn('Cloudinary delete failed for banner image:', e?.message); }
+      } catch { /* ignore Cloudinary errors */ }
     }
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /banners/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2053,7 +2103,6 @@ router.put('/banners-reorder', requireAdmin, async (req, res) => {
     ));
     res.json({ ok: true });
   } catch (err) {
-    console.error('PUT /banners-reorder error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2066,7 +2115,6 @@ router.get('/promo-panels', requireAdmin, async (req, res) => {
     const items = await PromoPanel.find().sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /promo-panels error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2081,7 +2129,6 @@ router.post('/promo-panels', requireAdmin, async (req, res) => {
     await panel.save();
     res.json({ ok: true, panel });
   } catch (err) {
-    console.error('POST /promo-panels error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2093,7 +2140,6 @@ router.get('/promo-panels/:id', requireAdmin, async (req, res) => {
     if (!panel) return res.status(404).json({ error: 'Not found' });
     res.json({ panel });
   } catch (err) {
-    console.error('GET /promo-panels/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2106,7 +2152,6 @@ router.put('/promo-panels/:id', requireAdmin, async (req, res) => {
     if (!panel) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, panel });
   } catch (err) {
-    console.error('PUT /promo-panels/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2120,11 +2165,10 @@ router.delete('/promo-panels/:id', requireAdmin, async (req, res) => {
       try {
         ensureCloudinaryConfigured();
         await cloudinary.uploader.destroy(panel.image.public_id, { resource_type: 'image' });
-      } catch (e) { console.warn('Cloudinary delete failed for promo panel image:', e?.message); }
+      } catch { /* ignore Cloudinary errors */ }
     }
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /promo-panels/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2138,7 +2182,6 @@ router.put('/promo-panels-reorder', requireAdmin, async (req, res) => {
     ));
     res.json({ ok: true });
   } catch (err) {
-    console.error('PUT /promo-panels-reorder error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2152,7 +2195,6 @@ router.get('/popup', requireAdmin, async (req, res) => {
     const popup = await Popup.findOne();
     res.json({ popup: popup || null });
   } catch (err) {
-    console.error('GET /popup error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2173,7 +2215,6 @@ router.put('/popup', requireAdmin, async (req, res) => {
     }
     res.json({ ok: true, popup });
   } catch (err) {
-    console.error('PUT /popup error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

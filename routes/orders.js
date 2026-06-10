@@ -637,7 +637,6 @@ router.post("/", async (req, res) => {
         }
       }
     } catch (fopErr) {
-      console.error('FakeOrderProtection check error:', fopErr);
       // don't block order on protection check failure
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -730,12 +729,8 @@ router.post("/", async (req, res) => {
     }
 
     // Send emails (non-blocking)
-    sendOrderConfirmationEmail(order).catch((err) =>
-      console.error("Customer email failed:", err.message),
-    );
-    sendAdminOrderNotification(order).catch((err) =>
-      console.error("Admin email failed:", err.message),
-    );
+    sendOrderConfirmationEmail(order).catch(() => {});
+    sendAdminOrderNotification(order).catch(() => {});
 
     // ── Cash on Delivery ──────────────────────────────────────────────────
     if (paymentMethod === "cash-on-delivery") {
@@ -816,7 +811,6 @@ router.post("/", async (req, res) => {
         "Payment gateway initialisation failed. Please try again.",
     });
   } catch (err) {
-    console.error("Order creation error:", err);
     res.status(500).json({ error: "Server error placing order." });
   }
 });
@@ -849,10 +843,7 @@ router.post("/payment/success", async (req, res) => {
 
         const paidAmt = parseFloat(validation.amount || amount || 0);
         if (Math.abs(paidAmt - order.total) > 1) {
-          console.error(
-            `[payment/success] Amount mismatch: paid=${paidAmt} expected=${order.total} id=${tran_id}`,
-          );
-          await Order.findByIdAndUpdate(tran_id, {
+            await Order.findByIdAndUpdate(tran_id, {
             status: "failed",
             paymentStatus: "failed",
             updatedAt: new Date(),
@@ -876,9 +867,7 @@ router.post("/payment/success", async (req, res) => {
           ...order.toObject(),
           paymentStatus: "paid",
           valId: val_id,
-        }).catch((e) =>
-          console.error("Payment confirmed email failed:", e.message),
-        );
+        }).catch(() => {});
 
         return res.redirect(
           `${FRONTEND_URL}/checkout/success?orderId=${tran_id}`,
@@ -894,7 +883,6 @@ router.post("/payment/success", async (req, res) => {
     });
     return res.redirect(`${FRONTEND_URL}/checkout/fail?orderId=${tran_id}`);
   } catch (err) {
-    console.error("Payment success callback error:", err);
     res.redirect(`${FRONTEND_URL}/checkout/fail?reason=server_error`);
   }
 });
@@ -912,7 +900,6 @@ router.post("/payment/fail", async (req, res) => {
     }
     res.redirect(`${FRONTEND_URL}/checkout/fail?orderId=${tran_id || ""}`);
   } catch (err) {
-    console.error("Payment fail callback error:", err);
     res.redirect(`${FRONTEND_URL}/checkout/fail`);
   }
 });
@@ -931,7 +918,6 @@ router.post("/payment/cancel", async (req, res) => {
     }
     res.redirect(`${FRONTEND_URL}/checkout/cancel?orderId=${tran_id || ""}`);
   } catch (err) {
-    console.error("Payment cancel callback error:", err);
     res.redirect(`${FRONTEND_URL}/checkout/cancel`);
   }
 });
@@ -960,9 +946,6 @@ router.post("/payment/ipn", async (req, res) => {
               updatedAt: new Date(),
             });
           } else {
-            console.error(
-              `[ipn] Amount mismatch: paid=${paidAmt} expected=${order.total} id=${tran_id}`,
-            );
             await Order.findByIdAndUpdate(tran_id, {
               status: "failed",
               paymentStatus: "failed",
@@ -974,7 +957,6 @@ router.post("/payment/ipn", async (req, res) => {
     }
     res.json({ received: true });
   } catch (err) {
-    console.error("IPN error:", err);
     res.json({ received: true });
   }
 });
@@ -1071,7 +1053,6 @@ router.post("/:id/pay", async (req, res) => {
         "Payment gateway failed. Please try again.",
     });
   } catch (err) {
-    console.error("POST /orders/:id/pay error:", err);
     res.status(500).json({ error: "Server error." });
   }
 });
@@ -1132,7 +1113,6 @@ router.get("/my", async (req, res) => {
             if (idx >= 0) orders[idx] = result.order;
           }
         } catch (err) {
-          console.warn("Lazy shipment sync failed for order", o._id, err.message);
         }
       }),
     );
@@ -1144,7 +1124,6 @@ router.get("/my", async (req, res) => {
       }),
     });
   } catch (err) {
-    console.error("GET /orders/my error:", err);
     res.status(401).json({ error: "Invalid token" });
   }
 });
@@ -1227,7 +1206,6 @@ router.post("/webhooks/steadfast", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    console.error("POST /orders/webhooks/steadfast error:", err);
     res.status(500).json({ error: "Webhook processing failed." });
   }
 });
@@ -1272,7 +1250,6 @@ router.post("/webhooks/pathao", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    console.error("POST /orders/webhooks/pathao error:", err);
     res.status(500).json({ error: "Webhook processing failed." });
   }
 });
@@ -1327,7 +1304,6 @@ router.get("/track", async (req, res) => {
         order = syncResult.order;
       }
     } catch (syncErr) {
-      console.warn('Track lookup sync skipped:', syncErr.message);
     }
 
     const courierLabels = await getCourierLabelMap();
@@ -1338,7 +1314,6 @@ router.get("/track", async (req, res) => {
       courierLabels,
     });
   } catch (err) {
-    console.error("GET /orders/track error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -1363,7 +1338,6 @@ router.get("/:id", async (req, res) => {
 
     res.json({ order });
   } catch (err) {
-    console.error("GET /orders/:id error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -1410,7 +1384,6 @@ router.patch("/:id/cancel", async (req, res) => {
 
     res.json({ ok: true, order });
   } catch (err) {
-    console.error("PATCH /orders/:id/cancel error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -1552,7 +1525,6 @@ router.patch("/:id/edit", async (req, res) => {
 
     res.json({ ok: true, order });
   } catch (err) {
-    console.error("PATCH /orders/:id/edit error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });

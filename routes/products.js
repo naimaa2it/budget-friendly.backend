@@ -36,9 +36,8 @@ if (process.env.REDIS_URL) {
     redisClient = createClient({ url: process.env.REDIS_URL });
     redisClient
       .connect()
-      .catch((err) => console.error("Redis connect error:", err));
-  } catch (err) {
-    console.error("Redis init error:", err);
+      .catch(() => {});
+  } catch {
     redisClient = null;
   }
 }
@@ -129,9 +128,8 @@ router.get("/", async (req, res) => {
       try {
         const cached = await redisClient.get(cacheKey);
         if (cached) return res.json(JSON.parse(cached));
-      } catch (e) {
+      } catch {
         // ignore cache errors
-        console.error("Redis GET error:", e);
       }
     }
 
@@ -153,14 +151,13 @@ router.get("/", async (req, res) => {
           Number(process.env.PRODUCTS_CACHE_TTL || 60),
           JSON.stringify(payload),
         );
-      } catch (e) {
-        console.error("Redis SET error:", e);
+      } catch {
+        // ignore cache errors
       }
     }
 
     res.json(payload);
   } catch (err) {
-    console.error("GET /api/products error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -196,7 +193,6 @@ router.get("/categories", async (req, res) => {
     }
     res.json({ categories: roots });
   } catch (err) {
-    console.error("GET /api/products/categories error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -225,7 +221,6 @@ router.get("/admin-questions", requireAdmin, async (req, res) => {
     );
     res.json({ ok: true, rows });
   } catch (err) {
-    console.error("GET /api/products/admin-questions error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -252,7 +247,6 @@ router.get("/admin-reviews", requireAdmin, async (req, res) => {
     rows.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     res.json({ ok: true, rows });
   } catch (err) {
-    console.error("GET /api/products/admin-reviews error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -291,7 +285,6 @@ router.get("/barcode/:code", async (req, res) => {
 
     return res.status(404).json({ error: "Barcode not found" });
   } catch (err) {
-    console.error("GET /api/products/barcode/:code error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -303,8 +296,8 @@ router.get("/:id", async (req, res) => {
       try {
         const cached = await redisClient.get(prodCacheKey);
         if (cached) return res.json({ product: JSON.parse(cached) });
-      } catch (e) {
-        console.error("Redis GET error:", e);
+      } catch {
+        // ignore cache errors
       }
     }
 
@@ -323,8 +316,8 @@ router.get("/:id", async (req, res) => {
           Number(process.env.PRODUCT_CACHE_TTL || 300),
           JSON.stringify(prod),
         );
-      } catch (e) {
-        console.error("Redis SET error:", e);
+      } catch {
+        // ignore cache errors
       }
     }
     res.json({ product: prod });
@@ -405,7 +398,6 @@ router.post("/:id/reviews", requireUser, async (req, res) => {
       reviewCount: prod.reviewCount,
     });
   } catch (err) {
-    console.error("POST /api/products/:id/reviews error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -440,7 +432,6 @@ router.put("/:id/reviews/:index", requireUser, async (req, res) => {
       reviewCount: prod.reviewCount,
     });
   } catch (err) {
-    console.error("PUT /api/products/:id/reviews/:index error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -462,7 +453,6 @@ router.delete("/:id/reviews/:index", requireAdmin, async (req, res) => {
       reviewCount: prod.reviewCount,
     });
   } catch (err) {
-    console.error("DELETE /api/products/:id/reviews/:index error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -484,10 +474,6 @@ router.put(
       await prod.save();
       res.json({ ok: true });
     } catch (err) {
-      console.error(
-        "PUT /api/products/admin-reviews/:productId/:index error:",
-        err,
-      );
       res.status(500).json({ error: "Server error" });
     }
   },
@@ -513,7 +499,6 @@ router.post("/:id/questions", requireUser, async (req, res) => {
     await prod.save();
     res.json({ ok: true, faqs: prod.faqs });
   } catch (err) {
-    console.error("POST /api/products/:id/questions error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -538,7 +523,6 @@ router.put("/:id/questions/:index", requireUser, async (req, res) => {
     await prod.save();
     res.json({ ok: true, faqs: prod.faqs });
   } catch (err) {
-    console.error("PUT /api/products/:id/questions/:index error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -569,7 +553,6 @@ router.post("/:id/questions/:qIdx/answers", requireUser, async (req, res) => {
     await prod.save();
     res.json({ ok: true, faqs: prod.faqs });
   } catch (err) {
-    console.error("POST /api/products/:id/questions/:qIdx/answers error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -605,10 +588,6 @@ router.put(
       await prod.save();
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
-      console.error(
-        "PUT /api/products/:id/questions/:qIdx/answers/:aIdx error:",
-        err,
-      );
       res.status(500).json({ error: "Server error" });
     }
   },
@@ -649,10 +628,6 @@ router.post(
         faqs: prod.faqs,
       });
     } catch (err) {
-      console.error(
-        "POST /api/products/:id/questions/:qIdx/answers/:aIdx/helpful error:",
-        err,
-      );
       res.status(500).json({ error: "Server error" });
     }
   },
@@ -697,10 +672,6 @@ router.put(
       await prod.save();
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
-      console.error(
-        "PUT /api/products/admin-questions/:productId/:index error:",
-        err,
-      );
       res.status(500).json({ error: "Server error" });
     }
   },
@@ -725,10 +696,6 @@ router.delete(
       await prod.save();
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
-      console.error(
-        "DELETE /api/products/admin-questions/:productId/:qIdx/answers/:aIdx error:",
-        err,
-      );
       res.status(500).json({ error: "Server error" });
     }
   },
@@ -749,10 +716,6 @@ router.delete(
       await prod.save();
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
-      console.error(
-        "DELETE /api/products/admin-questions/:productId/:index error:",
-        err,
-      );
       res.status(500).json({ error: "Server error" });
     }
   },
@@ -770,7 +733,6 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       !process.env.CLOUDINARY_API_KEY ||
       !process.env.CLOUDINARY_API_SECRET
     ) {
-      console.error("Cloudinary configuration missing");
       return res
         .status(500)
         .json({
@@ -790,7 +752,6 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         .webp({ quality })
         .toBuffer();
     } catch (sharpErr) {
-      console.error("Sharp image processing error:", sharpErr);
       return res
         .status(400)
         .json({ error: "Invalid image file or unsupported format." });
@@ -823,10 +784,6 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(
-      "POST /api/products/upload error:",
-      err instanceof Error ? err.stack : err,
-    );
     res.status(500).json({ error: err.message || "Upload failed" });
   }
 });

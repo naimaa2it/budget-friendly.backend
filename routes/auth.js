@@ -18,7 +18,6 @@ router.get('/ping', (req, res) => {
 // Firebase (client) provides user info after sign-in (google or email)
 router.post('/firebase-login', async (req, res) => {
   try {
-    console.log('POST /api/auth/firebase-login payload:', req.body);
     const { email, name, image, provider } = req.body || {};
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
@@ -37,7 +36,6 @@ router.post('/firebase-login', async (req, res) => {
     res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true });
     res.json({ user: { email: user.email, name: user.name, role: user.role, image: user.image, tags: user.tags || [] } });
   } catch (err) {
-    console.error('firebase-login error:', err);
     res.status(500).json({ error: err.message || 'Server error' });
   }
 });

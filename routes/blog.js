@@ -21,7 +21,6 @@ router.get('/', async (req, res) => {
     ]);
     res.json({ items, total, page: Number(page), limit: Number(limit) });
   } catch (err) {
-    console.error('GET /api/blog error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -34,7 +33,6 @@ router.get('/:slug', async (req, res) => {
     if (!post) return res.status(404).json({ error: 'Not found' });
     res.json({ post });
   } catch (err) {
-    console.error('GET /api/blog/:slug error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -93,7 +91,6 @@ router.get('/:slug/related', async (req, res) => {
     
     res.json({ relatedPosts });
   } catch (err) {
-    console.error('GET /api/blog/:slug/related error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -104,7 +101,6 @@ router.get('/categories', async (req, res) => {
     const categories = await BlogCategory.find().sort({ name: 1 });
     res.json({ categories });
   } catch (err) {
-    console.error('GET /api/blog/categories error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

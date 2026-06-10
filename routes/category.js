@@ -44,7 +44,6 @@ router.get('/', requireAdmin, async (req, res) => {
     const items = await Category.find().sort({ level: 1, order: 1, name: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /categories error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -58,7 +57,6 @@ router.get('/:id', requireAdmin, async (req, res) => {
     if (!cat) return res.status(404).json({ error: 'Not found' });
     res.json({ category: cat });
   } catch (err) {
-    console.error('GET /categories/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -91,7 +89,6 @@ router.post('/', requireAdmin, async (req, res) => {
     await cat.save();
     res.json({ ok: true, category: cat });
   } catch (err) {
-    console.error('POST /categories error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -124,15 +121,14 @@ router.put('/:id', requireAdmin, async (req, res) => {
         for (const publicId of removedImages) {
           if (publicId) {
             try {
-              console.log('Deleting removed category image from Cloudinary:', publicId);
               await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-            } catch (clErr) {
-              console.warn('Cloudinary delete failed for', publicId, clErr?.message || clErr);
+            } catch {
+              // ignore Cloudinary errors
             }
           }
         }
-      } catch (e) {
-        console.error('Error while removing category images from Cloudinary:', e);
+      } catch {
+        // ignore Cloudinary errors
       }
     }
 
@@ -146,14 +142,13 @@ router.put('/:id', requireAdmin, async (req, res) => {
           ensureCloudinaryConfigured();
           for (const publicId of removed) {
             try {
-              console.log('Deleting removed category image from Cloudinary:', publicId);
               await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-            } catch (clErr) {
-              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            } catch {
+              // ignore Cloudinary errors
             }
           }
-        } catch (e) {
-          console.error('Error while removing category images from Cloudinary:', e);
+        } catch {
+          // ignore Cloudinary errors
         }
       }
     }
@@ -168,14 +163,13 @@ router.put('/:id', requireAdmin, async (req, res) => {
           ensureCloudinaryConfigured();
           for (const publicId of removed) {
             try {
-              console.log('Deleting replaced category image from Cloudinary:', publicId);
               await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-            } catch (clErr) {
-              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            } catch {
+              // ignore Cloudinary errors
             }
           }
-        } catch (e) {
-          console.error('Error while removing category images from Cloudinary:', e);
+        } catch {
+          // ignore Cloudinary errors
         }
       }
     }
@@ -189,7 +183,6 @@ router.put('/:id', requireAdmin, async (req, res) => {
     await cat.save();
     res.json({ ok: true, category: cat });
   } catch (err) {
-    console.error('PUT /categories/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -214,23 +207,20 @@ router.delete('/:id', requireAdmin, async (req, res) => {
           ensureCloudinaryConfigured();
           for (const publicId of ids) {
             try {
-              console.log('Deleting category image from Cloudinary:', publicId);
               await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-            } catch (clErr) {
-              console.warn('Cloudinary delete failed for', publicId, clErr && clErr.message ? clErr.message : clErr);
+            } catch {
+              // ignore Cloudinary errors
             }
           }
         }
       }
-    } catch (e) {
-      console.error('Error while cleaning up category images from Cloudinary:', e);
+    } catch {
       // proceed with deletion of DB record even if Cloudinary cleanup fails
     }
 
     await cat.deleteOne();
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /categories/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
