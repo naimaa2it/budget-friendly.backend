@@ -49,7 +49,6 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
-    console.log(`Preflight (OPTIONS) from ${origin} for ${req.url}`);
     return res.sendStatus(204);
   }
 
@@ -58,12 +57,6 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(cookieParser());
-
-// request logger to help debug incoming calls
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.url} Origin:${req.headers.origin} Cookie:${req.headers.cookie || ''}`);
-  next();
-});
 
 const PORT = process.env.PORT || 5000;
 
@@ -91,13 +84,6 @@ async function connectMongo() {
 
 connectMongo();
 
-// Helpful startup info
-console.log(
-  'Using MongoDB URI:',
-  process.env.MONGODB_URI ? 'MONGODB_URI' : (process.env.MONGO_URI ? 'MONGO_URI' : 'default localhost'),
-  process.env.MONGODB_URI_DIRECT ? '(direct fallback configured)' : '(no direct fallback)'
-);
-
 app.get("/", (req, res) => {
   res.send("Welcome to Budget Friendly Backend!");
 });
@@ -123,7 +109,6 @@ app.get('/api/occasions', async (req, res) => {
     const items = await OccasionSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /api/occasions error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -154,7 +139,6 @@ app.get('/api/featured', async (req, res) => {
 
     res.json({ items: result });
   } catch (err) {
-    console.error('GET /api/featured error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -166,7 +150,6 @@ app.get('/api/promo-strip', async (req, res) => {
     const items = await PromoStripItem.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /api/promo-strip error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -178,7 +161,6 @@ app.get('/api/promo-panels', async (req, res) => {
     const items = await PromoPanel.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /api/promo-panels error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -190,7 +172,6 @@ app.get('/api/banners', async (req, res) => {
     const items = await Banner.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /api/banners error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -202,7 +183,6 @@ app.get('/api/popup', async (req, res) => {
     const popup = await Popup.findOne({ isActive: true });
     res.json({ popup: popup || null });
   } catch (err) {
-    console.error('GET /api/popup error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -214,7 +194,6 @@ app.get('/api/discounts', async (req, res) => {
     const items = await Discount.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /api/discounts error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -240,7 +219,6 @@ app.post('/api/waitlist', async (req, res) => {
     });
     res.status(201).json({ ok: true, entry });
   } catch (err) {
-    console.error('POST /api/waitlist error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

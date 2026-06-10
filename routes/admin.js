@@ -2228,12 +2228,11 @@ router.delete('/popup', requireAdmin, async (req, res) => {
       try {
         ensureCloudinaryConfigured();
         await cloudinary.uploader.destroy(popup.image.public_id, { resource_type: 'image' });
-      } catch (e) { console.warn('Cloudinary delete failed for popup image:', e?.message); }
+      } catch { /* ignore Cloudinary errors */ }
     }
     await Popup.deleteMany();
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /popup error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2281,7 +2280,6 @@ router.get('/media', requireAdmin, async (req, res) => {
       next_cursor: result.next_cursor || null,
     });
   } catch (err) {
-    console.error('GET /media error:', err);
     res.status(500).json({ error: err.message || 'Cloudinary error' });
   }
 });
@@ -2311,7 +2309,6 @@ router.delete('/media', requireAdmin, async (req, res) => {
     const result = await cloudinary.api.delete_resources(public_ids, { resource_type: 'image' });
     res.json({ ok: true, deleted: result.deleted });
   } catch (err) {
-    console.error('DELETE /media error:', err);
     res.status(500).json({ error: err.message || 'Delete failed' });
   }
 });
@@ -2324,7 +2321,6 @@ router.get('/discounts', requireAdmin, async (req, res) => {
     const items = await Discount.find().sort({ order: 1, createdAt: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /discounts error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2339,7 +2335,6 @@ router.post('/discounts', requireAdmin, async (req, res) => {
     await item.save();
     res.json({ ok: true, item });
   } catch (err) {
-    console.error('POST /discounts error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2351,7 +2346,6 @@ router.put('/discounts-reorder', requireAdmin, async (req, res) => {
     await Promise.all(items.map(({ _id, order }) => Discount.findByIdAndUpdate(_id, { order })));
     res.json({ ok: true });
   } catch (err) {
-    console.error('PUT /discounts-reorder error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2364,7 +2358,6 @@ router.put('/discounts/:id', requireAdmin, async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, item });
   } catch (err) {
-    console.error('PUT /discounts/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2376,7 +2369,6 @@ router.delete('/discounts/:id', requireAdmin, async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /discounts/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2392,7 +2384,6 @@ router.get('/waitlist', requireAdmin, async (req, res) => {
     const entries = await Waitlist.find(filter).sort({ createdAt: -1 });
     res.json({ entries });
   } catch (err) {
-    console.error('GET /waitlist error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2404,7 +2395,6 @@ router.put('/waitlist/:id/notified', requireAdmin, async (req, res) => {
     if (!entry) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, entry });
   } catch (err) {
-    console.error('PUT /waitlist/:id/notified error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2416,7 +2406,6 @@ router.delete('/waitlist/:id', requireAdmin, async (req, res) => {
     if (!entry) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /waitlist/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2619,7 +2608,6 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       generatedAt: now,
     });
   } catch (err) {
-    console.error('GET /admin/dashboard-overview error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2696,7 +2684,6 @@ router.get('/orders', requireAdmin, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('GET /admin/orders error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2730,7 +2717,6 @@ router.get('/orders/timeline', requireAdmin, async (req, res) => {
     events.sort((a, b) => new Date(b.at) - new Date(a.at));
     res.json({ events: events.slice(0, limit) });
   } catch (err) {
-    console.error('GET /admin/orders/timeline error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2745,8 +2731,8 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
       try {
         const syncResult = await syncOrderShipment(order, { force: false });
         if (syncResult.ok && syncResult.order) order = syncResult.order;
-      } catch (syncErr) {
-        console.warn('Admin order view sync skipped:', syncErr.message);
+      } catch {
+        // sync skipped
       }
     }
 
@@ -2777,7 +2763,6 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
       courierName: courierDoc?.name || orderObj.shipment?.courier || null,
     });
   } catch (err) {
-    console.error('GET /admin/orders/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2801,7 +2786,6 @@ router.put('/orders/:id/status', requireAdmin, async (req, res) => {
     await order.save();
     res.json(order);
   } catch (err) {
-    console.error('PUT /admin/orders/:id/status error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2825,7 +2809,6 @@ router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
     const customerUserId = await resolveCustomerUserId(order);
     res.json({ ...order.toObject(), customerUserId });
   } catch (err) {
-    console.error('PUT /admin/orders/:id/payment-status error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2874,7 +2857,6 @@ router.put('/orders/:id/line-items', requireAdmin, async (req, res) => {
     const customerUserId = await resolveCustomerUserId(order);
     res.json({ ...order.toObject(), customerUserId });
   } catch (err) {
-    console.error('PUT /orders/:id/line-items error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2890,7 +2872,6 @@ router.get('/couriers/booking-options', requireAdmin, async (req, res) => {
     const items = await listBookableCouriers();
     res.json({ items });
   } catch (err) {
-    console.error('GET /couriers/booking-options error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2950,7 +2931,6 @@ router.get('/rewards', requireAdmin, async (req, res) => {
       orders: orderRows,
     });
   } catch (err) {
-    console.error('GET /admin/rewards error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2996,7 +2976,6 @@ router.put('/orders/:id/pick', requireAdmin, async (req, res) => {
     await order.save();
     res.json({ ...order.toObject(), orderId: formatOrderIdSuffix(order._id) });
   } catch (err) {
-    console.error('PUT /orders/:id/pick error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3024,7 +3003,6 @@ router.get('/admins/:id/pick-profile', requireAdmin, async (req, res) => {
       stats: { total: orders.length },
     });
   } catch (err) {
-    console.error('GET /admins/:id/pick-profile error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3114,7 +3092,6 @@ router.put('/orders/:id/customer', requireAdmin, async (req, res) => {
     const customerUserId = await resolveCustomerUserId(order);
     res.json({ ...order.toObject(), customerUserId });
   } catch (err) {
-    console.error('PUT /orders/:id/customer error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3126,7 +3103,6 @@ router.get('/couriers', requireAdmin, async (req, res) => {
     const items = await Courier.find({}).sort({ sortOrder: 1, name: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /couriers error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3149,7 +3125,6 @@ router.post('/couriers', requireAdmin, async (req, res) => {
     });
     res.status(201).json({ courier });
   } catch (err) {
-    console.error('POST /couriers error:', err);
     res.status(500).json({ error: err.code === 11000 ? 'Courier slug already exists' : 'Server error' });
   }
 });
@@ -3170,7 +3145,6 @@ router.put('/couriers/:id', requireAdmin, async (req, res) => {
     await courier.save();
     res.json({ ok: true, courier });
   } catch (err) {
-    console.error('PUT /couriers/:id error:', err);
     res.status(500).json({ error: err.code === 11000 ? 'Courier slug already exists' : 'Server error' });
   }
 });
@@ -3182,7 +3156,6 @@ router.delete('/couriers/:id', requireAdmin, async (req, res) => {
     await Courier.deleteOne({ _id: courier._id });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /couriers/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3211,7 +3184,6 @@ router.get('/couriers/:id/integration', requireAdmin, async (req, res) => {
         : {},
     });
   } catch (err) {
-    console.error('GET /couriers/:id/integration error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3245,7 +3217,6 @@ router.put('/couriers/:id/integration', requireAdmin, async (req, res) => {
       credentials: maskCredentialsForSlug(courier.slug, integration.creds || {}),
     });
   } catch (err) {
-    console.error('PUT /couriers/:id/integration error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3292,7 +3263,6 @@ router.post('/couriers/:id/test-connection', requireAdmin, async (req, res) => {
     } catch {
       /* ignore */
     }
-    console.error('POST /couriers/:id/test-connection error:', err);
     res.status(502).json({ error: err.message || 'Connection test failed' });
   }
 });
@@ -3313,7 +3283,6 @@ router.get('/couriers/:id/redx-areas', requireAdmin, async (req, res) => {
     });
     res.json({ items: areas });
   } catch (err) {
-    console.error('GET /couriers/:id/redx-areas error:', err);
     res.status(502).json({ error: err.message || 'Failed to load areas' });
   }
 });
@@ -3326,7 +3295,6 @@ router.get('/shipment-config', requireAdmin, async (req, res) => {
     if (!settings) settings = {};
     res.json({ shipmentConfig: settings.shipmentConfig || {} });
   } catch (err) {
-    console.error('GET /shipment-config error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3346,7 +3314,6 @@ router.put('/shipment-config', requireAdmin, async (req, res) => {
     );
     res.json({ ok: true, shipmentConfig: settings.shipmentConfig });
   } catch (err) {
-    console.error('PUT /shipment-config error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3357,7 +3324,6 @@ router.get('/timeline-presets', requireAdmin, async (req, res) => {
     const items = await TimelinePreset.find({}).sort({ sortOrder: 1, label: 1 });
     res.json({ items });
   } catch (err) {
-    console.error('GET /timeline-presets error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3378,7 +3344,6 @@ router.post('/timeline-presets', requireAdmin, async (req, res) => {
     });
     res.status(201).json({ preset });
   } catch (err) {
-    console.error('POST /timeline-presets error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3394,7 +3359,6 @@ router.put('/timeline-presets/:id', requireAdmin, async (req, res) => {
     await preset.save();
     res.json({ ok: true, preset });
   } catch (err) {
-    console.error('PUT /timeline-presets/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3406,7 +3370,6 @@ router.delete('/timeline-presets/:id', requireAdmin, async (req, res) => {
     await TimelinePreset.deleteOne({ _id: preset._id });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /timeline-presets/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3461,13 +3424,12 @@ router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
       if (syncResult.ok && syncResult.order) {
         return res.json(syncResult.order);
       }
-    } catch (syncErr) {
-      console.warn('Shipment save ok but courier sync failed:', syncErr.message);
+    } catch {
+      // sync failed; return saved order
     }
 
     res.json(order);
   } catch (err) {
-    console.error('PUT /admin/orders/:id/shipment error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3501,7 +3463,6 @@ router.post('/orders/:id/shipment/events', requireAdmin, async (req, res) => {
     await order.save();
     res.json(order);
   } catch (err) {
-    console.error('POST /admin/orders/:id/shipment/events error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3524,7 +3485,6 @@ router.put('/orders/:id/shipment/events/:index', requireAdmin, async (req, res) 
     await order.save();
     res.json(order);
   } catch (err) {
-    console.error('PUT /orders/:id/shipment/events/:index error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3545,7 +3505,6 @@ router.delete('/orders/:id/shipment/events/:index', requireAdmin, async (req, re
     await order.save();
     res.json(order);
   } catch (err) {
-    console.error('DELETE /orders/:id/shipment/events/:index error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3607,13 +3566,12 @@ router.post('/orders/:id/book-courier', requireAdmin, async (req, res) => {
       if (syncResult.ok && syncResult.order) {
         return res.json(syncResult.order);
       }
-    } catch (syncErr) {
-      console.warn('Book courier ok but tracking sync failed:', syncErr.message);
+    } catch {
+      // sync failed; return saved order
     }
 
     res.json(order);
   } catch (err) {
-    console.error('POST /orders/:id/book-courier error:', err);
     res.status(400).json({
       error: err.message || 'Courier booking failed',
       code: 'courier_api_error',
@@ -3648,7 +3606,6 @@ router.post('/orders/:id/shipment/sync', requireAdmin, async (req, res) => {
     }
     res.json(result.order);
   } catch (err) {
-    console.error('POST /admin/orders/:id/shipment/sync error:', err);
     res.status(502).json({ error: err.message || 'Courier sync failed.' });
   }
 });
@@ -3660,7 +3617,6 @@ router.delete('/orders/:id', requireAdmin, async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('DELETE /admin/orders/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

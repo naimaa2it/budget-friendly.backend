@@ -322,7 +322,6 @@ router.get("/:id", async (req, res) => {
     }
     res.json({ product: prod });
   } catch (err) {
-    console.error("GET /api/products/:id error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
