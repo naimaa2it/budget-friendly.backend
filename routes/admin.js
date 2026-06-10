@@ -1531,15 +1531,16 @@ router.get('/users/:id', requireAdmin, async (req, res) => {
 router.put('/users/:id', requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, isVerified, tags } = req.body || {};
+    const { name, mobile, isVerified, tags } = req.body || {};
     const u = await User.findById(req.params.id);
     if (!u) return res.status(404).json({ error: 'Not found' });
     if (typeof name !== 'undefined') u.name = name;
+    if (typeof mobile !== 'undefined') u.mobile = String(mobile || '').trim();
     if (typeof isVerified !== 'undefined') u.isVerified = !!isVerified;
     if (Array.isArray(tags)) u.tags = tags.filter(Boolean);
     await u.save();
     await u.populate('tags');
-    res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt, tags: u.tags } });
+    res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, mobile: u.mobile, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt, tags: u.tags } });
   } catch (err) {
     console.error('PUT /users/:id error:', err);
     res.status(500).json({ error: 'Server error' });
