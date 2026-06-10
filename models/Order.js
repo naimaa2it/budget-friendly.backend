@@ -76,6 +76,23 @@ const AssignedAgentSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const ReturnRequestSchema = new mongoose.Schema(
+  {
+    reason: { type: String, default: '' },
+    requestedAt: { type: Date, default: Date.now },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending',
+    },
+    refundAmount: { type: Number, default: 0 },
+    adminNote: { type: String, default: '' },
+    resolvedAt: { type: Date, default: null },
+    resolvedBy: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
 const PickedBySchema = new mongoose.Schema(
   {
     adminId: {
@@ -201,6 +218,7 @@ const OrderSchema = new mongoose.Schema({
   rewardPointsCredited: { type: Boolean, default: false },
   rewardPointsCreditedAt: { type: Date, default: null },
   statusHistory: { type: [StatusHistorySchema], default: [] },
+  returnRequest: { type: ReturnRequestSchema, default: null },
   clientIp: { type: String, default: '' },
   deviceId: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now },

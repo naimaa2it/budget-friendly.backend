@@ -2734,6 +2734,114 @@ router.get('/orders/timeline', requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/orders/returns — list orders with return requests
+router.get('/orders/returns', requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const filter = { returnRequest: { $ne: null } };
+    if (status && status !== 'all') filter['returnRequest.status'] = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [ordersRaw, total] = await Promise.all([
+      Order.find(filter).sort({ 'returnRequest.requestedAt': -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Order.countDocuments(filter),
+    ]);
+
+    const orders = await Promise.all(
+      ordersRaw.map(async (order) => ({
+        ...order,
+        orderId: formatOrderIdSuffix(order._id),
+        customerUserId: await resolveCustomerUserId(order),
+      })),
+    );
+
+    const [pending, approved, rejected] = await Promise.all([
+      Order.countDocuments({ 'returnRequest.status': 'pending' }),
+      Order.countDocuments({ 'returnRequest.status': 'approved' }),
+      Order.countDocuments({ 'returnRequest.status': 'rejected' }),
+    ]);
+    const refundAgg = await Order.aggregate([
+      { $match: { 'returnRequest.status': 'approved' } },
+      { $group: { _id: null, total: { $sum: '$returnRequest.refundAmount' } } },
+    ]);
+
+    res.json({
+      orders,
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+      stats: { pending, approved, rejected, totalRefund: refundAgg[0]?.total || 0 },
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/orders/:id/return — create a return request
+router.post('/orders/:id/return', requireAdmin, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required' });
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.returnRequest) return res.status(409).json({ error: 'A return request already exists for this order' });
+
+    order.returnRequest = {
+      reason: reason.trim(),
+      requestedAt: new Date(),
+      status: 'pending',
+      refundAmount: 0,
+      adminNote: '',
+      resolvedAt: null,
+      resolvedBy: '',
+    };
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/orders/:id/return — approve or reject a return request
+router.put('/orders/:id/return', requireAdmin, async (req, res) => {
+  try {
+    const { status, refundAmount, adminNote } = req.body;
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.returnRequest) return res.status(404).json({ error: 'No return request found for this order' });
+
+    order.returnRequest.status = status;
+    if (adminNote !== undefined) order.returnRequest.adminNote = adminNote.trim();
+    if (refundAmount !== undefined) order.returnRequest.refundAmount = Math.max(0, Number(refundAmount) || 0);
+    if (status !== 'pending') {
+      order.returnRequest.resolvedAt = new Date();
+      order.returnRequest.resolvedBy = req.admin?.name || req.admin?.email || 'admin';
+    }
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/orders/:id/return — remove a return request
+router.delete('/orders/:id/return', requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    order.returnRequest = null;
+    await order.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/admin/orders/:id
 router.get('/orders/:id', requireAdmin, async (req, res) => {
   try {
