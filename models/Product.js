@@ -135,6 +135,7 @@ const ProductSchema = new mongoose.Schema(
 
     // sales / rewards / attributes
     monthlySold: { type: Number, default: 0 }, // bought in past month
+    viewCount: { type: Number, default: 0 },   // product page views
     rewardPoints: { type: Number, default: 0 },
     keyAttributes: [
       {
