@@ -1615,12 +1615,25 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
     const { name, mobile, isVerified, tags } = req.body || {};
     const u = await User.findById(req.params.id);
     if (!u) return res.status(404).json({ error: 'Not found' });
+
+    // Build order filter using old identifiers BEFORE updating the user
+    const orderFilter = buildCustomerOrderFilter(u);
+
     if (typeof name !== 'undefined') u.name = name;
     if (typeof mobile !== 'undefined') u.mobile = String(mobile || '').trim();
     if (typeof isVerified !== 'undefined') u.isVerified = !!isVerified;
     if (Array.isArray(tags)) u.tags = tags.filter(Boolean);
     await u.save();
     await u.populate('tags');
+
+    // Sync name/mobile changes to all related orders' billingDetails
+    const billingPatch = {};
+    if (typeof name !== 'undefined' && String(name || '').trim()) billingPatch['billingDetails.name'] = String(name).trim();
+    if (typeof mobile !== 'undefined' && String(mobile || '').trim()) billingPatch['billingDetails.phone'] = String(mobile).trim();
+    if (Object.keys(billingPatch).length) {
+      await Order.updateMany(orderFilter, { $set: billingPatch });
+    }
+
     res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, mobile: u.mobile, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt, tags: u.tags } });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -2737,6 +2750,20 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
     }
 
     const orderObj = order.toObject();
+
+    // Enrich order items with product barcode code for print slip
+    if (orderObj.items?.length) {
+      const pids = [...new Set(orderObj.items.map((i) => i.productId).filter(Boolean))];
+      if (pids.length) {
+        const bpArr = await Product.find({ _id: { $in: pids } }).select('_id barcode').lean();
+        const bpMap = {};
+        bpArr.forEach((p) => { if (p.barcode) bpMap[p._id.toString()] = p.barcode; });
+        orderObj.items = orderObj.items.map((item) => ({
+          ...item,
+          barcode: bpMap[item.productId] || null,
+        }));
+      }
+    }
 
     let customerTags = [];
     if (orderObj.userId) {
