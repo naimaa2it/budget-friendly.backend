@@ -1587,7 +1587,12 @@ function buildCustomerOrderFilter(user) {
     or.push({ 'billingDetails.email': user.email });
   }
   if (user.mobile) {
-    or.push({ 'billingDetails.phone': user.mobile });
+    const last10 = String(user.mobile).replace(/\D/g, '').slice(-10);
+    if (last10.length >= 8) {
+      or.push({ 'billingDetails.phone': new RegExp(last10 + '$') });
+    } else {
+      or.push({ 'billingDetails.phone': user.mobile });
+    }
   }
   return { $or: or };
 }
