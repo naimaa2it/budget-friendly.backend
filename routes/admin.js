@@ -2628,9 +2628,14 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
 // GET /api/admin/orders
 router.get('/orders', requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking, hasNote } =
+    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking, hasNote, dateFrom, dateTo } =
       req.query;
     const filter = {};
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) filter.createdAt.$lte = new Date(dateTo);
+    }
     if (needsTracking === 'true' || needsTracking === '1') {
       filter.status = { $in: ['confirmed', 'processing', 'shipped'] };
       filter.$or = [
@@ -2737,9 +2742,16 @@ router.get('/orders/timeline', requireAdmin, async (req, res) => {
 // GET /api/admin/orders/returns — list orders with return requests
 router.get('/orders/returns', requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status } = req.query;
+    const { page = 1, limit = 20, status, q } = req.query;
     const filter = { returnRequest: { $ne: null } };
     if (status && status !== 'all') filter['returnRequest.status'] = status;
+    if (q) {
+      filter.$or = [
+        { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
+        { 'billingDetails.name': { $regex: q, $options: 'i' } },
+        { 'billingDetails.phone': { $regex: q, $options: 'i' } },
+      ].filter(c => Object.values(c)[0] !== null);
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const [ordersRaw, total] = await Promise.all([
