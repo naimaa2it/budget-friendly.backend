@@ -3924,4 +3924,29 @@ router.get('/wishlists', requireAdmin, async (req, res) => {
   }
 });
 
+// DELETE /api/admin/wishlists/:productId — remove product from ALL users' wishlists
+router.delete('/wishlists/:productId', requireAdmin, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    await User.updateMany(
+      { wishlist: productId },
+      { $pull: { wishlist: productId } }
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/wishlists/:productId/users/:userId — remove one user's wishlist entry
+router.delete('/wishlists/:productId/users/:userId', requireAdmin, async (req, res) => {
+  try {
+    const { productId, userId } = req.params;
+    await User.findByIdAndUpdate(userId, { $pull: { wishlist: productId } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
