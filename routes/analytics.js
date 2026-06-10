@@ -80,4 +80,30 @@ router.get('/most-popular', requireAdmin, async (req, res) => {
   }
 });
 
+// Admin — reset a product's view count
+router.delete('/most-popular/:id', requireAdmin, async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: { viewCount: 0 } },
+      { new: true },
+    );
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Admin — delete a search term entry
+router.delete('/most-searched/:id', requireAdmin, async (req, res) => {
+  try {
+    const doc = await SearchLog.findByIdAndDelete(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
