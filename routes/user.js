@@ -210,6 +210,41 @@ router.post('/unsubscribe', requireUser, async (req, res) => {
   }
 });
 
+// PUT /api/user/cart — sync cart to server (called by frontend on every cart change)
+router.put('/cart', requireUser, async (req, res) => {
+  try {
+    const { items } = req.body;
+    const cartItems = (items || []).map((item) => ({
+      productId: String(item.product?._id || item.product?.id || item.productId || ''),
+      title: String(item.product?.title || item.title || ''),
+      image: String(item.product?.images?.[0] || item.image || ''),
+      price: Number(item.selectedVariant?.price || item.product?.price || 0),
+      quantity: Number(item.quantity || 1),
+      color: item.selectedColor || null,
+      size: item.selectedSize || null,
+    }));
+    req.user.savedCart = { items: cartItems, updatedAt: new Date() };
+    await req.user.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/user/wishlist — sync wishlist to server
+router.put('/wishlist', requireUser, async (req, res) => {
+  try {
+    const { items } = req.body; // array of productId strings
+    req.user.wishlist = (items || [])
+      .filter((id) => typeof id === 'string' && id.length > 0)
+      .slice(0, 300);
+    await req.user.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/user/rewards — balance, order-based points breakdown
 router.get('/rewards', requireUser, async (req, res) => {
   try {

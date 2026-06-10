@@ -40,6 +40,22 @@ const UserSchema = new mongoose.Schema({
     },
   ],
   rewardPointsBalance: { type: Number, default: 0 },
+  savedCart: {
+    type: {
+      items: [{
+        productId: { type: String, default: '' },
+        title: { type: String, default: '' },
+        image: { type: String, default: '' },
+        price: { type: Number, default: 0 },
+        quantity: { type: Number, default: 1 },
+        color: { type: String, default: null },
+        size: { type: String, default: null },
+      }],
+      updatedAt: { type: Date, default: null },
+    },
+    default: null,
+  },
+  wishlist: { type: [String], default: [] },
   createdAt: { type: Date, default: Date.now },
 });
 

@@ -7,6 +7,7 @@ import User from "../models/User.js";
 import Admin from "../models/Admin.js";
 import Discount from "../models/Discount.js";
 import CouponUsage from "../models/CouponUsage.js";
+import CheckoutSession from "../models/CheckoutSession.js";
 import {
   sendOrderConfirmationEmail,
   sendAdminOrderNotification,
@@ -21,6 +22,7 @@ import {
   formatOrderIdSuffix,
   toPublicTrackOrder,
 } from "../lib/orderLookup.js";
+import { applyOrderStatusChange } from "../lib/orderStatus.js";
 import {
   POINTS_PER_TK,
   calcItemsRewardPoints,
@@ -709,6 +711,14 @@ router.post("/", async (req, res) => {
 
     await order.save();
 
+    // Mark any open checkout sessions for this user as completed
+    if (resolvedUserId) {
+      CheckoutSession.updateMany(
+        { userId: resolvedUserId, status: 'incomplete' },
+        { status: 'completed', completedAt: new Date() },
+      ).catch(() => {});
+    }
+
     if (resolvedUserId && pointsRedeemed > 0) {
       await deductUserRewardPoints(resolvedUserId, pointsRedeemed);
     }
@@ -1343,7 +1353,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // ── PATCH /api/orders/:id/cancel ─────────────────────────────────────────────
-// Cancel a COD order within 30 minutes of creation.
+// Cancel a COD order within 1 hour of creation. Requires a reason (min 5 chars).
 router.patch("/:id/cancel", async (req, res) => {
   try {
     const identity = await getRequesterIdentity(req);
@@ -1370,10 +1380,15 @@ router.patch("/:id/cancel", async (req, res) => {
     if (order.confirmAfter && new Date() > order.confirmAfter) {
       return res
         .status(400)
-        .json({ error: "The 30-minute cancellation window has passed." });
+        .json({ error: "The 1-hour cancellation window has passed." });
     }
 
-    order.status = "cancelled";
+    const reason = (req.body?.reason || "").trim();
+    if (reason.length < 5) {
+      return res.status(400).json({ error: "Please provide a cancellation reason (at least 5 characters)." });
+    }
+
+    applyOrderStatusChange(order, "cancelled", { reason, changedBy: "customer" });
     order.paymentStatus = "cancelled";
     order.updatedAt = new Date();
     await order.save();
@@ -1411,7 +1426,7 @@ router.patch("/:id/edit", async (req, res) => {
     if (order.confirmAfter && new Date() > order.confirmAfter) {
       return res
         .status(400)
-        .json({ error: "The 30-minute edit window has passed." });
+        .json({ error: "The 1-hour edit window has passed." });
     }
 
     const { note, address, phone, billingDetails, items, addItems } = req.body || {};

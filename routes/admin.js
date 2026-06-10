@@ -2,10 +2,12 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import Admin from '../models/Admin.js';
 import User from '../models/User.js';
+import CheckoutSession from '../models/CheckoutSession.js';
 import CustomerTag from '../models/CustomerTag.js';
 import Barcode from '../models/Barcode.js';
 import Product from '../models/Product.js';
@@ -2628,9 +2630,10 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
 // GET /api/admin/orders
 router.get('/orders', requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking, hasNote, dateFrom, dateTo } =
+    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking, hasNote, dateFrom, dateTo, userId } =
       req.query;
     const filter = {};
+    if (userId) filter.userId = userId;
     if (dateFrom || dateTo) {
       filter.createdAt = {};
       if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
@@ -3763,6 +3766,159 @@ router.delete('/orders/:id', requireAdmin, async (req, res) => {
     const order = await Order.findByIdAndDelete(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Abandoned Carts ──────────────────────────────────────────────────────────
+
+// GET /api/admin/abandoned-carts — users with non-empty saved cart (5+ min old)
+router.get('/abandoned-carts', requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, q } = req.query;
+    const pg = Math.max(1, parseInt(page));
+    const lim = Math.min(100, Math.max(1, parseInt(limit)));
+    const lowerBound = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // last 30 days
+    const filter = {
+      'savedCart.items.0': { $exists: true },
+      'savedCart.updatedAt': { $gte: lowerBound },
+    };
+    if (q) {
+      filter.$or = [
+        { name: { $regex: q, $options: 'i' } },
+        { email: { $regex: q, $options: 'i' } },
+        { mobile: { $regex: q, $options: 'i' } },
+      ];
+    }
+    const skip = (pg - 1) * lim;
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select('name email mobile savedCart')
+        .sort({ 'savedCart.updatedAt': -1 })
+        .skip(skip)
+        .limit(lim)
+        .lean(),
+      User.countDocuments(filter),
+    ]);
+    res.json({ users, total, pages: Math.ceil(total / lim) });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/abandoned-carts/:userId/clear — clear a user's saved cart
+router.delete('/abandoned-carts/:userId/clear', requireAdmin, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.params.userId, { savedCart: null });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Abandoned Checkouts ──────────────────────────────────────────────────────
+
+// GET /api/admin/abandoned-checkouts — incomplete checkout sessions from the last 30 days
+router.get('/abandoned-checkouts', requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, q } = req.query;
+    const pg = Math.max(1, parseInt(page));
+    const lim = Math.min(100, Math.max(1, parseInt(limit)));
+    const lowerBound = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // last 30 days
+    const filter = { status: 'incomplete', createdAt: { $gte: lowerBound } };
+    if (q) {
+      filter.$or = [
+        { userName: { $regex: q, $options: 'i' } },
+        { userEmail: { $regex: q, $options: 'i' } },
+        { userPhone: { $regex: q, $options: 'i' } },
+      ];
+    }
+    const skip = (pg - 1) * lim;
+    const [rawSessions, total] = await Promise.all([
+      CheckoutSession.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(lim)
+        .lean(),
+      CheckoutSession.countDocuments(filter),
+    ]);
+    // Enrich sessions that have a userId with user details
+    const userIds = [...new Set(rawSessions.map((s) => s.userId).filter(Boolean))];
+    let userMap = {};
+    if (userIds.length) {
+      const users = await User.find({ _id: { $in: userIds } }).select('name email mobile').lean();
+      for (const u of users) userMap[String(u._id)] = u;
+    }
+    const sessions = rawSessions.map((s) => {
+      const u = s.userId ? userMap[String(s.userId)] : null;
+      return {
+        ...s,
+        userName: s.userName || u?.name || null,
+        userEmail: s.userEmail || u?.email || null,
+        userPhone: s.userPhone || u?.mobile || null,
+      };
+    });
+    res.json({ sessions, total, pages: Math.ceil(total / lim) });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/abandoned-checkouts/:id — remove a checkout session record
+router.delete('/abandoned-checkouts/:id', requireAdmin, async (req, res) => {
+  try {
+    await CheckoutSession.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── All Wishlists ────────────────────────────────────────────────────────────
+
+// GET /api/admin/wishlists — products ranked by wishlist count
+router.get('/wishlists', requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const pg = Math.max(1, parseInt(page));
+    const lim = Math.min(100, Math.max(1, parseInt(limit)));
+
+    // Aggregate all wishlist entries across users
+    const allItems = await User.aggregate([
+      { $match: { 'wishlist.0': { $exists: true } } },
+      { $unwind: '$wishlist' },
+      { $group: {
+        _id: '$wishlist',
+        count: { $sum: 1 },
+        customers: { $push: { id: '$_id', name: '$name', email: '$email', mobile: '$mobile' } },
+      }},
+      { $sort: { count: -1 } },
+    ]);
+
+    const total = allItems.length;
+    const pageItems = allItems.slice((pg - 1) * lim, pg * lim);
+
+    // Enrich with product details
+    const rawIds = pageItems.map((a) => a._id).filter(Boolean);
+    const objectIds = rawIds
+      .map((id) => { try { return new mongoose.Types.ObjectId(id); } catch { return null; } })
+      .filter(Boolean);
+
+    const products = objectIds.length
+      ? await Product.find({ _id: { $in: objectIds } }).select('title images price status').lean()
+      : [];
+    const productMap = {};
+    for (const p of products) productMap[String(p._id)] = p;
+
+    const items = pageItems.map((a) => ({
+      productId: a._id,
+      product: productMap[String(a._id)] || null,
+      count: a.count,
+      customers: a.customers.slice(0, 10),
+    }));
+
+    res.json({ items, total, pages: Math.ceil(total / lim) });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }

@@ -17,6 +17,7 @@ import blogRoutes from './routes/blog.js';
 import userRoutes from './routes/user.js';
 import orderRoutes from './routes/orders.js';
 import couponRoutes from './routes/coupons.js';
+import checkoutSessionsRouter from './routes/checkoutSessions.js';
 import { syncActiveShipments } from './lib/shipmentTracking.js';
 import { seedDefaultsIfEmpty } from './lib/courierDefaults.js';
 
@@ -101,6 +102,8 @@ app.use('/api/coupons', couponRoutes); // coupon listing, eligibility checking, 
 app.use('/api/products', productRoutes);//here have all of the product related routes like add product, update product, delete product, get products etc.
 
 app.use('/api/blog', blogRoutes);//here have all of the blog related routes like add blog, update blog, delete blog, get blogs etc.
+
+app.use('/api/checkout-sessions', checkoutSessionsRouter); // checkout session tracking for abandoned checkout feature
 
 // Public: list active occasion sections (used by homepage)
 app.get('/api/occasions', async (req, res) => {
