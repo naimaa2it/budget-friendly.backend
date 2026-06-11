@@ -14,7 +14,7 @@ const getUserId = (req) => {
   try {
     const token = req.cookies?.token;
     if (!token) return null;
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     return payload.type === 'admin' ? null : payload.id?.toString() ?? null;
   } catch {
     return null;

@@ -229,4 +229,13 @@ OrderSchema.pre("save", async function () {
   this.updatedAt = new Date();
 });
 
+// Compound indexes for dashboard queries and fraud-prevention lookups
+OrderSchema.index({ 'billingDetails.phone': 1, createdAt: -1 });
+OrderSchema.index({ clientIp: 1, createdAt: -1 });
+OrderSchema.index({ deviceId: 1, createdAt: -1 });
+OrderSchema.index({ userId: 1, status: 1 });
+OrderSchema.index({ status: 1, createdAt: -1 });
+OrderSchema.index({ userEmail: 1, createdAt: -1 });
+OrderSchema.index({ paymentStatus: 1, createdAt: -1 });
+
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

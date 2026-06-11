@@ -1,5 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import { orderLimiter } from "../lib/rateLimiters.js";
 import SSLCommerzPayment from "sslcommerz-lts";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
@@ -41,7 +42,7 @@ const FRONTEND_URL = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
 // resolved after dotenv has populated process.env, regardless of ESM
 // module evaluation order.
 const getSSLCreds = () => [process.env.STORE_ID, process.env.STORE_PASSWORD];
-const is_live = process.env.NODE_ENV === "production";
+const is_live = process.env.IS_LIVE === 'true';
 
 // Dhaka city name variants (case-insensitive match)
 const DHAKA_NAMES = ["dhaka", "ঢাকা"];
@@ -281,7 +282,7 @@ const resolveAndQuote = async (
   for (const code of codes) {
     // Find coupon in database
     const coupon = await Discount.findOne({
-      couponCode: { $regex: new RegExp(`^${code}$`, "i") },
+      couponCode: code.toUpperCase(),
       isActive: true,
     }).lean();
 
@@ -411,7 +412,7 @@ const getUserId = (req) => {
   try {
     const token = req.cookies?.token;
     if (!token) return null;
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     return payload.type === "admin" ? null : (payload.id?.toString() ?? null);
   } catch {
     return null;
@@ -425,7 +426,7 @@ const getRequesterIdentity = async (req) => {
     const token = req.cookies?.token;
     if (!token) return null;
 
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     const id = payload?.id ? payload.id.toString() : null;
 
     if (!id) return null;
@@ -538,7 +539,7 @@ router.post("/quote", async (req, res) => {
 // ── POST /api/orders ──────────────────────────────────────────────────────────
 // Creates an order. Returns { ok, orderId, method } for COD or
 // { ok, orderId, method, url } for online/bkash (SSLCommerz payment URL).
-router.post("/", async (req, res) => {
+router.post("/", orderLimiter, async (req, res) => {
   try {
     const {
       userEmail,
@@ -574,69 +575,49 @@ router.post("/", async (req, res) => {
         const phone = billingDetails.phone?.replace(/\s+/g, '') || '';
         const now = new Date();
 
-        // Phone check
+        // Sync blocklist checks first (no DB round-trips)
         if (fop.phoneOrder?.enabled && phone) {
-          const phoneBlocklist = (fop.phoneOrder.blocklist || '')
-            .split(',').map(p => p.trim()).filter(Boolean);
+          const phoneBlocklist = (fop.phoneOrder.blocklist || '').split(',').map(p => p.trim()).filter(Boolean);
           if (phoneBlocklist.includes(phone)) {
             return res.status(400).json({ error: 'এই নম্বর থেকে অর্ডার করা সম্ভব নয়।' });
           }
-          const dur = Number(fop.phoneOrder.limitDuration) || 5;
-          const unit = fop.phoneOrder.limitDurationUnit || 'minutes';
-          const ms = unit === 'hours' ? dur * 3600000 : dur * 60000;
-          const minutes = unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
-          const since = new Date(now - ms);
-          const recentByPhone = await Order.countDocuments({
-            'billingDetails.phone': phone,
-            createdAt: { $gte: since },
-          });
-          if (recentByPhone > 0) {
-            return res.status(400).json({
-              error: `এই নম্বর থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${minutes} মিনিট পরে আবার চেষ্টা করুন।`,
-            });
-          }
         }
-
-        // IP check
         if (fop.ipOrder?.enabled && clientIp) {
-          const ipBlocklist = (fop.ipOrder.blocklist || '')
-            .split(',').map(p => p.trim()).filter(Boolean);
+          const ipBlocklist = (fop.ipOrder.blocklist || '').split(',').map(p => p.trim()).filter(Boolean);
           if (ipBlocklist.includes(clientIp)) {
             return res.status(400).json({ error: 'এই IP থেকে অর্ডার করা সম্ভব নয়।' });
           }
-          const dur = Number(fop.ipOrder.limitDuration) || 5;
-          const unit = fop.ipOrder.limitDurationUnit || 'minutes';
-          const ms = unit === 'hours' ? dur * 3600000 : dur * 60000;
-          const minutes = unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
-          const since = new Date(now - ms);
-          const recentByIp = await Order.countDocuments({
-            clientIp,
-            createdAt: { $gte: since },
-          });
-          if (recentByIp > 0) {
-            return res.status(400).json({
-              error: `এই লোকেশন থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${minutes} মিনিট পরে আবার চেষ্টা করুন।`,
-            });
-          }
         }
 
-        // Device check
-        if (fop.deviceOrder?.enabled && deviceId) {
+        // Run all three rate-limit DB checks in parallel
+        const mkSince = (dur, unit) => new Date(now - (unit === 'hours' ? dur * 3600000 : dur * 60000));
+        const mkLabel = (dur, unit) => unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
+
+        const phonePromise = (fop.phoneOrder?.enabled && phone) ? (() => {
+          const dur = Number(fop.phoneOrder.limitDuration) || 5;
+          const unit = fop.phoneOrder.limitDurationUnit || 'minutes';
+          return Order.countDocuments({ 'billingDetails.phone': phone, createdAt: { $gte: mkSince(dur, unit) } })
+            .then(n => n > 0 ? `এই নম্বর থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।` : null);
+        })() : Promise.resolve(null);
+
+        const ipPromise = (fop.ipOrder?.enabled && clientIp) ? (() => {
+          const dur = Number(fop.ipOrder.limitDuration) || 5;
+          const unit = fop.ipOrder.limitDurationUnit || 'minutes';
+          return Order.countDocuments({ clientIp, createdAt: { $gte: mkSince(dur, unit) } })
+            .then(n => n > 0 ? `এই লোকেশন থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।` : null);
+        })() : Promise.resolve(null);
+
+        const devicePromise = (fop.deviceOrder?.enabled && deviceId) ? (() => {
           const dur = Number(fop.deviceOrder.limitDuration) || 5;
           const unit = fop.deviceOrder.limitDurationUnit || 'minutes';
-          const ms = unit === 'hours' ? dur * 3600000 : dur * 60000;
-          const minutes = unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
-          const since = new Date(now - ms);
-          const recentByDevice = await Order.countDocuments({
-            deviceId,
-            createdAt: { $gte: since },
-          });
-          if (recentByDevice > 0) {
-            return res.status(400).json({
-              error: `এই ডিভাইস থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${minutes} মিনিট পরে আবার চেষ্টা করুন।`,
-            });
-          }
-        }
+          return Order.countDocuments({ deviceId, createdAt: { $gte: mkSince(dur, unit) } })
+            .then(n => n > 0 ? `এই ডিভাইস থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।` : null);
+        })() : Promise.resolve(null);
+
+        const [phoneErr, ipErr, deviceErr] = await Promise.all([phonePromise, ipPromise, devicePromise]);
+        if (phoneErr) return res.status(400).json({ error: phoneErr });
+        if (ipErr) return res.status(400).json({ error: ipErr });
+        if (deviceErr) return res.status(400).json({ error: deviceErr });
       }
     } catch (fopErr) {
       // don't block order on protection check failure

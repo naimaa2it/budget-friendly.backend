@@ -15,7 +15,11 @@ const CheckoutSessionSchema = new mongoose.Schema({
   total: { type: Number, default: 0 },
   status: { type: String, enum: ['incomplete', 'completed'], default: 'incomplete' },
   completedAt: { type: Date, default: null },
+  abandonedEmailSent: { type: Boolean, default: false },
+  abandonedEmailSentAt: { type: Date, default: null },
 }, { timestamps: true });
+
+CheckoutSessionSchema.index({ status: 1, updatedAt: 1, abandonedEmailSent: 1 });
 
 export default mongoose.models.CheckoutSession ||
   mongoose.model('CheckoutSession', CheckoutSessionSchema);

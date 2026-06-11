@@ -14,7 +14,7 @@ router.post('/', async (req, res) => {
     try {
       const token = req.cookies?.token;
       if (token) {
-        const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
         if (payload?.id && payload?.type !== 'admin') userId = payload.id;
       }
     } catch (_) {}

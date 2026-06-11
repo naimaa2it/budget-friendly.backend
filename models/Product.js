@@ -130,6 +130,9 @@ const ProductSchema = new mongoose.Schema(
     // promotion flags (admin toggles)
     coupon: { type: Boolean, default: false }, // eligible for coupons
     flashSale: { type: Boolean, default: false },
+    flashSalePrice: { type: Number, default: null },
+    flashSaleStartsAt: { type: Date, default: null },
+    flashSaleEndsAt: { type: Date, default: null },
     clearance: { type: Boolean, default: false },
     freeShipping: { type: Boolean, default: false },
 
@@ -261,6 +264,17 @@ ProductSchema.pre("save", function () {
     this.averageRating = 0;
   }
 });
+
+// Virtual: true only when flashSale flag is set AND within the scheduled window
+ProductSchema.virtual('isFlashSaleActive').get(function () {
+  if (!this.flashSale) return false;
+  const now = new Date();
+  if (this.flashSaleStartsAt && now < this.flashSaleStartsAt) return false;
+  if (this.flashSaleEndsAt && now > this.flashSaleEndsAt) return false;
+  return true;
+});
+
+ProductSchema.index({ flashSale: 1, flashSaleEndsAt: 1 });
 
 export default mongoose.models.Product ||
   mongoose.model("Product", ProductSchema);

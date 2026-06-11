@@ -7,7 +7,7 @@ const router = express.Router();
 
 const createToken = (user) => {
   const payload = { id: user._id, role: user.role };
-  return jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
 // Simple ping route to verify server is running properly or not
@@ -52,7 +52,7 @@ router.get('/me', async (req, res) => {
     const token = req.cookies?.token;
     if (!token) return res.json({ user: null });
     
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     
     // Check if this is an admin token (has type: 'admin')
     let user;

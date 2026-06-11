@@ -1,5 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import { uploadLimiter, reviewLimiter } from "../lib/rateLimiters.js";
 import Product from "../models/Product.js";
 import Barcode from "../models/Barcode.js";
 import multer from "multer";
@@ -59,6 +60,15 @@ router.get("/", async (req, res) => {
       maxPrice,
       brand,
       minRating,
+      // Skincare filters
+      skinType,
+      concern,
+      formulation,
+      minSpf,
+      fragranceFree,
+      parabenFree,
+      crueltyFree,
+      vegan,
     } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
     const filter = {};
@@ -82,12 +92,16 @@ router.get("/", async (req, res) => {
       "free-shipping": "freeShipping",
     };
     if (flag && FLAG_MAP[flag]) filter[FLAG_MAP[flag]] = true;
-    if (q)
+    if (q) {
+      // Escape regex metacharacters to prevent ReDoS from malicious search strings
+      const escapedQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const qReg = new RegExp(escapedQ, 'i');
       filter.$or = [
-        { title: new RegExp(q, "i") },
-        { description: new RegExp(q, "i") },
-        { tags: new RegExp(q, "i") },
+        { title: qReg },
+        { description: qReg },
+        { tags: qReg },
       ];
+    }
 
     if (minPrice !== undefined || maxPrice !== undefined) {
       filter.price = {};
@@ -110,6 +124,27 @@ router.get("/", async (req, res) => {
     if (minRating !== undefined && minRating !== "") {
       filter.averageRating = { $gte: Number(minRating) };
     }
+
+    // Skincare filters
+    if (skinType) {
+      const types = String(skinType).split(',').map(s => s.trim()).filter(Boolean);
+      if (types.length === 1) filter['skinTypes.type'] = types[0];
+      else filter['skinTypes.type'] = { $in: types };
+    }
+    if (concern) {
+      const concerns = String(concern).split(',').map(s => s.trim()).filter(Boolean);
+      filter.skinConcerns = concerns.length === 1 ? concerns[0] : { $in: concerns };
+    }
+    if (formulation) filter.formulation = String(formulation).trim();
+    if (minSpf !== undefined && minSpf !== '') filter.spf = { $gte: Number(minSpf) };
+    if (fragranceFree === 'true') filter['freeFrom'] = { $elemMatch: { $regex: /fragrance/i } };
+    if (parabenFree === 'true') {
+      filter['freeFrom'] = filter['freeFrom']
+        ? { $all: [filter['freeFrom']['$elemMatch'], { $elemMatch: { $regex: /paraben/i } }] }
+        : { $elemMatch: { $regex: /paraben/i } };
+    }
+    if (crueltyFree === 'true') filter.crueltyFree = true;
+    if (vegan === 'true') filter.vegan = true;
 
     const sortMap = {
       position: { updatedAt: -1 },
@@ -334,7 +369,7 @@ async function requireUser(req, res, next) {
       return res
         .status(401)
         .json({ error: "Please login first to submit a review." });
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type === "admin")
       return res
         .status(403)
@@ -356,7 +391,7 @@ async function requireAdmin(req, res, next) {
   try {
     const token = req.cookies?.token;
     if (!token) return res.status(401).json({ error: "Not authenticated" });
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type !== "admin")
       return res.status(403).json({ error: "Admin access required" });
     const Admin = (await import("../models/Admin.js")).default;
@@ -371,7 +406,7 @@ async function requireAdmin(req, res, next) {
 }
 
 // Submit a review (must be logged-in user)
-router.post("/:id/reviews", requireUser, async (req, res) => {
+router.post("/:id/reviews", requireUser, reviewLimiter, async (req, res) => {
   try {
     const { authorName, rating, body } = req.body;
     if (!rating || rating < 1 || rating > 5)
@@ -721,7 +756,7 @@ router.delete(
 );
 
 // Upload image (optimized server-side) - returns Cloudinary asset
-router.post("/upload", upload.single("file"), async (req, res) => {
+router.post("/upload", requireAdmin, uploadLimiter, upload.single("file"), async (req, res) => {
   try {
     ensureCloudinaryConfigured(); // configure on first use
 
@@ -784,6 +819,20 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message || "Upload failed" });
+  }
+});
+
+// Batch fetch products by IDs — used by cart hydration to refresh prices/stock
+// GET /api/products/batch?ids=id1,id2,id3 (max 50)
+router.get('/batch', async (req, res) => {
+  try {
+    const raw = (req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (raw.length === 0) return res.json({ products: [] });
+    const ids = raw.slice(0, 50);
+    const products = await Product.find({ _id: { $in: ids } }).lean();
+    res.json({ products });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

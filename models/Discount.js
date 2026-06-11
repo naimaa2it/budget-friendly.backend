@@ -30,8 +30,8 @@ const DiscountSchema = new mongoose.Schema({
   updatedAt:          { type: Date, default: Date.now },
 });
 
-// Index for efficient coupon lookup
-DiscountSchema.index({ couponCode: 1 });
+// Indexes for efficient coupon lookup and eligibility checks
+DiscountSchema.index({ couponCode: 1 }, { unique: true, sparse: true });
 DiscountSchema.index({ isActive: 1, expiresAt: 1 });
 
 DiscountSchema.pre('save', function () { this.updatedAt = Date.now(); });

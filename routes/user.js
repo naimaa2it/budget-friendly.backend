@@ -25,7 +25,7 @@ const requireUser = async (req, res, next) => {
   try {
     const token = req.cookies?.token;
     if (!token) return res.status(401).json({ error: 'Not authenticated' });
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     // payload.type is either undefined or 'admin'
     const user = await User.findById(payload.id);
     if (!user) return res.status(403).json({ error: 'User not found' });
