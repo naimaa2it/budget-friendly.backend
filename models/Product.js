@@ -46,6 +46,7 @@ const ProductSchema = new mongoose.Schema(
     category: { type: String, default: "general" },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: "Category" },
     department: { type: String }, // Brand/department (e.g., ryans, asus, cosrx)
+    productType: { type: String, enum: ['general', 'skincare', 'electronics'], default: 'general' },
     tags: [{ type: String }],
     // admin-visible badges (e.g. best_seller, hot, new_arrival)
     badges: [{ type: String, trim: true, lowercase: true, default: [] }],
