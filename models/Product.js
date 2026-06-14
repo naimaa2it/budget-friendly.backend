@@ -40,7 +40,7 @@ const ProductSchema = new mongoose.Schema(
     title: { type: String, required: true },
     slug: { type: String, index: true },
     description: { type: String },
-    detailedDescription: { type: String }, // Rich detailed description for product details page
+    detailedDescription: { type: mongoose.Schema.Types.Mixed }, // block array [{type,content/url/images}] for product details page
     sku: { type: String, index: true }, // top-level SKU for single-variant products
     barcode: { type: String, index: true, sparse: true },
     category: { type: String, default: "general" },
