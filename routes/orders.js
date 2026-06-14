@@ -723,12 +723,26 @@ router.post("/", orderLimiter, async (req, res) => {
     sendOrderConfirmationEmail(order).catch(() => {});
     sendAdminOrderNotification(order).catch(() => {});
 
-    // ── Cash on Delivery / Manual Mobile Banking (bKash, Nagad, Rocket) ────
-    if (["cash-on-delivery", "bkash", "nagad", "rocket"].includes(paymentMethod)) {
+    // ── Cash on Delivery ──────────────────────────────────────────────────────
+    if (paymentMethod === "cash-on-delivery") {
       return res.json({
         ok: true,
         orderId: order._id.toString(),
         method: "cod",
+      });
+    }
+
+    // ── Manual Mobile Banking (bKash, Nagad, Rocket) ──────────────────────────
+    if (["bkash", "nagad", "rocket"].includes(paymentMethod)) {
+      const Setting = (await import('../models/Setting.js')).default;
+      const settings = await Setting.findOne().lean();
+      const cfg = settings?.mobileBanking?.[paymentMethod] || {};
+      return res.json({
+        ok: true,
+        orderId: order._id.toString(),
+        method: paymentMethod,
+        merchantNumber: cfg.merchantNumber || '',
+        amount: total,
       });
     }
 
@@ -1522,6 +1536,28 @@ router.patch("/:id/edit", async (req, res) => {
     res.json({ ok: true, order });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── Submit mobile-banking transaction ID ──────────────────────────────────────
+// Called from /checkout/payment page after customer sends money
+router.patch("/:id/mobile-payment", async (req, res) => {
+  try {
+    const { senderNumber, transactionId } = req.body || {};
+    if (!transactionId?.trim()) {
+      return res.status(400).json({ error: "Transaction ID is required." });
+    }
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found." });
+    if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
+      return res.status(400).json({ error: "Not a mobile-banking order." });
+    }
+    order.paymentNote = `TxID: ${transactionId.trim()}${senderNumber ? ` | Sender: ${senderNumber.trim()}` : ''}`;
+    order.paymentStatus = "pending_verification";
+    await order.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Server error." });
   }
 });
 

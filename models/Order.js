@@ -170,7 +170,7 @@ const OrderSchema = new mongoose.Schema({
   total: { type: Number, required: true },
   paymentMethod: {
     type: String,
-    enum: ["cash-on-delivery", "online", "bkash"],
+    enum: ["cash-on-delivery", "online", "bkash", "nagad", "rocket"],
     default: "cash-on-delivery",
   },
   couponCode: { type: String, default: null },
@@ -194,10 +194,11 @@ const OrderSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ["unpaid", "cod", "paid", "failed", "cancelled"],
+    enum: ["unpaid", "cod", "paid", "failed", "cancelled", "pending_verification"],
     default: "unpaid",
   },
   transactionId: { type: String, default: null },
+  paymentNote: { type: String, default: null },
   valId: { type: String, default: null },
   paidAmount: { type: Number, default: null },
   // COD orders auto-confirm 30 min after creation; cancellable before this time

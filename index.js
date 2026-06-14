@@ -208,6 +208,19 @@ app.get('/api/promo-panels', async (req, res) => {
   }
 });
 
+// Public: which mobile-banking methods are enabled (checkout page needs this without auth)
+app.get('/api/payment-methods', async (req, res) => {
+  try {
+    const { default: Setting } = await import('./models/Setting.js');
+    const s = await Setting.findOne().lean();
+    const mb = s?.mobileBanking || {};
+    const enabled = ['bkash', 'nagad', 'rocket'].filter(k => mb[k]?.enabled);
+    res.json({ methods: enabled });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Public: Deal of the Day product (from settings)
 app.get('/api/deal-of-day', async (req, res) => {
   try {

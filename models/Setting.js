@@ -56,6 +56,30 @@ const SettingsSchema = new mongoose.Schema({
     defaultCourierSlug: { type: String, default: 'pathao' },
     bookSetsStatus: { type: String, default: 'shipped' },
   },
+  mobileBanking: {
+    bkash: {
+      enabled:        { type: Boolean, default: false },
+      merchantNumber: { type: String, default: '' },
+      appKey:         { type: String, default: '' },
+      appSecret:      { type: String, default: '' },
+      username:       { type: String, default: '' },
+      password:       { type: String, default: '' },
+      mode:           { type: String, enum: ['sandbox', 'live'], default: 'sandbox' },
+    },
+    nagad: {
+      enabled:        { type: Boolean, default: false },
+      merchantNumber: { type: String, default: '' },
+      merchantId:     { type: String, default: '' },
+      merchantKey:    { type: String, default: '' },
+      mode:           { type: String, enum: ['sandbox', 'live'], default: 'sandbox' },
+    },
+    rocket: {
+      enabled:        { type: Boolean, default: false },
+      merchantNumber: { type: String, default: '' },
+      apiKey:         { type: String, default: '' },
+      mode:           { type: String, enum: ['sandbox', 'live'], default: 'sandbox' },
+    },
+  },
   facebookPixel: {
     pixelId: { type: String, default: '' },
     accessToken: { type: String, default: '' },
