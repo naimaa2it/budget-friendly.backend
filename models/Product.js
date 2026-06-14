@@ -122,7 +122,17 @@ const ProductSchema = new mongoose.Schema(
     // sizes: [{ type: String }],
 
     guidelines: { type: String }, // Rich HTML (care & handling instructions)
-    specifications: [{ key: String, value: String }], // flat key-value pairs for the Specification tab
+    specifications: [
+      new mongoose.Schema(
+        {
+          type:  { type: String, default: "row" }, // "row" | "header"
+          label: { type: String },                 // used when type === "header"
+          key:   { type: String },                 // used when type === "row"
+          value: { type: String },                 // used when type === "row"
+        },
+        { _id: false },
+      ),
+    ],
     featured: { type: Boolean, default: false },
 
     // ownership + audit
