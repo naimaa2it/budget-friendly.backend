@@ -1539,6 +1539,29 @@ router.patch("/:id/edit", async (req, res) => {
   }
 });
 
+// ── Switch mobile-banking order to Cash on Delivery ──────────────────────────
+// Called when customer cancels on the payment page and chooses COD instead
+router.patch("/:id/switch-to-cod", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found." });
+    if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
+      return res.status(400).json({ error: "Order is not a mobile-banking order." });
+    }
+    if (order.status !== "pending") {
+      return res.status(400).json({ error: "Only pending orders can be switched." });
+    }
+    order.paymentMethod = "cash-on-delivery";
+    order.paymentStatus = "cod";
+    order.paymentNote = "Switched to COD by customer on payment page.";
+    order.confirmAfter = new Date(Date.now() + 1 * 60 * 60 * 1000);
+    await order.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Server error." });
+  }
+});
+
 // ── Submit mobile-banking transaction ID ──────────────────────────────────────
 // Called from /checkout/payment page after customer sends money
 router.patch("/:id/mobile-payment", async (req, res) => {
