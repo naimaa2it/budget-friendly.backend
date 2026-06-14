@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { clearProductsCache } from '../lib/redis.js';
 import mongoose from 'mongoose';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -895,6 +896,7 @@ router.post('/products', requireAdmin, async (req, res) => {
 
     const p = new Product(payload);
     await p.save();
+    clearProductsCache();
     if (nextBarcode) {
       try {
         await syncProductBarcode({
@@ -1014,6 +1016,7 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
     // Apply updates and return updated product
     const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
+    clearProductsCache();
     if (nextBarcode) {
       await syncProductBarcode({
         productId: p._id,
@@ -2127,7 +2130,9 @@ router.put('/banners-reorder', requireAdmin, async (req, res) => {
 router.get('/promo-panels', requireAdmin, async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const items = await PromoPanel.find().sort({ order: 1, createdAt: 1 });
+    const items = await PromoPanel.find()
+      .sort({ order: 1, createdAt: 1 })
+      .populate('productIds', 'title price compareAtPrice images availability inventory averageRating reviewCount badges variants _id slug');
     res.json({ items });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -2151,7 +2156,8 @@ router.post('/promo-panels', requireAdmin, async (req, res) => {
 router.get('/promo-panels/:id', requireAdmin, async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const panel = await PromoPanel.findById(req.params.id);
+    const panel = await PromoPanel.findById(req.params.id)
+      .populate('productIds', 'title price compareAtPrice images availability inventory averageRating reviewCount badges variants _id slug');
     if (!panel) return res.status(404).json({ error: 'Not found' });
     res.json({ panel });
   } catch (err) {

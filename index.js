@@ -199,8 +199,25 @@ app.get('/api/promo-strip', async (req, res) => {
 app.get('/api/promo-panels', async (req, res) => {
   try {
     const { default: PromoPanel } = await import('./models/PromoPanel.js');
-    const items = await PromoPanel.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    const items = await PromoPanel.find({ isActive: true })
+      .sort({ order: 1, createdAt: 1 })
+      .populate('productIds', 'title price compareAtPrice images availability inventory averageRating reviewCount badges variants _id slug');
     res.json({ items });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Public: Deal of the Day product (from settings)
+app.get('/api/deal-of-day', async (req, res) => {
+  try {
+    const { default: Setting } = await import('./models/Setting.js');
+    const s = await Setting.findOne().lean();
+    const productId = s?.dealOfDayProductId;
+    if (!productId) return res.json({ product: null });
+    const { default: Product } = await import('./models/Product.js');
+    const p = await Product.findById(productId).lean();
+    res.json({ product: p || null });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }

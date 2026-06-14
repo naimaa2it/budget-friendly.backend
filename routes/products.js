@@ -7,6 +7,7 @@ import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import sharp from "sharp";
 import { createClient } from "redis";
+import { clearProductsCache } from "../lib/redis.js";
 
 let cloudinaryConfigured = false;
 const ensureCloudinaryConfigured = () => {

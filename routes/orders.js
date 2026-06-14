@@ -680,12 +680,12 @@ router.post("/", orderLimiter, async (req, res) => {
       rewardPointsRedeemed: pointsRedeemed || 0,
       rewardPointsDiscount: pointsDiscount || 0,
       status: "pending",
-      paymentStatus: paymentMethod === "cash-on-delivery" ? "cod" : "unpaid",
+      paymentStatus: ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(paymentMethod) ? "cod" : "unpaid",
       clientIp: (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '',
       deviceId: deviceId || '',
-      // COD orders auto-confirm 1 hour after placement; cancellable before this time
+      // COD / manual mobile-banking orders auto-confirm 1 hour after placement
       confirmAfter:
-        paymentMethod === "cash-on-delivery"
+        ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(paymentMethod)
           ? new Date(Date.now() + 1 * 60 * 60 * 1000)
           : null,
     });
@@ -723,8 +723,8 @@ router.post("/", orderLimiter, async (req, res) => {
     sendOrderConfirmationEmail(order).catch(() => {});
     sendAdminOrderNotification(order).catch(() => {});
 
-    // ── Cash on Delivery ──────────────────────────────────────────────────
-    if (paymentMethod === "cash-on-delivery") {
+    // ── Cash on Delivery / Manual Mobile Banking (bKash, Nagad, Rocket) ────
+    if (["cash-on-delivery", "bkash", "nagad", "rocket"].includes(paymentMethod)) {
       return res.json({
         ok: true,
         orderId: order._id.toString(),
