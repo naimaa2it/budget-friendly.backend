@@ -17,8 +17,16 @@ const PaymentProvidersSchema = new mongoose.Schema(
 const SettingsSchema = new mongoose.Schema({
   storeName: { type: String, default: "Budget Friendly" },
   storeEmail: { type: String, default: "" },
-  storePhone: { type: String, default: "" },
-  storeAddress: { type: String, default: "" },
+  footerInfo: {
+    phone: { type: String, default: "" },
+    email: { type: String, default: "" },
+    address: { type: String, default: "" },
+  },
+  contactInfo: {
+    phone: { type: String, default: "" },
+    email: { type: String, default: "" },
+    address: { type: String, default: "" },
+  },
   taxPercent: { type: Number, default: 0 },
   lowStockThreshold: { type: Number, default: 5 },
   defaultShipping: { type: Number, default: 0 },

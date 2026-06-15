@@ -285,13 +285,12 @@ router.get('/top-banner', async (req, res) => {
       adsenseSlot: s?.adsenseSlot || '',
       websiteLogo: s?.websiteLogo || {},
       storeName: s?.storeName || '',
-      storeEmail: s?.storeEmail || '',
-      storePhone: s?.storePhone || '',
-      storeAddress: s?.storeAddress || '',
+      footerInfo: s?.footerInfo || { phone: '', email: '', address: '' },
+      contactInfo: s?.contactInfo || { phone: '', email: '', address: '' },
       megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : []
     });
   } catch (err) {
-    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, storeName: '', storeEmail: '', storePhone: '', storeAddress: '', megaMenuTags: [] });
+    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, storeName: '', footerInfo: { phone: '', email: '', address: '' }, contactInfo: { phone: '', email: '', address: '' }, megaMenuTags: [] });
   }
 });
 
