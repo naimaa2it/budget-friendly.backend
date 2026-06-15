@@ -1,6 +1,6 @@
 # Complete Step-by-Step API Guide (A to Z)
 
-**yourHaat E-Commerce API - Beginner's Guide**
+**SmartBuy BD E-Commerce API - Beginner's Guide**
 
 This guide will walk you through every step of using the API, from the very first login to performing all major operations.
 
@@ -33,7 +33,7 @@ This guide will walk you through every step of using the API, from the very firs
 
 2. **Your backend server running**:
    - URL: `http://localhost:5000` (local development)
-   - OR your production URL: `https://yourhaatbackend.onrender.com`
+   - OR your production URL: `https://SmartBuy BDbackend.onrender.com`
 
 3. **Basic information**:
    - Admin email and password (you'll create this)
@@ -47,7 +47,7 @@ This guide will walk you through every step of using the API, from the very firs
 
 ```bash
 # Navigate to backend folder
-cd e:/yourHaat/yourhaatbackend
+cd e:/SmartBuy BD/SmartBuy BDbackend
 
 # Install dependencies (first time only)
 npm install
@@ -57,6 +57,7 @@ npm start
 ```
 
 **Expected Output:**
+
 ```
 MongoDB connected
 Server is running on port 5000
@@ -70,6 +71,7 @@ Using MongoDB URI: MONGODB_URI
 ### 1.2 Test If Server Is Working
 
 **Using cURL:**
+
 ```bash
 curl http://localhost:5000/api/auth/ping
 ```
@@ -78,6 +80,7 @@ curl http://localhost:5000/api/auth/ping
 Open your browser and go to: `http://localhost:5000/api/auth/ping`
 
 **Using Postman:**
+
 1. Open Postman
 2. Create a new request
 3. Set method to `GET`
@@ -85,6 +88,7 @@ Open your browser and go to: `http://localhost:5000/api/auth/ping`
 5. Click "Send"
 
 **Expected Response:**
+
 ```json
 {
   "message": "pong",
@@ -122,6 +126,7 @@ Every API call has these parts:
 ### 2.2 Make Your First Request: Get Products
 
 **Using Postman:**
+
 ```
 1. Click "New" → "HTTP Request"
 2. Set Method: GET
@@ -130,18 +135,21 @@ Every API call has these parts:
 ```
 
 **Using cURL:**
+
 ```bash
 curl http://localhost:5000/api/products
 ```
 
 **Using Browser Console (F12):**
+
 ```javascript
-fetch('http://localhost:5000/api/products')
-  .then(response => response.json())
-  .then(data => console.log(data));
+fetch("http://localhost:5000/api/products")
+  .then((response) => response.json())
+  .then((data) => console.log(data));
 ```
 
 **Expected Response:**
+
 ```json
 {
   "ok": true,
@@ -171,6 +179,7 @@ Now let's learn how users log in and get authenticated.
 ### 3.1 Understanding Authentication
 
 This API uses **JWT tokens** stored in **cookies**:
+
 - When you log in successfully, the server sends back a cookie
 - This cookie is automatically included in all future requests
 - You don't need to manually handle the token (it's automatic!)
@@ -182,6 +191,7 @@ This API uses **JWT tokens** stored in **cookies**:
 **Content-Type:** application/json
 
 **Request Body:**
+
 ```json
 {
   "email": "john.doe@example.com",
@@ -192,6 +202,7 @@ This API uses **JWT tokens** stored in **cookies**:
 ```
 
 **Using Postman:**
+
 ```
 1. Method: POST
 2. URL: http://localhost:5000/api/auth/firebase-login
@@ -201,6 +212,7 @@ This API uses **JWT tokens** stored in **cookies**:
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/auth/firebase-login \
   -H "Content-Type: application/json" \
@@ -216,27 +228,29 @@ curl -X POST http://localhost:5000/api/auth/firebase-login \
 **Note:** The `-c cookies.txt` saves the cookie so you can use it later!
 
 **Using Browser Console:**
+
 ```javascript
-fetch('http://localhost:5000/api/auth/firebase-login', {
-  method: 'POST',
+fetch("http://localhost:5000/api/auth/firebase-login", {
+  method: "POST",
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
-  credentials: 'include', // IMPORTANT: This allows cookies!
+  credentials: "include", // IMPORTANT: This allows cookies!
   body: JSON.stringify({
-    email: 'john.doe@example.com',
-    name: 'John Doe',
-    image: 'https://example.com/avatar.jpg',
-    provider: 'google.com'
-  })
+    email: "john.doe@example.com",
+    name: "John Doe",
+    image: "https://example.com/avatar.jpg",
+    provider: "google.com",
+  }),
 })
-.then(res => res.json())
-.then(data => {
-  console.log('Login Success:', data);
-});
+  .then((res) => res.json())
+  .then((data) => {
+    console.log("Login Success:", data);
+  });
 ```
 
 **Expected Response:**
+
 ```json
 {
   "user": {
@@ -261,6 +275,7 @@ fetch('http://localhost:5000/api/auth/firebase-login', {
 **URL:** `http://localhost:5000/api/auth/me`
 
 **Using Postman:**
+
 ```
 1. Method: GET
 2. URL: http://localhost:5000/api/auth/me
@@ -270,20 +285,23 @@ fetch('http://localhost:5000/api/auth/firebase-login', {
 **Note:** Postman automatically includes the cookie from the previous login request!
 
 **Using cURL (with saved cookie):**
+
 ```bash
 curl http://localhost:5000/api/auth/me -b cookies.txt
 ```
 
 **Using Browser Console:**
+
 ```javascript
-fetch('http://localhost:5000/api/auth/me', {
-  credentials: 'include'
+fetch("http://localhost:5000/api/auth/me", {
+  credentials: "include",
 })
-.then(res => res.json())
-.then(data => console.log('Current User:', data));
+  .then((res) => res.json())
+  .then((data) => console.log("Current User:", data));
 ```
 
 **Expected Response:**
+
 ```json
 {
   "user": {
@@ -357,6 +375,7 @@ curl "http://localhost:5000/api/products?categoryId=cat123"
 **URL:** `http://localhost:5000/api/products?sort=priceLow`
 
 **All sort options:**
+
 - `priceLow` - Cheapest first
 - `priceHigh` - Most expensive first
 - `newest` - Latest products first
@@ -372,6 +391,7 @@ curl "http://localhost:5000/api/products?categoryId=cat123"
 **URL:** `http://localhost:5000/api/products?q=shirt&minPrice=500&maxPrice=1500&sort=priceLow&page=1&limit=20`
 
 **Using Postman:**
+
 ```
 1. Method: GET
 2. URL: http://localhost:5000/api/products
@@ -387,6 +407,7 @@ curl "http://localhost:5000/api/products?categoryId=cat123"
 ```
 
 **What this does:**
+
 - Search for "shirt"
 - Price between 500৳-1500৳
 - Sort by lowest price
@@ -402,11 +423,13 @@ curl "http://localhost:5000/api/products?categoryId=cat123"
 Replace `prod123` with the actual product ID from the list.
 
 **Using cURL:**
+
 ```bash
 curl http://localhost:5000/api/products/prod123
 ```
 
 **Expected Response:**
+
 ```json
 {
   "product": {
@@ -441,6 +464,7 @@ Before creating an actual order, let's preview the price.
 **Content-Type:** application/json
 
 **Request Body:**
+
 ```json
 {
   "items": [
@@ -457,6 +481,7 @@ Before creating an actual order, let's preview the price.
 ```
 
 **Using Postman:**
+
 ```
 1. Method: POST
 2. URL: http://localhost:5000/api/orders/quote
@@ -466,6 +491,7 @@ Before creating an actual order, let's preview the price.
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/orders/quote \
   -H "Content-Type: application/json" \
@@ -484,6 +510,7 @@ curl -X POST http://localhost:5000/api/orders/quote \
 ```
 
 **Expected Response:**
+
 ```json
 {
   "subtotal": 5000,
@@ -512,6 +539,7 @@ curl -X POST http://localhost:5000/api/orders/quote \
 ```
 
 **Understanding the response:**
+
 - Subtotal: 2500৳ × 2 = 5000৳
 - Shipping: FREE (because subtotal ≥ 999৳)
 - Discount: 150৳ (from coupon code SAVE150)
@@ -528,6 +556,7 @@ Now let's create the real order!
 **Content-Type:** application/json
 
 **Request Body:**
+
 ```json
 {
   "userEmail": "john.doe@example.com",
@@ -554,6 +583,7 @@ Now let's create the real order!
 ```
 
 **Using Postman:**
+
 ```
 1. Method: POST
 2. URL: http://localhost:5000/api/orders
@@ -563,6 +593,7 @@ Now let's create the real order!
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/orders \
   -H "Content-Type: application/json" \
@@ -590,6 +621,7 @@ curl -X POST http://localhost:5000/api/orders \
 ```
 
 **Expected Response (Cash on Delivery):**
+
 ```json
 {
   "ok": true,
@@ -611,6 +643,7 @@ curl -X POST http://localhost:5000/api/orders \
 ✅ **Order Created Successfully!**
 
 **What happens next:**
+
 1. Order is created with status "created"
 2. You receive confirmation email
 3. Admin receives notification
@@ -624,6 +657,7 @@ curl -X POST http://localhost:5000/api/orders \
 For online payment (Bkash, cards), change the `paymentMethod`:
 
 **Request Body (only change this line):**
+
 ```json
 {
   "paymentMethod": "online",
@@ -632,6 +666,7 @@ For online payment (Bkash, cards), change the `paymentMethod`:
 ```
 
 **Expected Response (Online Payment):**
+
 ```json
 {
   "ok": true,
@@ -647,6 +682,7 @@ For online payment (Bkash, cards), change the `paymentMethod`:
 ```
 
 **What to do with paymentUrl:**
+
 1. Send this URL to your frontend
 2. Redirect user to this URL
 3. User completes payment
@@ -661,6 +697,7 @@ For online payment (Bkash, cards), change the `paymentMethod`:
 **URL:** `http://localhost:5000/api/orders/my`
 
 **Using Postman:**
+
 ```
 1. Method: GET
 2. URL: http://localhost:5000/api/orders/my
@@ -669,11 +706,13 @@ For online payment (Bkash, cards), change the `paymentMethod`:
 ```
 
 **Using cURL:**
+
 ```bash
 curl http://localhost:5000/api/orders/my -b cookies.txt
 ```
 
 **Expected Response:**
+
 ```json
 {
   "orders": [
@@ -714,6 +753,7 @@ You can cancel COD orders within 30 minutes of creation.
 **URL:** `http://localhost:5000/api/orders/order123/cancel`
 
 **Using Postman:**
+
 ```
 1. Method: PATCH
 2. URL: http://localhost:5000/api/orders/order123/cancel
@@ -722,12 +762,14 @@ You can cancel COD orders within 30 minutes of creation.
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X PATCH http://localhost:5000/api/orders/order123/cancel \
   -b cookies.txt
 ```
 
 **Expected Response:**
+
 ```json
 {
   "message": "Order cancelled successfully",
@@ -740,19 +782,18 @@ curl -X PATCH http://localhost:5000/api/orders/order123/cancel \
 ```
 
 ### 5.7 Edit Order(within 30 minutes)
-1.Method: Patch
-2. URL: http://localhost:5000/api/orders/:id/edit
-3. Make sure you're logged in
-4. Click "Send"
 
-  {"items": [
-    {
-      "productId": "69a7efed7a26484a38065c9e",
-      "quantity": 3,
-      "color": "Red",
-      "size": "M"
-    }
-  ]}
+1.Method: Patch 2. URL: http://localhost:5000/api/orders/:id/edit 3. Make sure you're logged in 4. Click "Send"
+
+{"items": [
+{
+"productId": "69a7efed7a26484a38065c9e",
+"quantity": 3,
+"color": "Red",
+"size": "M"
+}
+]}
+
 ---
 
 ## Step 6: Admin Login
@@ -764,6 +805,7 @@ Now let's learn how to log in as an admin.
 If you don't have an admin account yet, you need to create one. But first, you need the admin secret from your `.env` file.
 
 **Check your `.env` file:**
+
 ```
 ADMIN_SECRET=your_admin_secret_key_here
 ```
@@ -777,22 +819,24 @@ ADMIN_SECRET=your_admin_secret_key_here
 **Content-Type:** application/json
 
 **Request Body:**
+
 ```json
 {
-  "email": "admin@yourhaat.com",
+  "email": "admin@SmartBuy BD.com",
   "password": "yourpassword123",
   "adminSecret": "your_admin_secret_key_here"
 }
 ```
 
 **Using Postman:**
+
 ```
 1. Method: POST
 2. URL: http://localhost:5000/api/admin/login
 3. Body → raw → JSON
 4. Paste:
    {
-     "email": "admin@yourhaat.com",
+     "email": "admin@SmartBuy BD.com",
      "password": "yourpassword123",
      "adminSecret": "paste_your_ADMIN_SECRET_here"
    }
@@ -800,11 +844,12 @@ ADMIN_SECRET=your_admin_secret_key_here
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@yourhaat.com",
+    "email": "admin@SmartBuy BD.com",
     "password": "yourpassword123",
     "secret": "your_admin_secret"
   }' \
@@ -812,12 +857,13 @@ curl -X POST http://localhost:5000/api/admin/login \
 ```
 
 **Expected Response:**
+
 ```json
 {
   "ok": true,
   "admin": {
     "_id": "admin123",
-    "email": "admin@yourhaat.com",
+    "email": "admin@SmartBuy BD.com",
     "name": "Admin Name",
     "role": "admin",
     "isActive": true
@@ -828,6 +874,7 @@ curl -X POST http://localhost:5000/api/admin/login \
 ✅ **You're now logged in as Admin!**
 
 **⚠️ Important:**
+
 - The admin secret is required for security
 - Never share your admin secret publicly
 - Use different cookies for user and admin (separate cookie files)
@@ -840,16 +887,18 @@ curl -X POST http://localhost:5000/api/admin/login \
 **URL:** `http://localhost:5000/api/auth/me`
 
 **Using cURL:**
+
 ```bash
 curl http://localhost:5000/api/auth/me -b admin_cookies.txt
 ```
 
 **Expected Response:**
+
 ```json
 {
   "user": {
     "_id": "admin123",
-    "email": "admin@yourhaat.com",
+    "email": "admin@SmartBuy BD.com",
     "role": "admin",
     "type": "admin"
   }
@@ -870,6 +919,7 @@ Now let's explore the admin dashboard.
 **URL:** `http://localhost:5000/api/admin/dashboard-overview`
 
 **Using Postman:**
+
 ```
 1. Method: GET
 2. URL: http://localhost:5000/api/admin/dashboard-overview
@@ -878,12 +928,14 @@ Now let's explore the admin dashboard.
 ```
 
 **Using cURL:**
+
 ```bash
 curl http://localhost:5000/api/admin/dashboard-overview \
   -b admin_cookies.txt
 ```
 
 **Expected Response:**
+
 ```json
 {
   "overview": {
@@ -934,6 +986,7 @@ curl http://localhost:5000/api/admin/dashboard-overview \
 ```
 
 **What this shows:**
+
 - Total revenue and profit
 - Daily, weekly, monthly reports
 - Order status breakdown
@@ -954,6 +1007,7 @@ Before creating products, you need categories.
 **Content-Type:** application/json
 
 **Request Body:**
+
 ```json
 {
   "name": "Electronics",
@@ -964,6 +1018,7 @@ Before creating products, you need categories.
 ```
 
 **Using Postman:**
+
 ```
 1. Method: POST
 2. URL: http://localhost:5000/api/admin/categories
@@ -974,6 +1029,7 @@ Before creating products, you need categories.
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/categories \
   -H "Content-Type: application/json" \
@@ -987,6 +1043,7 @@ curl -X POST http://localhost:5000/api/admin/categories \
 ```
 
 **Expected Response:**
+
 ```json
 {
   "category": {
@@ -1013,6 +1070,7 @@ Before creating a product, let's upload an image.
 **Content-Type:** multipart/form-data
 
 **Using Postman:**
+
 ```
 1. Method: POST
 2. URL: http://localhost:5000/api/admin/upload
@@ -1025,6 +1083,7 @@ Before creating a product, let's upload an image.
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/upload \
   -b admin_cookies.txt \
@@ -1032,10 +1091,11 @@ curl -X POST http://localhost:5000/api/admin/upload \
 ```
 
 **Expected Response:**
+
 ```json
 {
-  "url": "https://res.cloudinary.com/yourcloud/image/upload/v1234/yourhaat/products/abc123.webp",
-  "public_id": "yourhaat/products/abc123"
+  "url": "https://res.cloudinary.com/yourcloud/image/upload/v1234/SmartBuy BD/products/abc123.webp",
+  "public_id": "SmartBuy BD/products/abc123"
 }
 ```
 
@@ -1052,6 +1112,7 @@ Now let's create the actual product!
 **Content-Type:** application/json
 
 **Request Body:**
+
 ```json
 {
   "title": "Wireless Bluetooth Headphones",
@@ -1100,14 +1161,19 @@ Now let's create the actual product!
     "details": "Return unused items with original packaging"
   },
   "seo": {
-    "title": "Buy Wireless Bluetooth Headphones - yourHaat",
+    "title": "Buy Wireless Bluetooth Headphones - SmartBuy BD",
     "description": "Shop high-quality wireless Bluetooth headphones with noise cancellation. Free shipping on orders over 999৳",
-    "keywords": ["wireless headphones", "bluetooth headphones", "noise cancellation"]
+    "keywords": [
+      "wireless headphones",
+      "bluetooth headphones",
+      "noise cancellation"
+    ]
   }
 }
 ```
 
 **Using Postman:**
+
 ```
 1. Method: POST
 2. URL: http://localhost:5000/api/admin/products
@@ -1120,6 +1186,7 @@ Now let's create the actual product!
 ```
 
 **Using cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/products \
   -H "Content-Type: application/json" \
@@ -1136,6 +1203,7 @@ curl -X POST http://localhost:5000/api/admin/products \
 ```
 
 **Expected Response:**
+
 ```json
 {
   "product": {
@@ -1161,6 +1229,7 @@ curl -X POST http://localhost:5000/api/admin/products \
 **Content-Type:** application/json
 
 **Request Body (you can update any fields):**
+
 ```json
 {
   "price": 2300,
@@ -1170,6 +1239,7 @@ curl -X POST http://localhost:5000/api/admin/products \
 ```
 
 **Using Postman:**
+
 ```
 1. Method: PUT
 2. URL: http://localhost:5000/api/admin/products/prod123
@@ -1216,6 +1286,7 @@ curl -X DELETE "http://localhost:5000/api/admin/products/prod123?force=true" \
 **URL:** `http://localhost:5000/api/admin/orders`
 
 **Using Postman:**
+
 ```
 1. Method: GET
 2. URL: http://localhost:5000/api/admin/orders
@@ -1224,6 +1295,7 @@ curl -X DELETE "http://localhost:5000/api/admin/products/prod123?force=true" \
 ```
 
 **With filters:**
+
 ```
 http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 ```
@@ -1237,6 +1309,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 **Content-Type:** application/json
 
 **Request Body:**
+
 ```json
 {
   "status": "confirmed"
@@ -1244,6 +1317,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 ```
 
 **Available statuses:**
+
 - `created` - Just created
 - `pending` - Waiting for confirmation
 - `confirmed` - Confirmed by admin
@@ -1254,6 +1328,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 - `failed` - Failed
 
 **Using Postman:**
+
 ```
 1. Method: PUT
 2. URL: http://localhost:5000/api/admin/orders/order123/status
@@ -1263,6 +1338,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 ```
 
 **Expected Response:**
+
 ```json
 {
   "message": "Order status updated",
@@ -1282,6 +1358,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 **URL:** `http://localhost:5000/api/admin/orders/order123/payment-status`
 
 **Request Body:**
+
 ```json
 {
   "paymentStatus": "paid"
@@ -1289,6 +1366,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 ```
 
 **Available payment statuses:**
+
 - `pending` - Not paid yet
 - `paid` - Paid
 - `failed` - Payment failed
@@ -1362,7 +1440,7 @@ curl http://localhost:5000/api/orders/my -b customer.txt
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email":"admin@yourhaat.com",
+    "email":"admin@SmartBuy BD.com",
     "password":"yourpass",
     "secret":"your_admin_secret"
   }' \
@@ -1482,51 +1560,61 @@ You can use these coupon codes when creating orders:
 ## Common Errors and Solutions
 
 ### Error: 401 Unauthorized
+
 ```json
 {
   "error": "Authentication required. Please log in."
 }
 ```
+
 **Solution:** You're not logged in. Go back to Step 3 or Step 6 and log in.
 
 ---
 
 ### Error: 403 Forbidden
+
 ```json
 {
   "error": "Insufficient permissions. Admin access required."
 }
 ```
+
 **Solution:** You're logged in as a regular user but trying to access admin endpoints. Log in as admin (Step 6).
 
 ---
 
 ### Error: 404 Not Found
+
 ```json
 {
   "error": "Product not found"
 }
 ```
+
 **Solution:** The product ID you're using doesn't exist. Check the ID and try again.
 
 ---
 
 ### Error: 400 Bad Request
+
 ```json
 {
   "error": "Price must be a positive number"
 }
 ```
+
 **Solution:** Your request data is invalid. Check the request body format and required fields.
 
 ---
 
 ### Error: Insufficient Stock
+
 ```json
 {
   "error": "Insufficient stock. Only 5 items available."
 }
 ```
+
 **Solution:** The product doesn't have enough inventory. Reduce quantity or choose different product.
 
 ---
@@ -1582,9 +1670,10 @@ Body: {status}
 
 **Congratulations!** 🎉
 
-You now know how to use the yourHaat API from A to Z!
+You now know how to use the SmartBuy BD API from A to Z!
 
 For more details, check out:
+
 - `API_DOCUMENTATION.md` - Complete endpoint reference
 - `API_QUICK_REFERENCE.md` - Quick lookup tables
 - `API_TESTING_GUIDE.md` - Advanced testing scenarios
