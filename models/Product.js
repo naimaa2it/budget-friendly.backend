@@ -286,17 +286,13 @@ ProductSchema.virtual('isFlashSaleActive').get(function () {
 });
 
 ProductSchema.index({ flashSale: 1, flashSaleEndsAt: 1 });
-
-export default mongoose.models.Product ||
-  mongoose.model("Product", ProductSchema);
-
-// Indexes for faster skincare queries and text search
-ProductSchema.index({
-  title: "text",
-  slug: "text",
-  description: "text",
-  "ingredients.inciName": "text",
-});
+ProductSchema.index({ title: "text", slug: "text", description: "text", "ingredients.inciName": "text" });
 ProductSchema.index({ categoryId: 1, price: 1 });
 ProductSchema.index({ featured: 1, monthlySold: -1 });
 ProductSchema.index({ spf: 1 }, { sparse: true });
+ProductSchema.index({ status: 1, categoryId: 1, createdAt: -1 });
+ProductSchema.index({ status: 1, averageRating: -1 });
+ProductSchema.index({ status: 1, monthlySold: -1 });
+
+export default mongoose.models.Product ||
+  mongoose.model("Product", ProductSchema);

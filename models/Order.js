@@ -235,8 +235,11 @@ OrderSchema.index({ 'billingDetails.phone': 1, createdAt: -1 });
 OrderSchema.index({ clientIp: 1, createdAt: -1 });
 OrderSchema.index({ deviceId: 1, createdAt: -1 });
 OrderSchema.index({ userId: 1, status: 1 });
+OrderSchema.index({ userId: 1, createdAt: -1 }); // fast "my orders" sort
 OrderSchema.index({ status: 1, createdAt: -1 });
 OrderSchema.index({ userEmail: 1, createdAt: -1 });
 OrderSchema.index({ paymentStatus: 1, createdAt: -1 });
+OrderSchema.index({ 'shipment.trackingId': 1 }, { sparse: true }); // webhook lookups
+OrderSchema.index({ confirmAfter: 1 }, { sparse: true }); // lazy-confirm batch job
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

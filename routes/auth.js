@@ -10,9 +10,9 @@ const createToken = (user) => {
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
-// Simple ping route to verify server is running properly or not
+// Health/ping — never reflect auth cookies or sensitive headers back to the client
 router.get('/ping', (req, res) => {
-  res.json({ ok: true, time: Date.now(), origin: req.headers.origin, cookie: req.headers.cookie || null });
+  res.json({ ok: true, time: Date.now() });
 });
 
 // Firebase (client) provides user info after sign-in (google or email)

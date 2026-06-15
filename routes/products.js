@@ -6,8 +6,7 @@ import Barcode from "../models/Barcode.js";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import sharp from "sharp";
-import { createClient } from "redis";
-import { clearProductsCache } from "../lib/redis.js";
+import { redisClient, clearProductsCache } from "../lib/redis.js";
 
 let cloudinaryConfigured = false;
 const ensureCloudinaryConfigured = () => {
@@ -30,19 +29,6 @@ const normalizeBarcodeCode = (value) =>
     .replace(/\s+/g, "");
 
 const router = express.Router();
-
-// Optional Redis caching (configure with REDIS_URL)
-let redisClient;
-if (process.env.REDIS_URL) {
-  try {
-    redisClient = createClient({ url: process.env.REDIS_URL });
-    redisClient
-      .connect()
-      .catch(() => {});
-  } catch {
-    redisClient = null;
-  }
-}
 
 //get products with optional filters: ?q=search&categoryId=123&badge=best-seller&flag=featured&page=1&limit=20&status=published&sort=position&minPrice=10&maxPrice=100&brand=BrandA&minRating=4
 // Public product listing with pagination, search, category filter
@@ -126,24 +112,20 @@ router.get("/", async (req, res) => {
       filter.averageRating = { $gte: Number(minRating) };
     }
 
-    // Skincare filters
+    // Skincare filters — field names must match the Product schema exactly.
+    // skinTypes is [String], suitableConcerns is [String], fragranceFree/parabenFree are Boolean.
     if (skinType) {
       const types = String(skinType).split(',').map(s => s.trim()).filter(Boolean);
-      if (types.length === 1) filter['skinTypes.type'] = types[0];
-      else filter['skinTypes.type'] = { $in: types };
+      filter.skinTypes = types.length === 1 ? types[0] : { $in: types };
     }
     if (concern) {
       const concerns = String(concern).split(',').map(s => s.trim()).filter(Boolean);
-      filter.skinConcerns = concerns.length === 1 ? concerns[0] : { $in: concerns };
+      filter.suitableConcerns = concerns.length === 1 ? concerns[0] : { $in: concerns };
     }
     if (formulation) filter.formulation = String(formulation).trim();
     if (minSpf !== undefined && minSpf !== '') filter.spf = { $gte: Number(minSpf) };
-    if (fragranceFree === 'true') filter['freeFrom'] = { $elemMatch: { $regex: /fragrance/i } };
-    if (parabenFree === 'true') {
-      filter['freeFrom'] = filter['freeFrom']
-        ? { $all: [filter['freeFrom']['$elemMatch'], { $elemMatch: { $regex: /paraben/i } }] }
-        : { $elemMatch: { $regex: /paraben/i } };
-    }
+    if (fragranceFree === 'true') filter.fragranceFree = true;
+    if (parabenFree === 'true') filter.parabenFree = true;
     if (crueltyFree === 'true') filter.crueltyFree = true;
     if (vegan === 'true') filter.vegan = true;
 
@@ -160,7 +142,7 @@ router.get("/", async (req, res) => {
 
     // Try cache
     const cacheKey = `products:${Buffer.from(JSON.stringify(req.query || {})).toString("base64")}`;
-    if (redisClient && redisClient.isOpen) {
+    if (redisClient?.isReady) {
       try {
         const cached = await redisClient.get(cacheKey);
         if (cached) return res.json(JSON.parse(cached));
@@ -180,16 +162,12 @@ router.get("/", async (req, res) => {
 
     const payload = { items, total, page: Number(page), limit: Number(limit) };
     // store in cache (short TTL)
-    if (redisClient && redisClient.isOpen) {
-      try {
-        await redisClient.setEx(
-          cacheKey,
-          Number(process.env.PRODUCTS_CACHE_TTL || 60),
-          JSON.stringify(payload),
-        );
-      } catch {
-        // ignore cache errors
-      }
+    if (redisClient?.isReady) {
+      redisClient.setEx(
+        cacheKey,
+        Number(process.env.PRODUCTS_CACHE_TTL || 60),
+        JSON.stringify(payload),
+      ).catch(() => {});
     }
 
     res.json(payload);
@@ -328,7 +306,7 @@ router.get("/barcode/:code", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const prodCacheKey = `product:${req.params.id}`;
-    if (redisClient && redisClient.isOpen) {
+    if (redisClient?.isReady) {
       try {
         const cached = await redisClient.get(prodCacheKey);
         if (cached) return res.json({ product: JSON.parse(cached) });
@@ -345,16 +323,12 @@ router.get("/:id", async (req, res) => {
       .lean();
     if (!prod) return res.status(404).json({ error: "Not found" });
     // cache product detail for a bit longer
-    if (redisClient && redisClient.isOpen) {
-      try {
-        await redisClient.setEx(
-          prodCacheKey,
-          Number(process.env.PRODUCT_CACHE_TTL || 300),
-          JSON.stringify(prod),
-        );
-      } catch {
-        // ignore cache errors
-      }
+    if (redisClient?.isReady) {
+      redisClient.setEx(
+        prodCacheKey,
+        Number(process.env.PRODUCT_CACHE_TTL || 300),
+        JSON.stringify(prod),
+      ).catch(() => {});
     }
     res.json({ product: prod });
   } catch (err) {

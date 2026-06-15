@@ -1341,7 +1341,31 @@ router.get("/:id", async (req, res) => {
       await order.save();
     }
 
-    res.json({ order });
+    const identity = await getRequesterIdentity(req);
+    const isAdmin = identity?.type === 'admin';
+    const isOwner = ownsOrder(order, identity);
+
+    if (isAdmin || isOwner) {
+      return res.json({ order });
+    }
+
+    // Unauthenticated callers get non-PII confirmation data only.
+    // This keeps the checkout success page working for guest orders
+    // without exposing name / phone / address to strangers.
+    const publicOrder = {
+      _id: order._id,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      paymentMethod: order.paymentMethod,
+      total: order.total,
+      subtotal: order.subtotal,
+      shipping: order.shipping,
+      discount: order.discount,
+      couponCode: order.couponCode,
+      items: (order.items || []).map(i => ({ title: i.title, quantity: i.quantity, price: i.price })),
+      createdAt: order.createdAt,
+    };
+    res.json({ order: publicOrder });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
@@ -1543,8 +1567,15 @@ router.patch("/:id/edit", async (req, res) => {
 // Called when customer cancels on the payment page and chooses COD instead
 router.patch("/:id/switch-to-cod", async (req, res) => {
   try {
+    const identity = await getRequesterIdentity(req);
+    if (!identity) return res.status(401).json({ error: "Not authenticated." });
+
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found." });
+
+    if (!ownsOrder(order, identity) && identity.type !== 'admin') {
+      return res.status(403).json({ error: "Not your order." });
+    }
     if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
       return res.status(400).json({ error: "Order is not a mobile-banking order." });
     }
@@ -1566,12 +1597,19 @@ router.patch("/:id/switch-to-cod", async (req, res) => {
 // Called from /checkout/payment page after customer sends money
 router.patch("/:id/mobile-payment", async (req, res) => {
   try {
+    const identity = await getRequesterIdentity(req);
+    if (!identity) return res.status(401).json({ error: "Not authenticated." });
+
     const { senderNumber, transactionId } = req.body || {};
     if (!transactionId?.trim()) {
       return res.status(400).json({ error: "Transaction ID is required." });
     }
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found." });
+
+    if (!ownsOrder(order, identity) && identity.type !== 'admin') {
+      return res.status(403).json({ error: "Not your order." });
+    }
     if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
       return res.status(400).json({ error: "Not a mobile-banking order." });
     }

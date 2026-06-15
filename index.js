@@ -45,6 +45,7 @@ import { seedDefaultsIfEmpty } from './lib/courierDefaults.js';
 import { generalLimiter, authLimiter } from './lib/rateLimiters.js';
 import logger from './lib/logger.js';
 import { sendAbandonedCartEmail } from './lib/mailer.js';
+import { redisClient } from './lib/redis.js';
 
 const app = express();
 
@@ -91,7 +92,8 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 app.use(generalLimiter);
 
@@ -116,10 +118,78 @@ async function connectMongo() {
       return;
     }
     logger.error({ err }, 'MongoDB connection error');
+    throw err; // re-throw so .then(startBackgroundJobs) is skipped on failure
   }
 }
 
-connectMongo();
+function startBackgroundJobs() {
+  // Flash sale auto-expiry: clear flashSale flag on products past their end time
+  setInterval(async () => {
+    try {
+      const { default: Product } = await import('./models/Product.js');
+      const result = await Product.updateMany(
+        { flashSale: true, flashSaleEndsAt: { $lt: new Date() } },
+        { $set: { flashSale: false } }
+      );
+      if (result.modifiedCount > 0) {
+        logger.info(`Flash sale expiry: cleared ${result.modifiedCount} product(s)`);
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Flash sale expiry job failed');
+    }
+  }, 5 * 60 * 1000);
+
+  // Abandoned cart email: runs every 15 minutes
+  const abandonedCartIntervalMs = 15 * 60 * 1000;
+  setInterval(async () => {
+    if (process.env.ABANDONED_CART_EMAILS !== 'true') return;
+    try {
+      const CheckoutSession = (await import('./models/CheckoutSession.js')).default;
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const sessions = await CheckoutSession.find({
+        userEmail: { $exists: true, $ne: null, $ne: '' },
+        status: 'incomplete',
+        completedAt: null,
+        abandonedEmailSent: { $ne: true },
+        updatedAt: { $lt: oneHourAgo },
+      }).limit(50).lean();
+
+      for (const session of sessions) {
+        try {
+          await sendAbandonedCartEmail(session);
+          await CheckoutSession.updateOne(
+            { _id: session._id },
+            { $set: { abandonedEmailSent: true, abandonedEmailSentAt: new Date() } }
+          );
+        } catch (emailErr) {
+          logger.warn({ err: emailErr, sessionId: session._id }, 'Abandoned cart email failed');
+        }
+      }
+      if (sessions.length > 0) {
+        logger.info(`Abandoned cart: sent ${sessions.length} recovery email(s)`);
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Abandoned cart job failed');
+    }
+  }, abandonedCartIntervalMs);
+
+  const syncIntervalMs = Number(process.env.SHIPMENT_SYNC_INTERVAL_MS || 15 * 60 * 1000);
+  if (syncIntervalMs > 0) {
+    setInterval(async () => {
+      try {
+        const results = await syncActiveShipments(25);
+        const synced = results.filter((r) => r.ok && !r.skipped).length;
+        if (synced > 0) {
+          logger.info(`Shipment sync: updated ${synced} order(s)`);
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Shipment sync job failed');
+      }
+    }, syncIntervalMs);
+  }
+}
+
+connectMongo().then(() => startBackgroundJobs()).catch(() => {});
 
 app.get("/", (req, res) => {
   res.send("Welcome to YourHaat Backend!");
@@ -270,25 +340,21 @@ app.get('/api/discounts', async (req, res) => {
 });
 
 // Public: batched homepage data — replaces 7 separate network calls with one.
-// Optional Redis cache with 5-minute TTL if REDIS_URL is set.
+// Uses module-level Redis singleton (no per-request connection overhead).
 app.get('/api/homepage', async (req, res) => {
   const CACHE_KEY = 'homepage:v1';
   const CACHE_TTL = 300; // seconds
 
-  // Try Redis cache first
-  let redisClient = null;
-  try {
-    if (process.env.REDIS_URL) {
-      const { createClient } = await import('redis');
-      redisClient = createClient({ url: process.env.REDIS_URL });
-      await redisClient.connect();
+  // Try singleton Redis cache first
+  if (redisClient?.isReady) {
+    try {
       const cached = await redisClient.get(CACHE_KEY);
       if (cached) {
         res.setHeader('X-Cache', 'HIT');
         return res.json(JSON.parse(cached));
       }
-    }
-  } catch { /* Redis unavailable — fall through to DB */ }
+    } catch { /* fall through to DB */ }
+  }
 
   try {
     const [
@@ -322,35 +388,54 @@ app.get('/api/homepage', async (req, res) => {
         Discount.find({ isActive: true }).sort({ order: 1, createdAt: 1 }).lean(),
       ]);
 
-    // Hydrate featured sections with products
-    const featured = await Promise.all(featuredSections.map(async (sec) => {
-      let products = [];
-      if (sec.productIds && sec.productIds.length > 0) {
-        products = await Product.find({ _id: { $in: sec.productIds }, status: { $ne: 'archived' } }).lean();
+    // Hydrate featured sections — batched to avoid N+1 queries.
+    // Explicit-productId sections: ONE query for all IDs combined.
+    // Category sections: one query per unique category, all in parallel.
+    const explicitIds = [
+      ...new Set(
+        featuredSections
+          .filter(s => s.productIds?.length > 0)
+          .flatMap(s => s.productIds.map(id => id.toString()))
+      ),
+    ];
+    const categorySections = featuredSections.filter(s => !s.productIds?.length && s.categoryId);
+
+    const [explicitProds, ...catProdArrays] = await Promise.all([
+      explicitIds.length
+        ? Product.find({ _id: { $in: explicitIds }, status: { $ne: 'archived' } }).lean()
+        : Promise.resolve([]),
+      ...categorySections.map(s =>
+        Product.find({ categoryId: s.categoryId, status: { $ne: 'archived' } })
+          .sort({ updatedAt: -1 }).limit(s.limit || 10).lean()
+      ),
+    ]);
+
+    const explicitMap = Object.fromEntries(explicitProds.map(p => [p._id.toString(), p]));
+    let catIdx = 0;
+
+    const featured = featuredSections.map(sec => {
+      if (sec.productIds?.length > 0) {
         const idOrder = sec.productIds.map(id => id.toString());
-        products.sort((a, b) => idOrder.indexOf(a._id.toString()) - idOrder.indexOf(b._id.toString()));
-      } else if (sec.categoryId) {
-        products = await Product.find({ categoryId: sec.categoryId, status: { $ne: 'archived' } })
-          .sort({ updatedAt: -1 }).limit(sec.limit || 10).lean();
+        const products = idOrder.map(id => explicitMap[id]).filter(Boolean);
+        return { ...sec, products };
       }
-      return { ...sec, products };
-    }));
+      if (sec.categoryId) {
+        return { ...sec, products: catProdArrays[catIdx++] || [] };
+      }
+      return { ...sec, products: [] };
+    });
 
     const payload = { banners, occasions, featured, promoStrip, promoPanels, popup, discounts };
 
-    // Cache in Redis
-    if (redisClient) {
-      try {
-        await redisClient.setEx(CACHE_KEY, CACHE_TTL, JSON.stringify(payload));
-      } catch { /* ignore cache write failures */ }
+    // Write-back to Redis cache
+    if (redisClient?.isReady) {
+      redisClient.setEx(CACHE_KEY, CACHE_TTL, JSON.stringify(payload)).catch(() => {});
     }
 
     res.setHeader('X-Cache', 'MISS');
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    if (redisClient) redisClient.quit().catch(() => {});
   }
 });
 
@@ -390,70 +475,20 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: message });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info(`Server is running on port ${PORT}`);
-
-  // Flash sale auto-expiry: clear flashSale flag on products past their end time
-  setInterval(async () => {
-    try {
-      const { default: Product } = await import('./models/Product.js');
-      const result = await Product.updateMany(
-        { flashSale: true, flashSaleEndsAt: { $lt: new Date() } },
-        { $set: { flashSale: false } }
-      );
-      if (result.modifiedCount > 0) {
-        logger.info(`Flash sale expiry: cleared ${result.modifiedCount} product(s)`);
-      }
-    } catch (err) {
-      logger.warn({ err }, 'Flash sale expiry job failed');
-    }
-  }, 5 * 60 * 1000);
-
-  // Abandoned cart email: runs every 15 minutes
-  // Targets sessions with an email, still incomplete, not yet emailed, last updated > 1hr ago
-  const abandonedCartIntervalMs = 15 * 60 * 1000;
-  setInterval(async () => {
-    if (process.env.ABANDONED_CART_EMAILS !== 'true') return;
-    try {
-      const CheckoutSession = (await import('./models/CheckoutSession.js')).default;
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      const sessions = await CheckoutSession.find({
-        userEmail: { $exists: true, $ne: null, $ne: '' },
-        status: 'incomplete',
-        completedAt: null,
-        abandonedEmailSent: { $ne: true },
-        updatedAt: { $lt: oneHourAgo },
-      }).limit(50).lean();
-
-      for (const session of sessions) {
-        try {
-          await sendAbandonedCartEmail(session);
-          await CheckoutSession.updateOne(
-            { _id: session._id },
-            { $set: { abandonedEmailSent: true, abandonedEmailSentAt: new Date() } }
-          );
-        } catch {}
-      }
-      if (sessions.length > 0) {
-        logger.info(`Abandoned cart: sent ${sessions.length} recovery email(s)`);
-      }
-    } catch (err) {
-      logger.warn({ err }, 'Abandoned cart job failed');
-    }
-  }, abandonedCartIntervalMs);
-
-  const syncIntervalMs = Number(process.env.SHIPMENT_SYNC_INTERVAL_MS || 15 * 60 * 1000);
-  if (syncIntervalMs > 0) {
-    setInterval(async () => {
-      try {
-        const results = await syncActiveShipments(25);
-        const synced = results.filter((r) => r.ok && !r.skipped).length;
-        if (synced > 0) {
-          logger.info(`Shipment sync: updated ${synced} order(s)`);
-        }
-      } catch (err) {
-        logger.warn({ err }, 'Shipment sync job failed');
-      }
-    }, syncIntervalMs);
-  }
 });
+
+// Graceful shutdown — allow in-flight requests to complete before exiting.
+// Render/Railway send SIGTERM before killing the process.
+const gracefulShutdown = (signal) => {
+  logger.info(`${signal} received — shutting down gracefully`);
+  server.close(async () => {
+    try { await mongoose.connection.close(); } catch {}
+    logger.info('MongoDB disconnected. Exiting.');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 30_000);
+};
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
