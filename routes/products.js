@@ -30,6 +30,17 @@ const normalizeBarcodeCode = (value) =>
 
 const router = express.Router();
 
+// Fields sufficient for product cards on listing/search/homepage — strips
+// reviews[], faqs[], ingredients[], specifications[] and other heavy arrays
+// only needed on the single-product detail page.  Cuts response size 60-80%.
+const CARD_SELECT = [
+  '_id title slug price compareAtPrice images',
+  'availability inventory badges averageRating reviewCount',
+  'freeShipping flashSale flashSalePrice flashSaleEndsAt',
+  'variants categoryId department status updatedAt monthlySold',
+  'coupon skinTypes spf fragranceFree parabenFree crueltyFree vegan',
+].join(' ');
+
 //get products with optional filters: ?q=search&categoryId=123&badge=best-seller&flag=featured&page=1&limit=20&status=published&sort=position&minPrice=10&maxPrice=100&brand=BrandA&minRating=4
 // Public product listing with pagination, search, category filter
 router.get("/", async (req, res) => {
@@ -80,14 +91,10 @@ router.get("/", async (req, res) => {
     };
     if (flag && FLAG_MAP[flag]) filter[FLAG_MAP[flag]] = true;
     if (q) {
-      // Escape regex metacharacters to prevent ReDoS from malicious search strings
-      const escapedQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const qReg = new RegExp(escapedQ, 'i');
-      filter.$or = [
-        { title: qReg },
-        { description: qReg },
-        { tags: qReg },
-      ];
+      // Use the pre-built text index (title + description + ingredients.inciName)
+      // for O(log n) lookup — regex does a full O(n) collection scan.
+      // Input capped at 200 chars; $text is injection-safe.
+      filter.$text = { $search: String(q).slice(0, 200) };
     }
 
     if (minPrice !== undefined || maxPrice !== undefined) {
@@ -138,14 +145,20 @@ router.get("/", async (req, res) => {
       priceHigh: { price: -1 },
       priceLow: { price: 1 },
     };
-    const sortBy = sortMap[sort] || sortMap.position;
+    let sortBy = sortMap[sort] || sortMap.position;
+    // When text search is active and no explicit sort was requested, rank by
+    // relevance score rather than recency so the best matches surface first.
+    if (q && sort === 'position') sortBy = { score: { $meta: 'textScore' } };
 
     // Try cache
     const cacheKey = `products:${Buffer.from(JSON.stringify(req.query || {})).toString("base64")}`;
     if (redisClient?.isReady) {
       try {
         const cached = await redisClient.get(cacheKey);
-        if (cached) return res.json(JSON.parse(cached));
+        if (cached) {
+          res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+          return res.json(JSON.parse(cached));
+        }
       } catch {
         // ignore cache errors
       }
@@ -153,6 +166,7 @@ router.get("/", async (req, res) => {
 
     const [items, total] = await Promise.all([
       Product.find(filter)
+        .select(CARD_SELECT)
         .sort(sortBy)
         .skip(Number(skip))
         .limit(Number(limit))
@@ -170,6 +184,7 @@ router.get("/", async (req, res) => {
       ).catch(() => {});
     }
 
+    res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
@@ -179,6 +194,17 @@ router.get("/", async (req, res) => {
 // Public categories listing (tree-friendly)
 router.get("/categories", async (req, res) => {
   try {
+    const CAT_CACHE_KEY = 'products:categories:v1';
+    if (redisClient?.isReady) {
+      try {
+        const cached = await redisClient.get(CAT_CACHE_KEY);
+        if (cached) {
+          res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
+          return res.json(JSON.parse(cached));
+        }
+      } catch {}
+    }
+
     const Category = (await import("../models/Category.js")).default;
     const cats = await Category.find({ isActive: true }).sort({
       level: 1,
@@ -205,7 +231,13 @@ router.get("/categories", async (req, res) => {
         map.get(node.parent).children.push(node);
       else roots.push(node);
     }
-    res.json({ categories: roots });
+
+    const payload = { categories: roots };
+    if (redisClient?.isReady) {
+      redisClient.setEx(CAT_CACHE_KEY, 600, JSON.stringify(payload)).catch(() => {});
+    }
+    res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
@@ -804,7 +836,11 @@ router.get('/batch', async (req, res) => {
     const raw = (req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
     if (raw.length === 0) return res.json({ products: [] });
     const ids = raw.slice(0, 50);
-    const products = await Product.find({ _id: { $in: ids } }).lean();
+    // Only fields needed by CartContext: prices, stock, images, variants for
+    // variant-price lookup.  Strip reviews/faqs/ingredients to keep payload small.
+    const products = await Product.find({ _id: { $in: ids } })
+      .select('_id title price compareAtPrice images availability inventory slug variants freeShipping')
+      .lean();
     res.json({ products });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

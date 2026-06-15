@@ -224,29 +224,58 @@ app.get('/api/occasions', async (req, res) => {
   }
 });
 
+// Fields for product cards used in homepage/featured sections.
+// Strips heavy embedded arrays (reviews, faqs, ingredients, specifications).
+const HOMEPAGE_PRODUCT_SELECT = [
+  '_id title slug price compareAtPrice images',
+  'availability inventory badges averageRating reviewCount',
+  'freeShipping flashSale flashSalePrice flashSaleEndsAt',
+  'variants categoryId status updatedAt monthlySold coupon',
+].join(' ');
+
 // Public: list active featured sections with populated products (used by homepage)
+// NOTE: prefer /api/homepage which batches all page data in one request.
 app.get('/api/featured', async (req, res) => {
   try {
     const { default: FeaturedSection } = await import('./models/FeaturedSection.js');
     const { default: Product } = await import('./models/Product.js');
-    const sections = await FeaturedSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    const sections = await FeaturedSection.find({ isActive: true })
+      .sort({ order: 1, createdAt: 1 })
+      .lean();
 
-    const result = await Promise.all(sections.map(async (sec) => {
-      let products = [];
-      if (sec.productIds && sec.productIds.length > 0) {
-        // manual product list
-        products = await Product.find({ _id: { $in: sec.productIds }, status: { $ne: 'archived' } });
-        // preserve admin order
-        const idOrder = sec.productIds.map(id => id.toString());
-        products.sort((a, b) => idOrder.indexOf(a._id.toString()) - idOrder.indexOf(b._id.toString()));
-      } else if (sec.categoryId) {
-        // auto-pull from category
-        products = await Product.find({ categoryId: sec.categoryId, status: { $ne: 'archived' } })
+    // Batch all explicit IDs into one query, category sections in parallel
+    const explicitIds = [
+      ...new Set(
+        sections.filter(s => s.productIds?.length > 0)
+          .flatMap(s => s.productIds.map(id => id.toString()))
+      ),
+    ];
+    const categorySections = sections.filter(s => !s.productIds?.length && s.categoryId);
+
+    const [explicitProds, ...catProdArrays] = await Promise.all([
+      explicitIds.length
+        ? Product.find({ _id: { $in: explicitIds }, status: { $ne: 'archived' } })
+            .select(HOMEPAGE_PRODUCT_SELECT).lean()
+        : Promise.resolve([]),
+      ...categorySections.map(s =>
+        Product.find({ categoryId: s.categoryId, status: { $ne: 'archived' } })
+          .select(HOMEPAGE_PRODUCT_SELECT)
           .sort({ updatedAt: -1 })
-          .limit(sec.limit || 10);
+          .limit(s.limit || 10)
+          .lean()
+      ),
+    ]);
+
+    const explicitMap = Object.fromEntries(explicitProds.map(p => [p._id.toString(), p]));
+    let catIdx = 0;
+    const result = sections.map(sec => {
+      if (sec.productIds?.length > 0) {
+        const idOrder = sec.productIds.map(id => id.toString());
+        return { ...sec, products: idOrder.map(id => explicitMap[id]).filter(Boolean) };
       }
-      return { ...sec.toObject(), products };
-    }));
+      if (sec.categoryId) return { ...sec, products: catProdArrays[catIdx++] || [] };
+      return { ...sec, products: [] };
+    });
 
     res.json({ items: result });
   } catch (err) {
@@ -351,6 +380,7 @@ app.get('/api/homepage', async (req, res) => {
       const cached = await redisClient.get(CACHE_KEY);
       if (cached) {
         res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
         return res.json(JSON.parse(cached));
       }
     } catch { /* fall through to DB */ }
@@ -402,10 +432,12 @@ app.get('/api/homepage', async (req, res) => {
 
     const [explicitProds, ...catProdArrays] = await Promise.all([
       explicitIds.length
-        ? Product.find({ _id: { $in: explicitIds }, status: { $ne: 'archived' } }).lean()
+        ? Product.find({ _id: { $in: explicitIds }, status: { $ne: 'archived' } })
+            .select(HOMEPAGE_PRODUCT_SELECT).lean()
         : Promise.resolve([]),
       ...categorySections.map(s =>
         Product.find({ categoryId: s.categoryId, status: { $ne: 'archived' } })
+          .select(HOMEPAGE_PRODUCT_SELECT)
           .sort({ updatedAt: -1 }).limit(s.limit || 10).lean()
       ),
     ]);
@@ -433,6 +465,7 @@ app.get('/api/homepage', async (req, res) => {
     }
 
     res.setHeader('X-Cache', 'MISS');
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
