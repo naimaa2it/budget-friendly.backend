@@ -34,12 +34,12 @@ const router = express.Router();
 // reviews[], faqs[], ingredients[], specifications[] and other heavy arrays
 // only needed on the single-product detail page.  Cuts response size 60-80%.
 const CARD_SELECT = [
-  '_id title slug price compareAtPrice images',
-  'availability inventory badges averageRating reviewCount',
-  'freeShipping flashSale flashSalePrice flashSaleEndsAt',
-  'variants categoryId department status updatedAt monthlySold',
-  'coupon skinTypes spf fragranceFree parabenFree crueltyFree vegan',
-].join(' ');
+  "_id title slug price compareAtPrice images",
+  "availability inventory badges averageRating reviewCount",
+  "freeShipping flashSale flashSalePrice flashSaleEndsAt",
+  "variants categoryId department status updatedAt monthlySold",
+  "coupon skinTypes spf fragranceFree parabenFree crueltyFree vegan",
+].join(" ");
 
 //get products with optional filters: ?q=search&categoryId=123&badge=best-seller&flag=featured&page=1&limit=20&status=published&sort=position&minPrice=10&maxPrice=100&brand=BrandA&minRating=4
 // Public product listing with pagination, search, category filter
@@ -122,19 +122,27 @@ router.get("/", async (req, res) => {
     // Skincare filters — field names must match the Product schema exactly.
     // skinTypes is [String], suitableConcerns is [String], fragranceFree/parabenFree are Boolean.
     if (skinType) {
-      const types = String(skinType).split(',').map(s => s.trim()).filter(Boolean);
+      const types = String(skinType)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       filter.skinTypes = types.length === 1 ? types[0] : { $in: types };
     }
     if (concern) {
-      const concerns = String(concern).split(',').map(s => s.trim()).filter(Boolean);
-      filter.suitableConcerns = concerns.length === 1 ? concerns[0] : { $in: concerns };
+      const concerns = String(concern)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      filter.suitableConcerns =
+        concerns.length === 1 ? concerns[0] : { $in: concerns };
     }
     if (formulation) filter.formulation = String(formulation).trim();
-    if (minSpf !== undefined && minSpf !== '') filter.spf = { $gte: Number(minSpf) };
-    if (fragranceFree === 'true') filter.fragranceFree = true;
-    if (parabenFree === 'true') filter.parabenFree = true;
-    if (crueltyFree === 'true') filter.crueltyFree = true;
-    if (vegan === 'true') filter.vegan = true;
+    if (minSpf !== undefined && minSpf !== "")
+      filter.spf = { $gte: Number(minSpf) };
+    if (fragranceFree === "true") filter.fragranceFree = true;
+    if (parabenFree === "true") filter.parabenFree = true;
+    if (crueltyFree === "true") filter.crueltyFree = true;
+    if (vegan === "true") filter.vegan = true;
 
     const sortMap = {
       position: { updatedAt: -1 },
@@ -148,7 +156,7 @@ router.get("/", async (req, res) => {
     let sortBy = sortMap[sort] || sortMap.position;
     // When text search is active and no explicit sort was requested, rank by
     // relevance score rather than recency so the best matches surface first.
-    if (q && sort === 'position') sortBy = { score: { $meta: 'textScore' } };
+    if (q && sort === "position") sortBy = { score: { $meta: "textScore" } };
 
     // Try cache
     const cacheKey = `products:${Buffer.from(JSON.stringify(req.query || {})).toString("base64")}`;
@@ -156,7 +164,10 @@ router.get("/", async (req, res) => {
       try {
         const cached = await redisClient.get(cacheKey);
         if (cached) {
-          res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+          res.setHeader(
+            "Cache-Control",
+            "public, max-age=30, stale-while-revalidate=120",
+          );
           return res.json(JSON.parse(cached));
         }
       } catch {
@@ -177,14 +188,19 @@ router.get("/", async (req, res) => {
     const payload = { items, total, page: Number(page), limit: Number(limit) };
     // store in cache (short TTL)
     if (redisClient?.isReady) {
-      redisClient.setEx(
-        cacheKey,
-        Number(process.env.PRODUCTS_CACHE_TTL || 60),
-        JSON.stringify(payload),
-      ).catch(() => {});
+      redisClient
+        .setEx(
+          cacheKey,
+          Number(process.env.PRODUCTS_CACHE_TTL || 60),
+          JSON.stringify(payload),
+        )
+        .catch(() => {});
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=30, stale-while-revalidate=120",
+    );
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
@@ -194,12 +210,15 @@ router.get("/", async (req, res) => {
 // Public categories listing (tree-friendly)
 router.get("/categories", async (req, res) => {
   try {
-    const CAT_CACHE_KEY = 'products:categories:v1';
+    const CAT_CACHE_KEY = "products:categories:v1";
     if (redisClient?.isReady) {
       try {
         const cached = await redisClient.get(CAT_CACHE_KEY);
         if (cached) {
-          res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
+          res.setHeader(
+            "Cache-Control",
+            "public, max-age=600, stale-while-revalidate=3600",
+          );
           return res.json(JSON.parse(cached));
         }
       } catch {}
@@ -234,9 +253,14 @@ router.get("/categories", async (req, res) => {
 
     const payload = { categories: roots };
     if (redisClient?.isReady) {
-      redisClient.setEx(CAT_CACHE_KEY, 600, JSON.stringify(payload)).catch(() => {});
+      redisClient
+        .setEx(CAT_CACHE_KEY, 600, JSON.stringify(payload))
+        .catch(() => {});
     }
-    res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=600, stale-while-revalidate=3600",
+    );
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
@@ -356,11 +380,13 @@ router.get("/:id", async (req, res) => {
     if (!prod) return res.status(404).json({ error: "Not found" });
     // cache product detail for a bit longer
     if (redisClient?.isReady) {
-      redisClient.setEx(
-        prodCacheKey,
-        Number(process.env.PRODUCT_CACHE_TTL || 300),
-        JSON.stringify(prod),
-      ).catch(() => {});
+      redisClient
+        .setEx(
+          prodCacheKey,
+          Number(process.env.PRODUCT_CACHE_TTL || 300),
+          JSON.stringify(prod),
+        )
+        .catch(() => {});
     }
     res.json({ product: prod });
   } catch (err) {
@@ -763,87 +789,96 @@ router.delete(
 );
 
 // Upload image (optimized server-side) - returns Cloudinary asset
-router.post("/upload", requireAdmin, uploadLimiter, upload.single("file"), async (req, res) => {
-  try {
-    ensureCloudinaryConfigured(); // configure on first use
+router.post(
+  "/upload",
+  requireAdmin,
+  uploadLimiter,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      ensureCloudinaryConfigured(); // configure on first use
 
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_API_SECRET
-    ) {
-      return res
-        .status(500)
-        .json({
+      if (
+        !process.env.CLOUDINARY_CLOUD_NAME ||
+        !process.env.CLOUDINARY_API_KEY ||
+        !process.env.CLOUDINARY_API_SECRET
+      ) {
+        return res.status(500).json({
           error:
             "Server upload not configured (Cloudinary credentials missing).",
         });
-    }
+      }
 
-    const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
-    const quality = Number(process.env.IMG_QUALITY) || 75;
+      const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
+      const quality = Number(process.env.IMG_QUALITY) || 75;
 
-    let optimizedBuffer;
-    try {
-      optimizedBuffer = await sharp(req.file.buffer)
-        .rotate()
-        .resize({ width: maxWidth, withoutEnlargement: true })
-        .webp({ quality })
-        .toBuffer();
-    } catch (sharpErr) {
-      return res
-        .status(400)
-        .json({ error: "Invalid image file or unsupported format." });
-    }
+      let optimizedBuffer;
+      try {
+        optimizedBuffer = await sharp(req.file.buffer)
+          .rotate()
+          .resize({ width: maxWidth, withoutEnlargement: true })
+          .webp({ quality })
+          .toBuffer();
+      } catch (sharpErr) {
+        return res
+          .status(400)
+          .json({ error: "Invalid image file or unsupported format." });
+      }
 
-    const streamUpload = (buffer) =>
-      new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: process.env.CLOUDINARY_FOLDER || "yourhaat/products",
-            resource_type: "image",
-          },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          },
-        );
-        stream.end(buffer);
+      const streamUpload = (buffer) =>
+        new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: process.env.CLOUDINARY_FOLDER || "SmartBuy BD/products",
+              resource_type: "image",
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            },
+          );
+          stream.end(buffer);
+        });
+
+      const result = await streamUpload(optimizedBuffer);
+      res.json({
+        ok: true,
+        asset: {
+          public_id: result.public_id,
+          url: result.secure_url || result.url,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+        },
       });
-
-    const result = await streamUpload(optimizedBuffer);
-    res.json({
-      ok: true,
-      asset: {
-        public_id: result.public_id,
-        url: result.secure_url || result.url,
-        width: result.width,
-        height: result.height,
-        format: result.format,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message || "Upload failed" });
-  }
-});
+    } catch (err) {
+      res.status(500).json({ error: err.message || "Upload failed" });
+    }
+  },
+);
 
 // Batch fetch products by IDs — used by cart hydration to refresh prices/stock
 // GET /api/products/batch?ids=id1,id2,id3 (max 50)
-router.get('/batch', async (req, res) => {
+router.get("/batch", async (req, res) => {
   try {
-    const raw = (req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+    const raw = (req.query.ids || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (raw.length === 0) return res.json({ products: [] });
     const ids = raw.slice(0, 50);
     // Only fields needed by CartContext: prices, stock, images, variants for
     // variant-price lookup.  Strip reviews/faqs/ingredients to keep payload small.
     const products = await Product.find({ _id: { $in: ids } })
-      .select('_id title price compareAtPrice images availability inventory slug variants freeShipping')
+      .select(
+        "_id title price compareAtPrice images availability inventory slug variants freeShipping",
+      )
       .lean();
     res.json({ products });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 

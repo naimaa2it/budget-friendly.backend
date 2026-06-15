@@ -1,17 +1,18 @@
 // Sample Electronics Blog Posts Generator
 // Run this script to populate your blog with electronics-related content
 
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-import BlogPost from './models/BlogPost.js';
-import BlogCategory from './models/BlogCategory.js';
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import BlogPost from "./models/BlogPost.js";
+import BlogCategory from "./models/BlogCategory.js";
 
 dotenv.config();
 
 const sampleBlogs = [
   {
     title: "Top 10 Must-Have Smart Home Devices in 2026",
-    excerpt: "Transform your living space into a futuristic haven with these cutting-edge smart home gadgets that combine convenience, security, and energy efficiency.",
+    excerpt:
+      "Transform your living space into a futuristic haven with these cutting-edge smart home gadgets that combine convenience, security, and energy efficiency.",
     content: `<h2>Welcome to the Future of Home Automation</h2>
 <p>Smart home technology has evolved dramatically over the past few years. What once seemed like science fiction is now an affordable reality for millions of households. In this comprehensive guide, we'll explore the top 10 smart home devices that are revolutionizing how we live.</p>
 
@@ -35,17 +36,18 @@ const sampleBlogs = [
     author: "Tech Review Team",
     featuredImage: {
       url: "https://images.unsplash.com/photo-1558002038-1055907df827?w=800",
-      resourceType: "image"
+      resourceType: "image",
     },
     tags: ["Smart Home", "IoT", "Home Automation"],
     categories: [],
     isFeatured: true,
     status: "published",
-    publishedAt: new Date()
+    publishedAt: new Date(),
   },
   {
     title: "Wireless Earbuds Buying Guide 2026: Find Your Perfect Match",
-    excerpt: "Confused by the endless options in wireless earbuds? Our comprehensive guide breaks down everything you need to know to make the right choice.",
+    excerpt:
+      "Confused by the endless options in wireless earbuds? Our comprehensive guide breaks down everything you need to know to make the right choice.",
     content: `<h2>The Wireless Audio Revolution</h2>
 <p>Wireless earbuds have become an essential accessory for music lovers, commuters, and fitness enthusiasts. With hundreds of models flooding the market, choosing the right pair can be overwhelming. Let's simplify the decision.</p>
 
@@ -73,17 +75,18 @@ const sampleBlogs = [
     author: "Audio Expert",
     featuredImage: {
       url: "https://images.unsplash.com/photo-1590658165737-15a047b7a46f?w=800",
-      resourceType: "image"
+      resourceType: "image",
     },
     tags: ["Audio", "Wireless", "Earbuds", "Reviews"],
     categories: [],
     isFeatured: true,
     status: "published",
-    publishedAt: new Date(Date.now() - 86400000) // 1 day ago
+    publishedAt: new Date(Date.now() - 86400000), // 1 day ago
   },
   {
     title: "Gaming Laptops vs Desktop PCs: Which Should You Choose in 2026?",
-    excerpt: "The eternal debate continues. We break down the pros and cons of gaming laptops versus desktop PCs to help you make an informed decision.",
+    excerpt:
+      "The eternal debate continues. We break down the pros and cons of gaming laptops versus desktop PCs to help you make an informed decision.",
     content: `<h2>The Great Gaming Debate</h2>
 <p>Whether you're a casual gamer or a competitive esports enthusiast, choosing between a gaming laptop and a desktop PC is a crucial decision that affects your gaming experience for years to come.</p>
 
@@ -129,17 +132,18 @@ const sampleBlogs = [
     author: "Gaming Guru",
     featuredImage: {
       url: "https://images.unsplash.com/photo-1593640495253-23196b27a87f?w=800",
-      resourceType: "image"
+      resourceType: "image",
     },
     tags: ["Gaming", "Laptops", "PC", "Hardware"],
     categories: [],
     isFeatured: false,
     status: "published",
-    publishedAt: new Date(Date.now() - 172800000) // 2 days ago
+    publishedAt: new Date(Date.now() - 172800000), // 2 days ago
   },
   {
     title: "5G Smartphones: Everything You Need to Know Before Buying",
-    excerpt: "5G is no longer the future—it's the present. Learn what makes a great 5G smartphone and which models deliver the best experience.",
+    excerpt:
+      "5G is no longer the future—it's the present. Learn what makes a great 5G smartphone and which models deliver the best experience.",
     content: `<h2>Understanding 5G Technology</h2>
 <p>5G represents the fifth generation of mobile network technology, offering dramatically faster speeds, lower latency, and improved connectivity. But what does this mean for your smartphone purchase?</p>
 
@@ -170,17 +174,18 @@ const sampleBlogs = [
     author: "Mobile Expert",
     featuredImage: {
       url: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800",
-      resourceType: "image"
+      resourceType: "image",
     },
     tags: ["Smartphones", "5G", "Mobile", "Technology"],
     categories: [],
     isFeatured: false,
     status: "published",
-    publishedAt: new Date(Date.now() - 259200000) // 3 days ago
+    publishedAt: new Date(Date.now() - 259200000), // 3 days ago
   },
   {
     title: "Mechanical Keyboards: The Complete Beginner's Guide",
-    excerpt: "Discover why mechanical keyboards have taken the tech world by storm and how to choose your first one.",
+    excerpt:
+      "Discover why mechanical keyboards have taken the tech world by storm and how to choose your first one.",
     content: `<h2>Why Mechanical Keyboards?</h2>
 <p>Mechanical keyboards offer superior typing experience, durability, and customization options compared to traditional membrane keyboards. Once you try one, there's no going back.</p>
 
@@ -218,30 +223,41 @@ const sampleBlogs = [
     author: "Keyboard Enthusiast",
     featuredImage: {
       url: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800",
-      resourceType: "image"
+      resourceType: "image",
     },
     tags: ["Keyboards", "Peripherals", "Gaming", "Productivity"],
     categories: [],
     isFeatured: false,
     status: "published",
-    publishedAt: new Date(Date.now() - 345600000) // 4 days ago
-  }
+    publishedAt: new Date(Date.now() - 345600000), // 4 days ago
+  },
 ];
 
 async function seedBlogs() {
   try {
     // Connect to MongoDB
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/yourhaat');
-    console.log('✅ Connected to MongoDB');
+    await mongoose.connect(
+      process.env.MONGODB_URI || "mongodb://localhost:27017/SmartBuy BD",
+    );
+    console.log("✅ Connected to MongoDB");
 
     // Create blog categories
-    const categoryNames = ['Smart Home', 'Audio', 'Gaming', 'Mobile', 'Accessories'];
+    const categoryNames = [
+      "Smart Home",
+      "Audio",
+      "Gaming",
+      "Mobile",
+      "Accessories",
+    ];
     const categoryIds = {};
 
     for (const name of categoryNames) {
       let category = await BlogCategory.findOne({ name });
       if (!category) {
-        category = await BlogCategory.create({ name, description: `${name} related articles` });
+        category = await BlogCategory.create({
+          name,
+          description: `${name} related articles`,
+        });
         console.log(`✅ Created category: ${name}`);
       }
       categoryIds[name] = category._id;
@@ -249,30 +265,39 @@ async function seedBlogs() {
 
     // Clear existing blogs
     await BlogPost.deleteMany({});
-    console.log('🗑️  Cleared existing blogs');
+    console.log("🗑️  Cleared existing blogs");
 
     // Create blogs
     for (const blog of sampleBlogs) {
       // Assign categories based on tags
       const cats = [];
-      if (blog.tags.includes('Smart Home') || blog.tags.includes('IoT')) cats.push(categoryIds['Smart Home']);
-      if (blog.tags.includes('Audio') || blog.tags.includes('Earbuds')) cats.push(categoryIds['Audio']);
-      if (blog.tags.includes('Gaming') || blog.tags.includes('PC')) cats.push(categoryIds['Gaming']);
-      if (blog.tags.includes('Smartphones') || blog.tags.includes('Mobile') || blog.tags.includes('5G')) cats.push(categoryIds['Mobile']);
-      if (blog.tags.includes('Keyboards') || blog.tags.includes('Peripherals')) cats.push(categoryIds['Accessories']);
-      
+      if (blog.tags.includes("Smart Home") || blog.tags.includes("IoT"))
+        cats.push(categoryIds["Smart Home"]);
+      if (blog.tags.includes("Audio") || blog.tags.includes("Earbuds"))
+        cats.push(categoryIds["Audio"]);
+      if (blog.tags.includes("Gaming") || blog.tags.includes("PC"))
+        cats.push(categoryIds["Gaming"]);
+      if (
+        blog.tags.includes("Smartphones") ||
+        blog.tags.includes("Mobile") ||
+        blog.tags.includes("5G")
+      )
+        cats.push(categoryIds["Mobile"]);
+      if (blog.tags.includes("Keyboards") || blog.tags.includes("Peripherals"))
+        cats.push(categoryIds["Accessories"]);
+
       blog.categories = cats;
-      
+
       await BlogPost.create(blog);
       console.log(`✅ Created blog: ${blog.title}`);
     }
 
     console.log(`\n🎉 Successfully seeded ${sampleBlogs.length} blog posts!`);
-    console.log('✨ Your blog is now populated with electronics content');
-    
+    console.log("✨ Your blog is now populated with electronics content");
+
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error seeding blogs:', error);
+    console.error("❌ Error seeding blogs:", error);
     process.exit(1);
   }
 }

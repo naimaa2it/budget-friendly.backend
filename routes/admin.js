@@ -195,7 +195,7 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
     }
 
     // Get folder from request body or query (default to products)
-    const folder = req.body.folder || req.query.folder || 'yourhaat/products';
+    const folder = req.body.folder || req.query.folder || 'SmartBuy BD/products';
     
     // Detect if file is a video based on mimetype
     const isVideo = req.file.mimetype.startsWith('video/');
@@ -1734,7 +1734,7 @@ router.get('/users/:id/profile', requireAdmin, async (req, res) => {
 
     res.json({
       user,
-      yourhaat: {
+      SmartBuy BD: {
         stats: analytics.stats,
         percentages: analytics.percentages,
         courierBreakdown: analytics.courierBreakdown,

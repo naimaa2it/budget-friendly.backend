@@ -18,24 +18,29 @@ This guide provides ready-to-use examples for testing all API endpoints using **
 ## Setup & Configuration
 
 ### Base URL
+
 ```
 Development: http://localhost:5000
 Production: https://api.yourdomain.com
 ```
 
 ### Headers for All Requests
+
 ```
 Content-Type: application/json
 ```
 
 ### Cookie-Based Authentication
+
 After login, the server sets an `httpOnly` cookie named `token`.
 
 **In Postman:**
+
 - Postman automatically handles cookies
 - Or manually add: `Cookie: token=<jwt_token>`
 
 **In cURL:**
+
 - Save cookies: `-c cookies.txt`
 - Use cookies: `-b cookies.txt`
 
@@ -46,6 +51,7 @@ After login, the server sets an `httpOnly` cookie named `token`.
 ### 1. User Login (Firebase)
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/auth/firebase-login
 Content-Type: application/json
@@ -60,6 +66,7 @@ Body (JSON):
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/auth/firebase-login \
   -H "Content-Type: application/json" \
@@ -73,25 +80,27 @@ curl -X POST http://localhost:5000/api/auth/firebase-login \
 ```
 
 **JavaScript (fetch):**
+
 ```javascript
-fetch('http://localhost:5000/api/auth/firebase-login', {
-  method: 'POST',
+fetch("http://localhost:5000/api/auth/firebase-login", {
+  method: "POST",
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
-  credentials: 'include', // Important for cookies
+  credentials: "include", // Important for cookies
   body: JSON.stringify({
-    email: 'user@example.com',
-    name: 'John Doe',
-    image: 'https://example.com/avatar.jpg',
-    provider: 'google.com'
-  })
+    email: "user@example.com",
+    name: "John Doe",
+    image: "https://example.com/avatar.jpg",
+    provider: "google.com",
+  }),
 })
-.then(res => res.json())
-.then(data => console.log(data));
+  .then((res) => res.json())
+  .then((data) => console.log(data));
 ```
 
 **Expected Response:**
+
 ```json
 {
   "user": {
@@ -110,17 +119,20 @@ fetch('http://localhost:5000/api/auth/firebase-login', {
 ### 2. Check Current User
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/auth/me
 ```
 
 **cURL:**
+
 ```bash
 curl http://localhost:5000/api/auth/me \
   -b cookies.txt
 ```
 
 **Expected Response:**
+
 ```json
 {
   "user": {
@@ -137,24 +149,26 @@ curl http://localhost:5000/api/auth/me \
 ### 3. Admin Login
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/admin/login
 Content-Type: application/json
 
 Body:
 {
-  "email": "admin@yourhaat.com",
+  "email": "admin@SmartBuy BD.com",
   "password": "admin123",
   "secret": "your_admin_secret"
 }
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@yourhaat.com",
+    "email": "admin@SmartBuy BD.com",
     "password": "admin123",
     "secret": "your_admin_secret"
   }' \
@@ -162,12 +176,13 @@ curl -X POST http://localhost:5000/api/admin/login \
 ```
 
 **Expected Response:**
+
 ```json
 {
   "ok": true,
   "admin": {
     "_id": "admin123",
-    "email": "admin@yourhaat.com",
+    "email": "admin@SmartBuy BD.com",
     "name": "Admin Name",
     "role": "admin"
   }
@@ -179,11 +194,13 @@ curl -X POST http://localhost:5000/api/admin/login \
 ### 4. Logout
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/auth/logout
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/auth/logout \
   -b cookies.txt \
@@ -197,32 +214,36 @@ curl -X POST http://localhost:5000/api/auth/logout \
 ### 1. List Products (with Filters)
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/products?page=1&limit=20&sort=priceLow&minPrice=500&maxPrice=2000&categoryId=cat123
 ```
 
 **cURL:**
+
 ```bash
 curl "http://localhost:5000/api/products?page=1&limit=20&sort=priceLow&minPrice=500&maxPrice=2000"
 ```
 
 **JavaScript:**
+
 ```javascript
 const params = new URLSearchParams({
   page: 1,
   limit: 20,
-  sort: 'priceLow',
+  sort: "priceLow",
   minPrice: 500,
   maxPrice: 2000,
-  categoryId: 'cat123'
+  categoryId: "cat123",
 });
 
 fetch(`http://localhost:5000/api/products?${params}`)
-  .then(res => res.json())
-  .then(data => console.log(data));
+  .then((res) => res.json())
+  .then((data) => console.log(data));
 ```
 
 **Expected Response:**
+
 ```json
 {
   "ok": true,
@@ -247,11 +268,13 @@ fetch(`http://localhost:5000/api/products?${params}`)
 ### 2. Search Products
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/products?q=phone&page=1&limit=20
 ```
 
 **cURL:**
+
 ```bash
 curl "http://localhost:5000/api/products?q=phone&page=1&limit=20"
 ```
@@ -261,11 +284,13 @@ curl "http://localhost:5000/api/products?q=phone&page=1&limit=20"
 ### 3. Get Single Product
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/products/prod123
 ```
 
 **cURL:**
+
 ```bash
 curl http://localhost:5000/api/products/prod123
 ```
@@ -275,11 +300,13 @@ curl http://localhost:5000/api/products/prod123
 ### 4. Get Category Tree
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/products/categories
 ```
 
 **cURL:**
+
 ```bash
 curl http://localhost:5000/api/products/categories
 ```
@@ -289,6 +316,7 @@ curl http://localhost:5000/api/products/categories
 ### 5. Submit Product Review (User Auth Required)
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/products/prod123/reviews
 Content-Type: application/json
@@ -303,6 +331,7 @@ Body:
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/products/prod123/reviews \
   -H "Content-Type: application/json" \
@@ -316,20 +345,21 @@ curl -X POST http://localhost:5000/api/products/prod123/reviews \
 ```
 
 **JavaScript:**
+
 ```javascript
-fetch('http://localhost:5000/api/products/prod123/reviews', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
+fetch("http://localhost:5000/api/products/prod123/reviews", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
   body: JSON.stringify({
-    authorName: 'John Doe',
+    authorName: "John Doe",
     rating: 5,
-    title: 'Great product!',
-    body: 'I am very satisfied with this purchase.'
-  })
+    title: "Great product!",
+    body: "I am very satisfied with this purchase.",
+  }),
 })
-.then(res => res.json())
-.then(data => console.log(data));
+  .then((res) => res.json())
+  .then((data) => console.log(data));
 ```
 
 ---
@@ -337,6 +367,7 @@ fetch('http://localhost:5000/api/products/prod123/reviews', {
 ### 6. Ask Product Question
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/products/prod123/questions
 Content-Type: application/json
@@ -349,6 +380,7 @@ Body:
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/products/prod123/questions \
   -H "Content-Type: application/json" \
@@ -364,6 +396,7 @@ curl -X POST http://localhost:5000/api/products/prod123/questions \
 ### 7. Upload Product Image
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/products/upload
 Content-Type: multipart/form-data
@@ -375,29 +408,32 @@ Body (form-data):
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/products/upload \
   -F "image=@/path/to/image.jpg"
 ```
 
 **JavaScript (with FormData):**
+
 ```javascript
 const formData = new FormData();
-formData.append('image', fileInput.files[0]);
+formData.append("image", fileInput.files[0]);
 
-fetch('http://localhost:5000/api/products/upload', {
-  method: 'POST',
-  body: formData
+fetch("http://localhost:5000/api/products/upload", {
+  method: "POST",
+  body: formData,
 })
-.then(res => res.json())
-.then(data => console.log(data));
+  .then((res) => res.json())
+  .then((data) => console.log(data));
 ```
 
 **Expected Response:**
+
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "yourhaat/products/abc123"
+  "public_id": "SmartBuy BD/products/abc123"
 }
 ```
 
@@ -408,6 +444,7 @@ fetch('http://localhost:5000/api/products/upload', {
 ### 1. Get Price Quote (Preview)
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/orders/quote
 Content-Type: application/json
@@ -428,6 +465,7 @@ Body:
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/orders/quote \
   -H "Content-Type: application/json" \
@@ -446,6 +484,7 @@ curl -X POST http://localhost:5000/api/orders/quote \
 ```
 
 **Expected Response:**
+
 ```json
 {
   "subtotal": 3000,
@@ -473,6 +512,7 @@ curl -X POST http://localhost:5000/api/orders/quote \
 ### 2. Create Order (COD)
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/orders
 Content-Type: application/json
@@ -503,6 +543,7 @@ Body:
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/orders \
   -H "Content-Type: application/json" \
@@ -530,6 +571,7 @@ curl -X POST http://localhost:5000/api/orders \
 ```
 
 **Expected Response (COD):**
+
 ```json
 {
   "ok": true,
@@ -549,6 +591,7 @@ curl -X POST http://localhost:5000/api/orders \
 ### 3. Create Order (Online Payment)
 
 **Same as above, but:**
+
 ```json
 {
   "paymentMethod": "online"
@@ -556,6 +599,7 @@ curl -X POST http://localhost:5000/api/orders \
 ```
 
 **Expected Response:**
+
 ```json
 {
   "ok": true,
@@ -575,11 +619,13 @@ curl -X POST http://localhost:5000/api/orders \
 ### 4. Get My Orders (User Auth)
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/orders/my?page=1&limit=10
 ```
 
 **cURL:**
+
 ```bash
 curl http://localhost:5000/api/orders/my?page=1&limit=10 \
   -b cookies.txt
@@ -590,11 +636,13 @@ curl http://localhost:5000/api/orders/my?page=1&limit=10 \
 ### 5. Get Single Order
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/orders/order123
 ```
 
 **cURL:**
+
 ```bash
 curl http://localhost:5000/api/orders/order123
 ```
@@ -604,11 +652,13 @@ curl http://localhost:5000/api/orders/order123
 ### 6. Cancel Order (within 30 min)
 
 **Postman:**
+
 ```
 PATCH {{baseUrl}}/api/orders/order123/cancel
 ```
 
 **cURL:**
+
 ```bash
 curl -X PATCH http://localhost:5000/api/orders/order123/cancel \
   -b cookies.txt
@@ -621,17 +671,20 @@ curl -X PATCH http://localhost:5000/api/orders/order123/cancel \
 ### 1. Get Dashboard Overview
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/admin/dashboard-overview
 ```
 
 **cURL:**
+
 ```bash
 curl http://localhost:5000/api/admin/dashboard-overview \
   -b admin_cookies.txt
 ```
 
 **Expected Response:**
+
 ```json
 {
   "overview": {
@@ -666,6 +719,7 @@ curl http://localhost:5000/api/admin/dashboard-overview \
 ### 2. Create Category
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/admin/categories
 Content-Type: application/json
@@ -681,6 +735,7 @@ Body:
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/categories \
   -H "Content-Type: application/json" \
@@ -698,6 +753,7 @@ curl -X POST http://localhost:5000/api/admin/categories \
 ### 3. Create Product
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/admin/products
 Content-Type: application/json
@@ -740,7 +796,7 @@ Body:
     "details": "Unused with original packaging"
   },
   "seo": {
-    "title": "Buy Wireless Headphones - yourHaat",
+    "title": "Buy Wireless Headphones - SmartBuy BD",
     "description": "Shop high-quality wireless headphones",
     "keywords": ["wireless", "headphones", "bluetooth"]
   }
@@ -748,6 +804,7 @@ Body:
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/products \
   -H "Content-Type: application/json" \
@@ -760,6 +817,7 @@ curl -X POST http://localhost:5000/api/admin/products \
 ### 4. Update Product
 
 **Postman:**
+
 ```
 PUT {{baseUrl}}/api/admin/products/prod123
 Content-Type: application/json
@@ -777,11 +835,13 @@ Body (partial update):
 ### 5. Delete Product (Soft Delete)
 
 **Postman:**
+
 ```
 DELETE {{baseUrl}}/api/admin/products/prod123
 ```
 
 **cURL:**
+
 ```bash
 curl -X DELETE http://localhost:5000/api/admin/products/prod123 \
   -b admin_cookies.txt
@@ -792,11 +852,13 @@ curl -X DELETE http://localhost:5000/api/admin/products/prod123 \
 ### 6. Delete Product (Force/Permanent)
 
 **Postman:**
+
 ```
 DELETE {{baseUrl}}/api/admin/products/prod123?force=true
 ```
 
 **cURL:**
+
 ```bash
 curl -X DELETE "http://localhost:5000/api/admin/products/prod123?force=true" \
   -b admin_cookies.txt
@@ -807,11 +869,13 @@ curl -X DELETE "http://localhost:5000/api/admin/products/prod123?force=true" \
 ### 7. List All Orders
 
 **Postman:**
+
 ```
 GET {{baseUrl}}/api/admin/orders?page=1&limit=50&status=pending&paymentStatus=paid
 ```
 
 **cURL:**
+
 ```bash
 curl "http://localhost:5000/api/admin/orders?page=1&limit=50&status=pending" \
   -b admin_cookies.txt
@@ -822,6 +886,7 @@ curl "http://localhost:5000/api/admin/orders?page=1&limit=50&status=pending" \
 ### 8. Update Order Status
 
 **Postman:**
+
 ```
 PUT {{baseUrl}}/api/admin/orders/order123/status
 Content-Type: application/json
@@ -833,6 +898,7 @@ Body:
 ```
 
 **Allowed Statuses:**
+
 - `created`
 - `pending`
 - `confirmed`
@@ -843,6 +909,7 @@ Body:
 - `failed`
 
 **cURL:**
+
 ```bash
 curl -X PUT http://localhost:5000/api/admin/orders/order123/status \
   -H "Content-Type: application/json" \
@@ -855,6 +922,7 @@ curl -X PUT http://localhost:5000/api/admin/orders/order123/status \
 ### 9. Create Banner
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/admin/banners
 Content-Type: application/json
@@ -864,8 +932,8 @@ Body:
   "title": "Summer Sale",
   "desktopImage": "https://res.cloudinary.com/.../desktop.webp",
   "mobileImage": "https://res.cloudinary.com/.../mobile.webp",
-  "desktopPublicId": "yourhaat/banners/desktop123",
-  "mobilePublicId": "yourhaat/banners/mobile123",
+  "desktopPublicId": "SmartBuy BD/banners/desktop123",
+  "mobilePublicId": "SmartBuy BD/banners/mobile123",
   "link": "/shop/summer-sale",
   "isActive": true
 }
@@ -876,6 +944,7 @@ Body:
 ### 10. Create Blog Post
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/admin/blog
 Content-Type: application/json
@@ -896,7 +965,7 @@ Body:
   "status": "published",
   "publishedAt": "2026-03-28T10:00:00.000Z",
   "seo": {
-    "title": "Top 10 Fashion Trends in 2026 | yourHaat Blog",
+    "title": "Top 10 Fashion Trends in 2026 | SmartBuy BD Blog",
     "description": "Explore the hottest fashion trends of 2026",
     "keywords": ["fashion", "trends", "style"]
   }
@@ -908,6 +977,7 @@ Body:
 ### 11. Upload Image (Admin)
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/admin/upload
 Content-Type: multipart/form-data
@@ -918,6 +988,7 @@ Body (form-data):
 ```
 
 **cURL:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/upload \
   -b admin_cookies.txt \
@@ -930,13 +1001,15 @@ curl -X POST http://localhost:5000/api/admin/upload \
 ### 12. List Media (Cloudinary)
 
 **Postman:**
+
 ```
-GET {{baseUrl}}/api/admin/media?folder=yourhaat/products&next_cursor=abc123
+GET {{baseUrl}}/api/admin/media?folder=SmartBuy BD/products&next_cursor=abc123
 ```
 
 **cURL:**
+
 ```bash
-curl "http://localhost:5000/api/admin/media?folder=yourhaat/products" \
+curl "http://localhost:5000/api/admin/media?folder=SmartBuy BD/products" \
   -b admin_cookies.txt
 ```
 
@@ -945,6 +1018,7 @@ curl "http://localhost:5000/api/admin/media?folder=yourhaat/products" \
 ### 13. Delete Media (Batch)
 
 **Postman:**
+
 ```
 DELETE {{baseUrl}}/api/admin/media
 Content-Type: application/json
@@ -952,21 +1026,22 @@ Content-Type: application/json
 Body:
 {
   "public_ids": [
-    "yourhaat/products/old_image1",
-    "yourhaat/banners/old_banner"
+    "SmartBuy BD/products/old_image1",
+    "SmartBuy BD/banners/old_banner"
   ]
 }
 ```
 
 **cURL:**
+
 ```bash
 curl -X DELETE http://localhost:5000/api/admin/media \
   -H "Content-Type: application/json" \
   -b admin_cookies.txt \
   -d '{
     "public_ids": [
-      "yourhaat/products/old_image1",
-      "yourhaat/banners/old_banner"
+      "SmartBuy BD/products/old_image1",
+      "SmartBuy BD/banners/old_banner"
     ]
   }'
 ```
@@ -976,13 +1051,14 @@ curl -X DELETE http://localhost:5000/api/admin/media \
 ### 14. Create Admin/Moderator
 
 **Postman:**
+
 ```
 POST {{baseUrl}}/api/admin/admins
 Content-Type: application/json
 
 Body:
 {
-  "email": "moderator@yourhaat.com",
+  "email": "moderator@SmartBuy BD.com",
   "name": "Moderator Name",
   "password": "securePassword123",
   "role": "moderator",
@@ -991,6 +1067,7 @@ Body:
 ```
 
 **Roles:**
+
 - `admin` - Full access
 - `moderator` - Limited access (can't delete, can't see orders)
 
@@ -999,6 +1076,7 @@ Body:
 ### 15. Update Settings
 
 **Postman:**
+
 ```
 PUT {{baseUrl}}/api/admin/settings
 Content-Type: application/json
@@ -1020,6 +1098,7 @@ Body:
 ### Basic Flow Testing
 
 #### ✅ User Flow
+
 1. [ ] User login via Firebase
 2. [ ] Browse products with filters
 3. [ ] View single product
@@ -1032,6 +1111,7 @@ Body:
 10. [ ] Add/edit/delete address
 
 #### ✅ Admin Flow
+
 1. [ ] Admin login with secret
 2. [ ] View dashboard overview
 3. [ ] Create category
@@ -1045,6 +1125,7 @@ Body:
 11. [ ] Create moderator account
 
 #### ✅ Payment Flow
+
 1. [ ] Create online payment order
 2. [ ] Redirect to payment gateway
 3. [ ] Test payment success callback
@@ -1053,6 +1134,7 @@ Body:
 6. [ ] Retry failed payment
 
 #### ✅ Error Handling
+
 1. [ ] Test 401 (not authenticated)
 2. [ ] Test 403 (insufficient permissions)
 3. [ ] Test 404 (resource not found)
@@ -1065,6 +1147,7 @@ Body:
 ## Common Testing Scenarios
 
 ### Scenario 1: Complete Order Flow
+
 ```
 1. GET /api/products (Browse products)
 2. GET /api/products/:id (View product details)
@@ -1074,6 +1157,7 @@ Body:
 ```
 
 ### Scenario 2: Admin Product Management
+
 ```
 1. POST /api/admin/login (Login as admin)
 2. POST /api/admin/upload (Upload product image)
@@ -1084,6 +1168,7 @@ Body:
 ```
 
 ### Scenario 3: User Engagement
+
 ```
 1. POST /api/auth/firebase-login (User login)
 2. GET /api/products/:id (View product)
@@ -1097,7 +1182,7 @@ Body:
 ## Postman Collection Structure
 
 ```
-📁 yourHaat API
+📁 SmartBuy BD API
 ├── 📁 Auth
 │   ├── User Login (Firebase)
 │   ├── Admin Login
@@ -1161,7 +1246,7 @@ Create environment in Postman with these variables:
 
 ```
 baseUrl: http://localhost:5000
-adminEmail: admin@yourhaat.com
+adminEmail: admin@SmartBuy BD.com
 adminPassword: admin123
 adminSecret: your_admin_secret
 testUserId: user123
@@ -1177,30 +1262,30 @@ Open browser console and test APIs directly:
 
 ```javascript
 // Test product listing
-fetch('http://localhost:5000/api/products?page=1&limit=10')
-  .then(r => r.json())
-  .then(data => console.log(data));
+fetch("http://localhost:5000/api/products?page=1&limit=10")
+  .then((r) => r.json())
+  .then((data) => console.log(data));
 
 // Test user login
-fetch('http://localhost:5000/api/auth/firebase-login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
+fetch("http://localhost:5000/api/auth/firebase-login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
   body: JSON.stringify({
-    email: 'test@example.com',
-    name: 'Test User',
-    provider: 'password'
-  })
+    email: "test@example.com",
+    name: "Test User",
+    provider: "password",
+  }),
 })
-.then(r => r.json())
-.then(data => console.log(data));
+  .then((r) => r.json())
+  .then((data) => console.log(data));
 
 // Test getting current user
-fetch('http://localhost:5000/api/auth/me', {
-  credentials: 'include'
+fetch("http://localhost:5000/api/auth/me", {
+  credentials: "include",
 })
-.then(r => r.json())
-.then(data => console.log(data));
+  .then((r) => r.json())
+  .then((data) => console.log(data));
 ```
 
 ---
@@ -1210,46 +1295,46 @@ fetch('http://localhost:5000/api/auth/me', {
 Create a test file `test-api.js`:
 
 ```javascript
-const axios = require('axios');
+const axios = require("axios");
 
-const baseURL = 'http://localhost:5000';
+const baseURL = "http://localhost:5000";
 const api = axios.create({
   baseURL,
   withCredentials: true,
-  validateStatus: () => true
+  validateStatus: () => true,
 });
 
 async function runTests() {
-  console.log('🧪 Starting API Tests...\n');
+  console.log("🧪 Starting API Tests...\n");
 
   // Test 1: Health Check
-  const ping = await api.get('/api/auth/ping');
-  console.log('✅ Ping:', ping.data.message);
+  const ping = await api.get("/api/auth/ping");
+  console.log("✅ Ping:", ping.data.message);
 
   // Test 2: List Products
-  const products = await api.get('/api/products?limit=5');
+  const products = await api.get("/api/products?limit=5");
   console.log(`✅ Products: Found ${products.data.total} products`);
 
   // Test 3: User Login
-  const login = await api.post('/api/auth/firebase-login', {
-    email: 'test@example.com',
-    name: 'Test User',
-    provider: 'password'
+  const login = await api.post("/api/auth/firebase-login", {
+    email: "test@example.com",
+    name: "Test User",
+    provider: "password",
   });
-  console.log('✅ User Login:', login.data.user?.email);
+  console.log("✅ User Login:", login.data.user?.email);
 
   // Test 4: Get Current User
-  const me = await api.get('/api/auth/me');
-  console.log('✅ Current User:', me.data.user?.email);
+  const me = await api.get("/api/auth/me");
+  console.log("✅ Current User:", me.data.user?.email);
 
   // Test 5: Create Order Quote
-  const quote = await api.post('/api/orders/quote', {
-    items: [{ productId: 'prod123', quantity: 1 }],
-    city: 'Dhaka'
+  const quote = await api.post("/api/orders/quote", {
+    items: [{ productId: "prod123", quantity: 1 }],
+    city: "Dhaka",
   });
-  console.log('✅ Order Quote:', quote.data.total + '৳');
+  console.log("✅ Order Quote:", quote.data.total + "৳");
 
-  console.log('\n🎉 All tests completed!');
+  console.log("\n🎉 All tests completed!");
 }
 
 runTests().catch(console.error);

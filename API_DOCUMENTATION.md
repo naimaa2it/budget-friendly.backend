@@ -1,4 +1,4 @@
-# yourHaat E-Commerce Platform - API Documentation
+# SmartBuy BD E-Commerce Platform - API Documentation
 
 **Version:** 1.0.0
 **Base URL:** `https://your-backend-domain.com` or `http://localhost:5000`
@@ -25,6 +25,7 @@
 All authentication uses **httpOnly cookies** with JWT tokens.
 
 ### Cookie Details
+
 - **Cookie Name:** `token`
 - **Flags:** `httpOnly: true, sameSite: 'none', secure: true`
 - **Expiry:** 7 days
@@ -35,11 +36,13 @@ All authentication uses **httpOnly cookies** with JWT tokens.
 ### Base Path: `/api/auth`
 
 #### 1. Ping (Health Check)
+
 ```http
 GET /api/auth/ping
 ```
 
 **Response:**
+
 ```json
 {
   "message": "pong",
@@ -50,11 +53,13 @@ GET /api/auth/ping
 ---
 
 #### 2. Firebase Login (Google/Email)
+
 ```http
 POST /api/auth/firebase-login
 ```
 
 **Request Body:**
+
 ```json
 {
   "email": "user@example.com",
@@ -65,6 +70,7 @@ POST /api/auth/firebase-login
 ```
 
 **Response:**
+
 ```json
 {
   "user": {
@@ -79,6 +85,7 @@ POST /api/auth/firebase-login
 ```
 
 **Notes:**
+
 - Creates new user if doesn't exist
 - Returns JWT in httpOnly cookie
 - Auto-subscribes new users to newsletter
@@ -86,11 +93,13 @@ POST /api/auth/firebase-login
 ---
 
 #### 3. Logout
+
 ```http
 POST /api/auth/logout
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Logged out successfully"
@@ -100,14 +109,17 @@ POST /api/auth/logout
 ---
 
 #### 4. Get Current User
+
 ```http
 GET /api/auth/me
 ```
 
 **Headers:**
+
 - Cookie: `token=<jwt_token>`
 
 **Response (Authenticated):**
+
 ```json
 {
   "user": {
@@ -120,6 +132,7 @@ GET /api/auth/me
 ```
 
 **Response (Not Authenticated):**
+
 ```json
 {
   "user": null
@@ -137,6 +150,7 @@ GET /api/auth/me
 ---
 
 #### 1. Update Profile
+
 ```http
 PUT /api/user/profile
 ```
@@ -144,6 +158,7 @@ PUT /api/user/profile
 **Content-Type:** `multipart/form-data`
 
 **Form Data:**
+
 ```javascript
 {
   "name": "John Doe",
@@ -157,6 +172,7 @@ PUT /api/user/profile
 ```
 
 **Response:**
+
 ```json
 {
   "user": {
@@ -170,17 +186,20 @@ PUT /api/user/profile
 ```
 
 **Notes:**
+
 - Images are auto-optimized to WebP format
 - Old images are automatically removed from Cloudinary
 
 ---
 
 #### 2. Get Addresses
+
 ```http
 GET /api/user/addresses
 ```
 
 **Response:**
+
 ```json
 {
   "addresses": [
@@ -201,11 +220,13 @@ GET /api/user/addresses
 ---
 
 #### 3. Add Address
+
 ```http
 POST /api/user/addresses
 ```
 
 **Request Body:**
+
 ```json
 {
   "fullName": "John Doe",
@@ -219,6 +240,7 @@ POST /api/user/addresses
 ```
 
 **Response:**
+
 ```json
 {
   "address": {
@@ -232,30 +254,37 @@ POST /api/user/addresses
 ---
 
 #### 4. Update Address
+
 ```http
 PUT /api/user/addresses/:id
 ```
 
 **Parameters:**
+
 - `id` (string): Address ID
 
 **Request Body:** Same as Add Address
 
 **Response:**
+
 ```json
 {
-  "address": { /* updated address */ }
+  "address": {
+    /* updated address */
+  }
 }
 ```
 
 ---
 
 #### 5. Delete Address
+
 ```http
 DELETE /api/user/addresses/:id
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Address deleted successfully"
@@ -265,11 +294,13 @@ DELETE /api/user/addresses/:id
 ---
 
 #### 6. Subscribe to Newsletter
+
 ```http
 POST /api/user/subscribe
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Subscribed successfully",
@@ -280,11 +311,13 @@ POST /api/user/subscribe
 ---
 
 #### 7. Unsubscribe from Newsletter
+
 ```http
 POST /api/user/unsubscribe
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Unsubscribed successfully",
@@ -303,6 +336,7 @@ POST /api/user/unsubscribe
 ### Public Endpoints
 
 #### 1. List Products
+
 ```http
 GET /api/products
 ```
@@ -324,11 +358,13 @@ GET /api/products
 | `minRating` | number | Minimum average rating (1-5) |
 
 **Example Request:**
+
 ```http
 GET /api/products?categoryId=cat123&minPrice=500&maxPrice=2000&sort=priceLow&page=1&limit=20
 ```
 
 **Response:**
+
 ```json
 {
   "ok": true,
@@ -360,11 +396,13 @@ GET /api/products?categoryId=cat123&minPrice=500&maxPrice=2000&sort=priceLow&pag
 ---
 
 #### 2. Get Category Tree
+
 ```http
 GET /api/products/categories
 ```
 
 **Response:**
+
 ```json
 {
   "categories": [
@@ -390,14 +428,17 @@ GET /api/products/categories
 ---
 
 #### 3. Get Single Product
+
 ```http
 GET /api/products/:id
 ```
 
 **Parameters:**
+
 - `id` (string): Product ID or slug
 
 **Response:**
+
 ```json
 {
   "product": {
@@ -427,9 +468,7 @@ GET /api/products/:id
     "department": "Fashion",
     "category": "T-Shirts",
     "categoryId": "cat123",
-    "specs": [
-      { "label": "Material", "value": "Cotton" }
-    ],
+    "specs": [{ "label": "Material", "value": "Cotton" }],
     "guidelines": ["Machine washable"],
     "specifications": ["100% Cotton", "Made in Bangladesh"],
     "customization": {
@@ -482,7 +521,9 @@ GET /api/products/:id
       }
     ],
     "frequentlyBoughtTogether": [
-      { /* populated product objects */ }
+      {
+        /* populated product objects */
+      }
     ],
     "monthlySold": 150,
     "rewardPoints": 75,
@@ -500,6 +541,7 @@ GET /api/products/:id
 ---
 
 #### 4. Upload Product Image
+
 ```http
 POST /api/products/upload
 ```
@@ -507,6 +549,7 @@ POST /api/products/upload
 **Content-Type:** `multipart/form-data`
 
 **Form Data:**
+
 ```javascript
 {
   "image": File // JPEG, PNG, WebP, AVIF (max 10MB)
@@ -514,14 +557,16 @@ POST /api/products/upload
 ```
 
 **Response:**
+
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "yourhaat/products/abc123"
+  "public_id": "SmartBuy BD/products/abc123"
 }
 ```
 
 **Notes:**
+
 - Auto-rotated based on EXIF orientation
 - Resized to max 1600px width
 - Converted to WebP format (quality 75)
@@ -532,6 +577,7 @@ POST /api/products/upload
 ### Review Endpoints (User Auth Required)
 
 #### 5. Submit Product Review
+
 ```http
 POST /api/products/:id/reviews
 ```
@@ -539,6 +585,7 @@ POST /api/products/:id/reviews
 **Authentication:** User JWT required
 
 **Request Body:**
+
 ```json
 {
   "authorName": "John Doe",
@@ -549,12 +596,14 @@ POST /api/products/:id/reviews
 ```
 
 **Validation:**
+
 - `rating`: Required, integer 1-5
 - `authorName`: Required, max 100 chars
 - `body`: Required, max 2000 chars
 - `title`: Optional, max 200 chars
 
 **Response:**
+
 ```json
 {
   "review": {
@@ -572,11 +621,13 @@ POST /api/products/:id/reviews
 ---
 
 #### 6. Edit Own Review
+
 ```http
 PUT /api/products/:id/reviews/:index
 ```
 
 **Parameters:**
+
 - `id`: Product ID
 - `index`: Review index in array
 
@@ -585,10 +636,13 @@ PUT /api/products/:id/reviews/:index
 **Authorization:** Only the review author can edit
 
 **Response:**
+
 ```json
 {
   "message": "Review updated",
-  "review": { /* updated review */ }
+  "review": {
+    /* updated review */
+  }
 }
 ```
 
@@ -597,11 +651,13 @@ PUT /api/products/:id/reviews/:index
 ### Question & Answer Endpoints (User Auth Required)
 
 #### 7. Ask Question
+
 ```http
 POST /api/products/:id/questions
 ```
 
 **Request Body:**
+
 ```json
 {
   "question": "Does this come with a warranty?",
@@ -610,6 +666,7 @@ POST /api/products/:id/questions
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Question submitted successfully",
@@ -626,11 +683,13 @@ POST /api/products/:id/questions
 ---
 
 #### 8. Edit Own Question
+
 ```http
 PUT /api/products/:id/questions/:index
 ```
 
 **Request Body:**
+
 ```json
 {
   "question": "Updated question text?"
@@ -640,15 +699,18 @@ PUT /api/products/:id/questions/:index
 ---
 
 #### 9. Submit Community Answer
+
 ```http
 POST /api/products/:id/questions/:qIdx/answers
 ```
 
 **Parameters:**
+
 - `id`: Product ID
 - `qIdx`: Question index
 
 **Request Body:**
+
 ```json
 {
   "body": "Yes, it comes with a 1-year warranty.",
@@ -657,6 +719,7 @@ POST /api/products/:id/questions/:qIdx/answers
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Answer submitted",
@@ -674,14 +737,17 @@ POST /api/products/:id/questions/:qIdx/answers
 ---
 
 #### 10. Edit Own Answer
+
 ```http
 PUT /api/products/:id/questions/:qIdx/answers/:aIdx
 ```
 
 **Parameters:**
+
 - `aIdx`: Answer index
 
 **Request Body:**
+
 ```json
 {
   "body": "Updated answer text"
@@ -691,11 +757,13 @@ PUT /api/products/:id/questions/:qIdx/answers/:aIdx
 ---
 
 #### 11. Vote Answer as Helpful
+
 ```http
 POST /api/products/:id/questions/:qIdx/answers/:aIdx/helpful
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Vote toggled",
@@ -705,6 +773,7 @@ POST /api/products/:id/questions/:qIdx/answers/:aIdx/helpful
 ```
 
 **Notes:**
+
 - Toggles helpful vote (add/remove)
 - Prevents duplicate votes
 - Returns updated count
@@ -714,6 +783,7 @@ POST /api/products/:id/questions/:qIdx/answers/:aIdx/helpful
 ### Admin Review/Question Management
 
 #### 12. Get All Reviews (Admin)
+
 ```http
 GET /api/products/admin-reviews
 ```
@@ -721,11 +791,13 @@ GET /api/products/admin-reviews
 **Authentication:** Admin JWT required
 
 **Query Parameters:**
+
 - `page`, `limit`: Pagination
 - `productId`: Filter by product
 - `minRating`, `maxRating`: Rating filters
 
 **Response:**
+
 ```json
 {
   "reviews": [
@@ -733,7 +805,9 @@ GET /api/products/admin-reviews
       "productId": "prod123",
       "productTitle": "Product Name",
       "index": 0,
-      "review": { /* review object */ }
+      "review": {
+        /* review object */
+      }
     }
   ],
   "total": 500
@@ -743,11 +817,13 @@ GET /api/products/admin-reviews
 ---
 
 #### 13. Get All Questions (Admin)
+
 ```http
 GET /api/products/admin-questions
 ```
 
 **Response:**
+
 ```json
 {
   "questions": [
@@ -755,7 +831,9 @@ GET /api/products/admin-questions
       "productId": "prod123",
       "productTitle": "Product Name",
       "index": 0,
-      "question": { /* question object with answers */ }
+      "question": {
+        /* question object with answers */
+      }
     }
   ],
   "total": 200
@@ -765,11 +843,13 @@ GET /api/products/admin-questions
 ---
 
 #### 14. Edit Any Review (Admin)
+
 ```http
 PUT /api/products/admin-reviews/:productId/:index
 ```
 
 **Request Body:**
+
 ```json
 {
   "authorName": "Updated Name",
@@ -782,6 +862,7 @@ PUT /api/products/admin-reviews/:productId/:index
 ---
 
 #### 15. Delete Review (Admin)
+
 ```http
 DELETE /api/products/:id/reviews/:index
 ```
@@ -789,11 +870,13 @@ DELETE /api/products/:id/reviews/:index
 ---
 
 #### 16. Answer/Edit Question (Admin)
+
 ```http
 PUT /api/products/admin-questions/:productId/:index
 ```
 
 **Request Body:**
+
 ```json
 {
   "officialAnswer": "This is the official response from our team."
@@ -801,12 +884,14 @@ PUT /api/products/admin-questions/:productId/:index
 ```
 
 **Notes:**
+
 - Adds an answer marked as `isOfficial: true`
 - Displays as "Official Answer" on frontend
 
 ---
 
 #### 17. Delete Question (Admin)
+
 ```http
 DELETE /api/products/admin-questions/:productId/:index
 ```
@@ -814,6 +899,7 @@ DELETE /api/products/admin-questions/:productId/:index
 ---
 
 #### 18. Delete Answer (Admin)
+
 ```http
 DELETE /api/products/admin-questions/:productId/:qIdx/answers/:aIdx
 ```
@@ -825,6 +911,7 @@ DELETE /api/products/admin-questions/:productId/:qIdx/answers/:aIdx
 ### Base Path: `/api/blog`
 
 #### 1. List Blog Posts
+
 ```http
 GET /api/blog
 ```
@@ -838,6 +925,7 @@ GET /api/blog
 | `tag` | string | Filter by tag |
 
 **Response:**
+
 ```json
 {
   "posts": [
@@ -865,14 +953,17 @@ GET /api/blog
 ---
 
 #### 2. Get Single Post
+
 ```http
 GET /api/blog/:slug
 ```
 
 **Parameters:**
+
 - `slug` (string): Post slug
 
 **Response:**
+
 ```json
 {
   "post": {
@@ -904,11 +995,13 @@ GET /api/blog/:slug
 ---
 
 #### 3. Get Related Blog Posts
+
 ```http
 GET /api/blog/:slug/related
 ```
 
 **Parameters:**
+
 - `slug` (string): Current post slug
 
 **Query Parameters:**
@@ -916,10 +1009,11 @@ GET /api/blog/:slug/related
 |-----------|------|---------|-------------|
 | `limit` | number | 3 | Number of related posts to return |
 
-**Description:** 
+**Description:**
 Returns related blog posts based on matching categories and tags. If not enough related posts are found, fills with latest published posts.
 
 **Response:**
+
 ```json
 {
   "relatedPosts": [
@@ -944,6 +1038,7 @@ Returns related blog posts based on matching categories and tags. If not enough 
 ```
 
 **Example Request:**
+
 ```bash
 GET /api/blog/top-10-smart-home-devices/related?limit=3
 ```
@@ -959,6 +1054,7 @@ GET /api/blog/top-10-smart-home-devices/related?limit=3
 ### Public/User Endpoints
 
 #### 1. Get Price Quote (Preview)
+
 ```http
 POST /api/orders/quote
 ```
@@ -966,6 +1062,7 @@ POST /api/orders/quote
 **Description:** Calculate order total without creating order
 
 **Request Body:**
+
 ```json
 {
   "items": [
@@ -982,6 +1079,7 @@ POST /api/orders/quote
 ```
 
 **Response:**
+
 ```json
 {
   "subtotal": 3000,
@@ -1010,6 +1108,7 @@ POST /api/orders/quote
 ```
 
 **Validation:**
+
 - Checks product availability
 - Validates variant stock
 - Applies coupon rules
@@ -1018,11 +1117,13 @@ POST /api/orders/quote
 ---
 
 #### 2. Create Order
+
 ```http
 POST /api/orders
 ```
 
 **Request Body:**
+
 ```json
 {
   "userEmail": "customer@example.com",
@@ -1049,12 +1150,14 @@ POST /api/orders
 ```
 
 **Validation Rules:**
+
 - All billing fields required except `note`
 - `phone`: Must be valid BD format
 - `paymentMethod`: `cash-on-delivery`, `online`, `bkash`
 - Inventory checked and decremented
 
 **Response (COD):**
+
 ```json
 {
   "ok": true,
@@ -1073,15 +1176,19 @@ POST /api/orders
 ```
 
 **Response (Online Payment):**
+
 ```json
 {
   "ok": true,
-  "order": { /* order object */ },
+  "order": {
+    /* order object */
+  },
   "paymentUrl": "https://sandbox.sslcommerz.com/gwprocess/v4/gw.php?Q=..."
 }
 ```
 
 **Notes:**
+
 - COD orders auto-confirm after 3 hours
 - Online payment redirects to SSLCommerz gateway
 - Email sent to customer and admin
@@ -1090,6 +1197,7 @@ POST /api/orders
 ---
 
 #### 3. Get My Orders
+
 ```http
 GET /api/orders/my
 ```
@@ -1097,10 +1205,12 @@ GET /api/orders/my
 **Authentication:** User JWT required
 
 **Query Parameters:**
+
 - `page`, `limit`: Pagination
 - `status`: Filter by status
 
 **Response:**
+
 ```json
 {
   "orders": [
@@ -1121,14 +1231,17 @@ GET /api/orders/my
 ---
 
 #### 4. Get Single Order
+
 ```http
 GET /api/orders/:id
 ```
 
 **Parameters:**
+
 - `id` (string): Order ID
 
 **Response:**
+
 ```json
 {
   "order": {
@@ -1169,6 +1282,7 @@ GET /api/orders/:id
 ---
 
 #### 5. Retry Payment
+
 ```http
 POST /api/orders/:id/pay
 ```
@@ -1178,6 +1292,7 @@ POST /api/orders/:id/pay
 **Use Case:** Retry payment for failed/unpaid orders
 
 **Response:**
+
 ```json
 {
   "ok": true,
@@ -1186,12 +1301,14 @@ POST /api/orders/:id/pay
 ```
 
 **Restrictions:**
+
 - Only for `unpaid` or `failed` payment status
 - Order must not be `cancelled` or `delivered`
 
 ---
 
 #### 6. Cancel Order
+
 ```http
 PATCH /api/orders/:id/cancel
 ```
@@ -1199,11 +1316,13 @@ PATCH /api/orders/:id/cancel
 **Authentication:** User JWT required (order owner)
 
 **Restrictions:**
+
 - Only COD orders
 - Within 30 minutes of creation
 - Cannot cancel if status is `processing`, `sent-to-courier`, or `delivered`
 
 **Response:**
+
 ```json
 {
   "message": "Order cancelled successfully",
@@ -1215,12 +1334,14 @@ PATCH /api/orders/:id/cancel
 ```
 
 **Notes:**
+
 - Inventory is restored
 - Email notification sent
 
 ---
 
 #### 7. Edit Order
+
 ```http
 PATCH /api/orders/:id/edit
 ```
@@ -1228,6 +1349,7 @@ PATCH /api/orders/:id/edit
 **Authentication:** User JWT required (order owner)
 
 **Request Body:**
+
 ```json
 {
   "billingDetails": {
@@ -1239,6 +1361,7 @@ PATCH /api/orders/:id/edit
 ```
 
 **Restrictions:**
+
 - Within 30 minutes of creation
 - Cannot edit if `processing`, `sent-to-courier`, or `delivered`
 
@@ -1247,6 +1370,7 @@ PATCH /api/orders/:id/edit
 ### Payment Callbacks (SSLCommerz)
 
 #### 8. Payment Success
+
 ```http
 POST /api/orders/payment/success
 ```
@@ -1254,6 +1378,7 @@ POST /api/orders/payment/success
 **Called by:** SSLCommerz after successful payment
 
 **Form Data:**
+
 - `tran_id`: Transaction ID
 - `val_id`: Validation ID
 - `amount`: Paid amount
@@ -1261,6 +1386,7 @@ POST /api/orders/payment/success
 - `card_type`, `card_issuer`, etc.
 
 **Action:**
+
 - Validates payment with SSLCommerz API
 - Updates order status to `pending`
 - Marks payment as `paid`
@@ -1269,11 +1395,13 @@ POST /api/orders/payment/success
 ---
 
 #### 9. Payment Failure
+
 ```http
 POST /api/orders/payment/fail
 ```
 
 **Action:**
+
 - Marks payment as `failed`
 - Inventory restored
 - Redirects to frontend failure page
@@ -1281,11 +1409,13 @@ POST /api/orders/payment/fail
 ---
 
 #### 10. Payment Cancellation
+
 ```http
 POST /api/orders/payment/cancel
 ```
 
 **Action:**
+
 - Marks payment as `cancelled`
 - Inventory restored
 - Redirects to frontend
@@ -1293,6 +1423,7 @@ POST /api/orders/payment/cancel
 ---
 
 #### 11. IPN (Instant Payment Notification)
+
 ```http
 POST /api/orders/payment/ipn
 ```
@@ -1304,6 +1435,7 @@ POST /api/orders/payment/ipn
 ### Pricing Logic
 
 #### Shipping Costs
+
 ```javascript
 if (subtotal >= 999) {
   shipping = 0; // Free shipping
@@ -1315,13 +1447,15 @@ if (subtotal >= 999) {
 ```
 
 #### Active Coupons
-| Code | Type | Discount | Min Purchase | Conditions |
-|------|------|----------|--------------|------------|
-| `NEWUSER26` | Flat | 50৳ | None | New users only |
-| `SAVE150` | Flat | 150৳ | None | All users |
-| `CASHBACK100` | Flat | 100৳ | None | All users |
+
+| Code          | Type | Discount | Min Purchase | Conditions     |
+| ------------- | ---- | -------- | ------------ | -------------- |
+| `NEWUSER26`   | Flat | 50৳      | None         | New users only |
+| `SAVE150`     | Flat | 150৳     | None         | All users      |
+| `CASHBACK100` | Flat | 100৳     | None         | All users      |
 
 #### Auto Discounts
+
 - ≥ 2000৳: 150৳ off
 - ≥ 3000৳: 250৳ off
 
@@ -1340,11 +1474,13 @@ if (subtotal >= 999) {
 ### Admin Authentication
 
 #### 1. Check Email
+
 ```http
 POST /api/admin/check-email
 ```
 
 **Request Body:**
+
 ```json
 {
   "email": "admin@example.com"
@@ -1352,6 +1488,7 @@ POST /api/admin/check-email
 ```
 
 **Response:**
+
 ```json
 {
   "exists": true
@@ -1361,11 +1498,13 @@ POST /api/admin/check-email
 ---
 
 #### 2. Admin Login
+
 ```http
 POST /api/admin/login
 ```
 
 **Request Body:**
+
 ```json
 {
   "email": "admin@example.com",
@@ -1375,11 +1514,13 @@ POST /api/admin/login
 ```
 
 **Validation:**
+
 - `secret` must match `ADMIN_SECRET` environment variable
 - Max 5 failed login attempts
 - Account locks for 2 hours after max attempts
 
 **Response:**
+
 ```json
 {
   "ok": true,
@@ -1394,6 +1535,7 @@ POST /api/admin/login
 ```
 
 **Error (Account Locked):**
+
 ```json
 {
   "error": "Too many failed attempts. Try again after 2 hours.",
@@ -1404,11 +1546,13 @@ POST /api/admin/login
 ---
 
 #### 3. Forgot Password
+
 ```http
 POST /api/admin/forgot
 ```
 
 **Request Body:**
+
 ```json
 {
   "email": "admin@example.com"
@@ -1416,6 +1560,7 @@ POST /api/admin/forgot
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Password reset email sent"
@@ -1423,6 +1568,7 @@ POST /api/admin/forgot
 ```
 
 **Notes:**
+
 - Generates 6-digit reset code
 - Valid for 1 hour
 - Sends email with reset link
@@ -1430,11 +1576,13 @@ POST /api/admin/forgot
 ---
 
 #### 4. Reset Password
+
 ```http
 POST /api/admin/reset
 ```
 
 **Request Body:**
+
 ```json
 {
   "token": "123456",
@@ -1443,6 +1591,7 @@ POST /api/admin/reset
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Password reset successfully"
@@ -1454,6 +1603,7 @@ POST /api/admin/reset
 ### File Upload
 
 #### 5. Upload Image
+
 ```http
 POST /api/admin/upload
 ```
@@ -1461,6 +1611,7 @@ POST /api/admin/upload
 **Content-Type:** `multipart/form-data`
 
 **Form Data:**
+
 ```javascript
 {
   "image": File,
@@ -1469,10 +1620,11 @@ POST /api/admin/upload
 ```
 
 **Response:**
+
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "yourhaat/banners/abc123"
+  "public_id": "SmartBuy BD/banners/abc123"
 }
 ```
 
@@ -1481,6 +1633,7 @@ POST /api/admin/upload
 ### Settings
 
 #### 6. Get Top Banner (Public)
+
 ```http
 GET /api/admin/top-banner
 ```
@@ -1488,6 +1641,7 @@ GET /api/admin/top-banner
 **No authentication required**
 
 **Response:**
+
 ```json
 {
   "settings": {
@@ -1504,16 +1658,18 @@ GET /api/admin/top-banner
 ---
 
 #### 7. Get All Settings
+
 ```http
 GET /api/admin/settings
 ```
 
 **Response:**
+
 ```json
 {
   "settings": {
-    "storeName": "yourHaat",
-    "storeEmail": "support@yourhaat.com",
+    "storeName": "SmartBuy BD",
+    "storeEmail": "support@SmartBuy BD.com",
     "storePhone": "+8801712345678",
     "topBannerText": "...",
     "topBannerEnabled": true,
@@ -1522,7 +1678,7 @@ GET /api/admin/settings
     "adsenseSlot": "987654",
     "stockThreshold": 10,
     "lowStockAlert": true,
-    "orderNotificationEmail": "orders@yourhaat.com",
+    "orderNotificationEmail": "orders@SmartBuy BD.com",
     ...
   }
 }
@@ -1531,6 +1687,7 @@ GET /api/admin/settings
 ---
 
 #### 8. Update Settings
+
 ```http
 PUT /api/admin/settings
 ```
@@ -1550,14 +1707,17 @@ PUT /api/admin/settings
 ### Categories
 
 #### 9. List Categories
+
 ```http
 GET /api/admin/categories
 ```
 
 **Query Parameters:**
+
 - `includeInactive`: Include inactive categories
 
 **Response:**
+
 ```json
 {
   "categories": [
@@ -1579,6 +1739,7 @@ GET /api/admin/categories
 ---
 
 #### 10. Get Single Category
+
 ```http
 GET /api/admin/categories/:id
 ```
@@ -1586,11 +1747,13 @@ GET /api/admin/categories/:id
 ---
 
 #### 11. Create Category
+
 ```http
 POST /api/admin/categories
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "Electronics",
@@ -1602,11 +1765,13 @@ POST /api/admin/categories
 ```
 
 **Validation:**
+
 - Max 10 categories per parent
 - Max depth: 2 levels (parent → child → grandchild)
 - Slug must be unique
 
 **Response:**
+
 ```json
 {
   "category": {
@@ -1622,6 +1787,7 @@ POST /api/admin/categories
 ---
 
 #### 12. Update Category
+
 ```http
 PUT /api/admin/categories/:id
 ```
@@ -1629,11 +1795,13 @@ PUT /api/admin/categories/:id
 ---
 
 #### 13. Delete Category
+
 ```http
 DELETE /api/admin/categories/:id
 ```
 
 **Restrictions:**
+
 - Cannot delete if has children categories
 - Cannot delete if has products assigned
 
@@ -1642,11 +1810,13 @@ DELETE /api/admin/categories/:id
 ### Products (Admin)
 
 #### 14. List Products
+
 ```http
 GET /api/admin/products
 ```
 
 **Query Parameters:**
+
 - `page`, `limit`: Pagination
 - `q`: Search query
 - `status`: Filter by status
@@ -1654,6 +1824,7 @@ GET /api/admin/products
 - All other filters from public product list
 
 **Response:**
+
 ```json
 {
   "products": [...],
@@ -1666,11 +1837,13 @@ GET /api/admin/products
 ---
 
 #### 15. Create Product
+
 ```http
 POST /api/admin/products
 ```
 
 **Request Body:**
+
 ```json
 {
   "title": "Product Name",
@@ -1702,9 +1875,7 @@ POST /api/admin/products
   "featured": false,
   "coupon": false,
   "flashSale": false,
-  "specs": [
-    { "label": "Material", "value": "Cotton" }
-  ],
+  "specs": [{ "label": "Material", "value": "Cotton" }],
   "customization": {
     "customizable": true,
     "options": [
@@ -1735,15 +1906,19 @@ POST /api/admin/products
 ```
 
 **Response:**
+
 ```json
 {
-  "product": { /* created product */ }
+  "product": {
+    /* created product */
+  }
 }
 ```
 
 ---
 
 #### 16. Get Single Product (Admin)
+
 ```http
 GET /api/admin/products/:id
 ```
@@ -1751,6 +1926,7 @@ GET /api/admin/products/:id
 ---
 
 #### 17. Update Product
+
 ```http
 PUT /api/admin/products/:id
 ```
@@ -1760,15 +1936,18 @@ PUT /api/admin/products/:id
 ---
 
 #### 18. Delete Product
+
 ```http
 DELETE /api/admin/products/:id?force=false
 ```
 
 **Query Parameters:**
+
 - `force=true`: Permanently delete
 - `force=false` (default): Soft delete (sets status to archived)
 
 **Response:**
+
 ```json
 {
   "message": "Product deleted successfully"
@@ -1776,6 +1955,7 @@ DELETE /api/admin/products/:id?force=false
 ```
 
 **Notes:**
+
 - Soft delete preserves product data
 - Force delete removes from database
 - Images remain in Cloudinary (manual cleanup required)
@@ -1785,11 +1965,13 @@ DELETE /api/admin/products/:id?force=false
 ### Blog (Admin)
 
 #### 19. List Blog Posts
+
 ```http
 GET /api/admin/blog
 ```
 
 **Query Parameters:**
+
 - `page`, `limit`: Pagination
 - `status`: `published`, `draft`, `archived`
 - `q`: Search query
@@ -1797,11 +1979,13 @@ GET /api/admin/blog
 ---
 
 #### 20. Create Blog Post
+
 ```http
 POST /api/admin/blog
 ```
 
 **Request Body:**
+
 ```json
 {
   "title": "Blog Post Title",
@@ -1828,6 +2012,7 @@ POST /api/admin/blog
 ---
 
 #### 21. Get Single Post (Admin)
+
 ```http
 GET /api/admin/blog/:id
 ```
@@ -1835,6 +2020,7 @@ GET /api/admin/blog/:id
 ---
 
 #### 22. Update Blog Post
+
 ```http
 PUT /api/admin/blog/:id
 ```
@@ -1842,11 +2028,13 @@ PUT /api/admin/blog/:id
 ---
 
 #### 23. Delete Blog Post
+
 ```http
 DELETE /api/admin/blog/:id
 ```
 
 **Notes:**
+
 - Archives post (soft delete)
 - Sets status to `archived`
 
@@ -1855,15 +2043,18 @@ DELETE /api/admin/blog/:id
 ### User Management
 
 #### 24. List Users
+
 ```http
 GET /api/admin/users
 ```
 
 **Query Parameters:**
+
 - `page`, `limit`: Pagination (max 200 per page)
 - `q`: Search by name, email, or phone
 
 **Response:**
+
 ```json
 {
   "users": [
@@ -1885,6 +2076,7 @@ GET /api/admin/users
 ---
 
 #### 25. Get Single User
+
 ```http
 GET /api/admin/users/:id
 ```
@@ -1892,11 +2084,13 @@ GET /api/admin/users/:id
 ---
 
 #### 26. Update User
+
 ```http
 PUT /api/admin/users/:id
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "Updated Name",
@@ -1910,11 +2104,13 @@ PUT /api/admin/users/:id
 ---
 
 #### 27. Delete User
+
 ```http
 DELETE /api/admin/users/:id
 ```
 
 **Notes:**
+
 - Permanently deletes user
 - Removes profile image from Cloudinary
 - Deletes all user addresses
@@ -1924,11 +2120,13 @@ DELETE /api/admin/users/:id
 ### Admin Account Management
 
 #### 28. List Admins
+
 ```http
 GET /api/admin/admins
 ```
 
 **Response:**
+
 ```json
 {
   "admins": [
@@ -1954,6 +2152,7 @@ GET /api/admin/admins
 ---
 
 #### 29. Get Single Admin
+
 ```http
 GET /api/admin/admins/:id
 ```
@@ -1961,11 +2160,13 @@ GET /api/admin/admins/:id
 ---
 
 #### 30. Create Admin/Moderator
+
 ```http
 POST /api/admin/admins
 ```
 
 **Request Body:**
+
 ```json
 {
   "email": "newadmin@example.com",
@@ -1977,6 +2178,7 @@ POST /api/admin/admins
 ```
 
 **Validation:**
+
 - `secret` must match `ADMIN_SECRET`
 - Password min 8 characters
 - Email must be unique
@@ -1984,11 +2186,13 @@ POST /api/admin/admins
 ---
 
 #### 31. Update Admin
+
 ```http
 PUT /api/admin/admins/:id
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "Updated Name",
@@ -2001,11 +2205,13 @@ PUT /api/admin/admins/:id
 ---
 
 #### 32. Deactivate Admin
+
 ```http
 DELETE /api/admin/admins/:id
 ```
 
 **Notes:**
+
 - Soft delete: sets `isActive` to false
 - Admin can't delete themselves
 - Deactivated admins can't log in
@@ -2015,11 +2221,13 @@ DELETE /api/admin/admins/:id
 ### Occasion Sections
 
 #### 33. List Occasions
+
 ```http
 GET /api/admin/occasions
 ```
 
 **Response:**
+
 ```json
 {
   "occasions": [
@@ -2041,11 +2249,13 @@ GET /api/admin/occasions
 ---
 
 #### 34. Create Occasion
+
 ```http
 POST /api/admin/occasions
 ```
 
 **Request Body:**
+
 ```json
 {
   "title": "Eid Collection",
@@ -2061,6 +2271,7 @@ POST /api/admin/occasions
 ---
 
 #### 35. Get Single Occasion
+
 ```http
 GET /api/admin/occasions/:id
 ```
@@ -2068,6 +2279,7 @@ GET /api/admin/occasions/:id
 ---
 
 #### 36. Update Occasion
+
 ```http
 PUT /api/admin/occasions/:id
 ```
@@ -2075,6 +2287,7 @@ PUT /api/admin/occasions/:id
 ---
 
 #### 37. Delete Occasion
+
 ```http
 DELETE /api/admin/occasions/:id
 ```
@@ -2082,11 +2295,13 @@ DELETE /api/admin/occasions/:id
 ---
 
 #### 38. Reorder Occasions
+
 ```http
 PUT /api/admin/occasions-reorder
 ```
 
 **Request Body:**
+
 ```json
 {
   "updates": [
@@ -2101,7 +2316,9 @@ PUT /api/admin/occasions-reorder
 ### Featured Sections
 
 #### 39-44. Featured Section Endpoints
+
 Same CRUD structure as Occasions:
+
 - `GET /api/admin/featured`
 - `POST /api/admin/featured`
 - `GET /api/admin/featured/:id`
@@ -2110,6 +2327,7 @@ Same CRUD structure as Occasions:
 - `PUT /api/admin/featured-reorder`
 
 **Schema:**
+
 ```json
 {
   "title": "Best Sellers",
@@ -2124,7 +2342,9 @@ Same CRUD structure as Occasions:
 ### Promo Strip
 
 #### 45-50. Promo Strip Endpoints
+
 Same structure as above:
+
 - `GET /api/admin/promo-strip`
 - `POST /api/admin/promo-strip`
 - `GET /api/admin/promo-strip/:id`
@@ -2133,6 +2353,7 @@ Same structure as above:
 - `PUT /api/admin/promo-strip-reorder`
 
 **Schema:**
+
 ```json
 {
   "text": "Free Shipping",
@@ -2147,6 +2368,7 @@ Same structure as above:
 ### Banners
 
 #### 51. List Banners
+
 ```http
 GET /api/admin/banners
 ```
@@ -2154,18 +2376,20 @@ GET /api/admin/banners
 ---
 
 #### 52. Create Banner
+
 ```http
 POST /api/admin/banners
 ```
 
 **Request Body:**
+
 ```json
 {
   "title": "Summer Sale",
   "desktopImage": "https://...",
   "mobileImage": "https://...",
-  "desktopPublicId": "yourhaat/banners/desktop123",
-  "mobilePublicId": "yourhaat/banners/mobile123",
+  "desktopPublicId": "SmartBuy BD/banners/desktop123",
+  "mobilePublicId": "SmartBuy BD/banners/mobile123",
   "link": "/shop/summer-sale",
   "isActive": true
 }
@@ -2174,6 +2398,7 @@ POST /api/admin/banners
 ---
 
 #### 53. Update Banner
+
 ```http
 PUT /api/admin/banners/:id
 ```
@@ -2181,17 +2406,20 @@ PUT /api/admin/banners/:id
 ---
 
 #### 54. Delete Banner
+
 ```http
 DELETE /api/admin/banners/:id
 ```
 
 **Notes:**
+
 - Deletes images from Cloudinary using public_ids
 - Permanently removes banner
 
 ---
 
 #### 55. Reorder Banners
+
 ```http
 PUT /api/admin/banners-reorder
 ```
@@ -2201,7 +2429,9 @@ PUT /api/admin/banners-reorder
 ### Promo Panels
 
 #### 56-61. Promo Panel Endpoints
+
 Same CRUD structure:
+
 - `GET /api/admin/promo-panels`
 - `POST /api/admin/promo-panels`
 - `GET /api/admin/promo-panels/:id`
@@ -2210,6 +2440,7 @@ Same CRUD structure:
 - `PUT /api/admin/promo-panels-reorder`
 
 **Schema:**
+
 ```json
 {
   "title": "Gift Cards",
@@ -2225,11 +2456,13 @@ Same CRUD structure:
 ### Popup (Singleton)
 
 #### 62. Get Popup
+
 ```http
 GET /api/admin/popup
 ```
 
 **Response:**
+
 ```json
 {
   "popup": {
@@ -2249,11 +2482,13 @@ GET /api/admin/popup
 ---
 
 #### 63. Upsert Popup
+
 ```http
 PUT /api/admin/popup
 ```
 
 **Request Body:**
+
 ```json
 {
   "title": "Subscribe for 10% Off!",
@@ -2268,12 +2503,14 @@ PUT /api/admin/popup
 ```
 
 **Notes:**
+
 - Creates if doesn't exist, updates if exists
 - Only one popup per site
 
 ---
 
 #### 64. Delete Popup
+
 ```http
 DELETE /api/admin/popup
 ```
@@ -2283,21 +2520,24 @@ DELETE /api/admin/popup
 ### Media Library (Cloudinary)
 
 #### 65. List Media
+
 ```http
 GET /api/admin/media
 ```
 
 **Query Parameters:**
-- `folder`: Filter by folder (e.g., "yourhaat/products")
+
+- `folder`: Filter by folder (e.g., "SmartBuy BD/products")
 - `next_cursor`: Pagination cursor from previous response
 - `q`: Search by public_id
 
 **Response:**
+
 ```json
 {
   "resources": [
     {
-      "public_id": "yourhaat/products/prod123",
+      "public_id": "SmartBuy BD/products/prod123",
       "secure_url": "https://res.cloudinary.com/.../image.webp",
       "format": "webp",
       "width": 1600,
@@ -2314,16 +2554,18 @@ GET /api/admin/media
 ---
 
 #### 66. List Folders
+
 ```http
 GET /api/admin/media/folders
 ```
 
 **Response:**
+
 ```json
 {
   "folders": [
-    { "name": "yourhaat/products", "path": "yourhaat/products" },
-    { "name": "yourhaat/banners", "path": "yourhaat/banners" }
+    { "name": "SmartBuy BD/products", "path": "SmartBuy BD/products" },
+    { "name": "SmartBuy BD/banners", "path": "SmartBuy BD/banners" }
   ]
 }
 ```
@@ -2331,31 +2573,35 @@ GET /api/admin/media/folders
 ---
 
 #### 67. Delete Media
+
 ```http
 DELETE /api/admin/media
 ```
 
 **Request Body:**
+
 ```json
 {
   "public_ids": [
-    "yourhaat/products/prod123",
-    "yourhaat/banners/banner456"
+    "SmartBuy BD/products/prod123",
+    "SmartBuy BD/banners/banner456"
   ]
 }
 ```
 
 **Response:**
+
 ```json
 {
   "deleted": {
-    "yourhaat/products/prod123": "deleted",
-    "yourhaat/banners/banner456": "deleted"
+    "SmartBuy BD/products/prod123": "deleted",
+    "SmartBuy BD/banners/banner456": "deleted"
   }
 }
 ```
 
 **Notes:**
+
 - Batch deletion supported
 - Max 100 images per request
 - Permanently deletes from Cloudinary
@@ -2365,11 +2611,13 @@ DELETE /api/admin/media
 ### Discounts
 
 #### 68. List Discounts
+
 ```http
 GET /api/admin/discounts
 ```
 
 **Response:**
+
 ```json
 {
   "discounts": [
@@ -2396,11 +2644,13 @@ GET /api/admin/discounts
 ---
 
 #### 69. Create Discount
+
 ```http
 POST /api/admin/discounts
 ```
 
 **Request Body:**
+
 ```json
 {
   "title": "10% Off",
@@ -2420,6 +2670,7 @@ POST /api/admin/discounts
 ---
 
 #### 70. Update Discount
+
 ```http
 PUT /api/admin/discounts/:id
 ```
@@ -2427,6 +2678,7 @@ PUT /api/admin/discounts/:id
 ---
 
 #### 71. Delete Discount
+
 ```http
 DELETE /api/admin/discounts/:id
 ```
@@ -2434,6 +2686,7 @@ DELETE /api/admin/discounts/:id
 ---
 
 #### 72. Reorder Discounts
+
 ```http
 PUT /api/admin/discounts-reorder
 ```
@@ -2443,15 +2696,18 @@ PUT /api/admin/discounts-reorder
 ### Waitlist
 
 #### 73. List Waitlist Entries
+
 ```http
 GET /api/admin/waitlist
 ```
 
 **Query Parameters:**
+
 - `productId`: Filter by product
 - `notified`: Filter by notification status (true/false)
 
 **Response:**
+
 ```json
 {
   "entries": [
@@ -2471,11 +2727,13 @@ GET /api/admin/waitlist
 ---
 
 #### 74. Mark as Notified
+
 ```http
 PUT /api/admin/waitlist/:id/notified
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Marked as notified"
@@ -2485,6 +2743,7 @@ PUT /api/admin/waitlist/:id/notified
 ---
 
 #### 75. Delete Waitlist Entry
+
 ```http
 DELETE /api/admin/waitlist/:id
 ```
@@ -2494,11 +2753,13 @@ DELETE /api/admin/waitlist/:id
 ### Orders (Admin)
 
 #### 76. Dashboard Overview
+
 ```http
 GET /api/admin/dashboard-overview
 ```
 
 **Response:**
+
 ```json
 {
   "overview": {
@@ -2561,11 +2822,13 @@ GET /api/admin/dashboard-overview
 ---
 
 #### 77. List Orders
+
 ```http
 GET /api/admin/orders
 ```
 
 **Query Parameters:**
+
 - `page`, `limit`: Pagination
 - `status`: Filter by status
 - `paymentStatus`: Filter by payment status
@@ -2576,6 +2839,7 @@ GET /api/admin/orders
 ---
 
 #### 78. Get Single Order
+
 ```http
 GET /api/admin/orders/:id
 ```
@@ -2583,11 +2847,13 @@ GET /api/admin/orders/:id
 ---
 
 #### 79. Update Order Status
+
 ```http
 PUT /api/admin/orders/:id/status
 ```
 
 **Request Body:**
+
 ```json
 {
   "status": "confirmed" // created, pending, confirmed, processing, sent-to-courier, delivered, cancelled, failed
@@ -2595,17 +2861,20 @@ PUT /api/admin/orders/:id/status
 ```
 
 **Notes:**
+
 - Sends email notification to customer
 - Updates order timestamp
 
 ---
 
 #### 80. Update Payment Status
+
 ```http
 PUT /api/admin/orders/:id/payment-status
 ```
 
 **Request Body:**
+
 ```json
 {
   "paymentStatus": "paid" // pending, paid, failed, refunded
@@ -2615,11 +2884,13 @@ PUT /api/admin/orders/:id/payment-status
 ---
 
 #### 81. Delete Order
+
 ```http
 DELETE /api/admin/orders/:id
 ```
 
 **Notes:**
+
 - Permanently deletes order
 - Restores inventory if not delivered
 - Use with caution
@@ -2633,11 +2904,13 @@ These APIs are publicly accessible without authentication.
 ---
 
 #### 1. Get Active Occasions
+
 ```http
 GET /api/occasions
 ```
 
 **Response:**
+
 ```json
 {
   "occasions": [
@@ -2648,7 +2921,9 @@ GET /api/occasions
       "backgroundColor": "#ff6b6b",
       "textColor": "#ffffff",
       "backgroundImage": "https://...",
-      "products": [ /* populated product objects */ ]
+      "products": [
+        /* populated product objects */
+      ]
     }
   ]
 }
@@ -2657,18 +2932,22 @@ GET /api/occasions
 ---
 
 #### 2. Get Featured Sections
+
 ```http
 GET /api/featured
 ```
 
 **Response:**
+
 ```json
 {
   "featured": [
     {
       "_id": "feat123",
       "title": "Best Sellers",
-      "products": [ /* populated products */ ]
+      "products": [
+        /* populated products */
+      ]
     }
   ]
 }
@@ -2677,11 +2956,13 @@ GET /api/featured
 ---
 
 #### 3. Get Promo Strip Items
+
 ```http
 GET /api/promo-strip
 ```
 
 **Response:**
+
 ```json
 {
   "items": [
@@ -2697,6 +2978,7 @@ GET /api/promo-strip
 ---
 
 #### 4. Get Promo Panels
+
 ```http
 GET /api/promo-panels
 ```
@@ -2704,6 +2986,7 @@ GET /api/promo-panels
 ---
 
 #### 5. Get Active Banners
+
 ```http
 GET /api/banners
 ```
@@ -2711,6 +2994,7 @@ GET /api/banners
 ---
 
 #### 6. Get Active Popup
+
 ```http
 GET /api/popup
 ```
@@ -2718,6 +3002,7 @@ GET /api/popup
 ---
 
 #### 7. Get Active Discounts
+
 ```http
 GET /api/discounts
 ```
@@ -2725,11 +3010,13 @@ GET /api/discounts
 ---
 
 #### 8. Join Waitlist
+
 ```http
 POST /api/waitlist
 ```
 
 **Request Body:**
+
 ```json
 {
   "productId": "prod123",
@@ -2738,6 +3025,7 @@ POST /api/waitlist
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Added to waitlist successfully",
@@ -2751,6 +3039,7 @@ POST /api/waitlist
 ```
 
 **Validation:**
+
 - Email must be valid
 - Product must exist
 - Prevents duplicate entries
@@ -2760,6 +3049,7 @@ POST /api/waitlist
 ## Error Handling
 
 ### Standard Error Response Format
+
 ```json
 {
   "error": "Error message describing what went wrong"
@@ -2768,22 +3058,23 @@ POST /api/waitlist
 
 ### HTTP Status Codes
 
-| Code | Meaning | Common Causes |
-|------|---------|---------------|
-| 200 | OK | Successful GET, PUT, PATCH |
-| 201 | Created | Successful POST |
-| 400 | Bad Request | Missing/invalid parameters, validation errors |
-| 401 | Unauthorized | Missing or invalid JWT token |
-| 403 | Forbidden | Insufficient permissions, admin secret mismatch |
-| 404 | Not Found | Resource doesn't exist |
-| 423 | Locked | Account locked (too many failed login attempts) |
-| 500 | Internal Server Error | Unexpected server error |
-| 502 | Bad Gateway | Payment gateway error |
-| 503 | Service Unavailable | Database connection error |
+| Code | Meaning               | Common Causes                                   |
+| ---- | --------------------- | ----------------------------------------------- |
+| 200  | OK                    | Successful GET, PUT, PATCH                      |
+| 201  | Created               | Successful POST                                 |
+| 400  | Bad Request           | Missing/invalid parameters, validation errors   |
+| 401  | Unauthorized          | Missing or invalid JWT token                    |
+| 403  | Forbidden             | Insufficient permissions, admin secret mismatch |
+| 404  | Not Found             | Resource doesn't exist                          |
+| 423  | Locked                | Account locked (too many failed login attempts) |
+| 500  | Internal Server Error | Unexpected server error                         |
+| 502  | Bad Gateway           | Payment gateway error                           |
+| 503  | Service Unavailable   | Database connection error                       |
 
 ### Common Error Examples
 
 #### Validation Error
+
 ```json
 {
   "error": "Price must be a positive number"
@@ -2791,6 +3082,7 @@ POST /api/waitlist
 ```
 
 #### Authentication Error
+
 ```json
 {
   "error": "Authentication required. Please log in."
@@ -2798,6 +3090,7 @@ POST /api/waitlist
 ```
 
 #### Permission Error
+
 ```json
 {
   "error": "Insufficient permissions. Admin access required."
@@ -2805,6 +3098,7 @@ POST /api/waitlist
 ```
 
 #### Not Found Error
+
 ```json
 {
   "error": "Product not found"
@@ -2812,6 +3106,7 @@ POST /api/waitlist
 ```
 
 #### Inventory Error
+
 ```json
 {
   "error": "Insufficient stock. Only 5 items available."
@@ -2830,7 +3125,7 @@ PORT=5000
 NODE_ENV=production
 
 # Database
-MONGODB_URI=mongodb://localhost:27017/yourhaat
+MONGODB_URI=mongodb://localhost:27017/SmartBuy BD
 
 # JWT Secret
 JWT_SECRET=your_super_secret_key_here
@@ -2842,7 +3137,7 @@ ADMIN_SECRET=your_admin_secret_key
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
-CLOUDINARY_FOLDER=yourhaat/products
+CLOUDINARY_FOLDER=SmartBuy BD/products
 
 # Image Optimization
 IMG_MAX_WIDTH=1600
@@ -2883,8 +3178,8 @@ The API uses dynamic CORS with credential support:
 ```javascript
 cors({
   origin: (origin, callback) => callback(null, origin),
-  credentials: true
-})
+  credentials: true,
+});
 ```
 
 This allows **all origins** but validates credentials. For production, restrict to specific domains.
@@ -2912,23 +3207,25 @@ This allows **all origins** but validates credentials. For production, restrict 
 ## Date Formats
 
 All dates use **ISO 8601** format:
+
 ```
 2026-03-28T10:00:00.000Z
 ```
 
 ---
 
-
 ## Testing
 
 ### Test Admin Account
+
 ```
-Email: admin@yourhaat.com
+Email: admin@SmartBuy BD.com
 Password: admin123
 Secret: [ADMIN_SECRET from .env]
 ```
 
 ### Test Payment (SSLCommerz Sandbox)
+
 ```
 Card Number: 4532015112830366
 Expiry: 12/30
@@ -2940,7 +3237,8 @@ CVV: 123
 ## Support & Contact
 
 For API issues or questions:
-- **Email:** support@yourhaat.com
+
+- **Email:** support@SmartBuy BD.com
 - **GitHub Issues:** [Project Repository]
 - **Documentation:** This file
 
@@ -2948,4 +3246,4 @@ For API issues or questions:
 
 **Last Updated:** March 28, 2026
 **API Version:** 1.0.0
-**Maintained by:** yourHaat Team
+**Maintained by:** SmartBuy BD Team

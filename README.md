@@ -1,12 +1,13 @@
-# yourHaat E-Commerce Backend
+# SmartBuy BD E-Commerce Backend
 
-A comprehensive Node.js/Express backend for the yourHaat e-commerce platform with admin dashboard, payment integration, and full API support.
+A comprehensive Node.js/Express backend for the SmartBuy BD e-commerce platform with admin dashboard, payment integration, and full API support.
 
 ---
 
 ## 🚀 Features
 
 ### Core Features
+
 - ✅ **User Authentication** - Firebase OAuth (Google, Email/Password) with JWT
 - ✅ **Product Management** - Full CRUD with variants, reviews, Q&A
 - ✅ **Category Management** - Multi-level category tree (max 3 levels)
@@ -21,6 +22,7 @@ A comprehensive Node.js/Express backend for the yourHaat e-commerce platform wit
 - ✅ **Waitlist** - Out-of-stock product notifications
 
 ### Advanced Features
+
 - 🎨 **Image Optimization** - Auto WebP conversion, resizing with Sharp
 - 📊 **Analytics Dashboard** - Sales reports, revenue tracking, top products
 - 🔒 **Security** - httpOnly cookies, bcrypt passwords, account lockout
@@ -36,11 +38,11 @@ A comprehensive Node.js/Express backend for the yourHaat e-commerce platform wit
 
 ## 📚 Documentation
 
-| Document | Description |
-|----------|-------------|
-| **[API_DOCUMENTATION.md](./API_DOCUMENTATION.md)** | Complete API reference with all endpoints, request/response formats |
-| **[API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)** | Quick lookup guide for all API endpoints |
-| **[API_TESTING_GUIDE.md](./API_TESTING_GUIDE.md)** | Testing guide with Postman/cURL/JS examples |
+| Document                                               | Description                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
+| **[API_DOCUMENTATION.md](./API_DOCUMENTATION.md)**     | Complete API reference with all endpoints, request/response formats |
+| **[API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)** | Quick lookup guide for all API endpoints                            |
+| **[API_TESTING_GUIDE.md](./API_TESTING_GUIDE.md)**     | Testing guide with Postman/cURL/JS examples                         |
 
 ---
 
@@ -62,6 +64,7 @@ A comprehensive Node.js/Express backend for the yourHaat e-commerce platform wit
 ## 📦 Installation
 
 ### Prerequisites
+
 - Node.js v16 or higher
 - MongoDB (local or Atlas)
 - Cloudinary account
@@ -70,17 +73,20 @@ A comprehensive Node.js/Express backend for the yourHaat e-commerce platform wit
 ### Setup
 
 1. **Clone the repository**
+
 ```bash
 git clone <your-repo-url>
-cd yourhaatbackend
+cd SmartBuy BDbackend
 ```
 
 2. **Install dependencies**
+
 ```bash
 npm install
 ```
 
 3. **Create `.env` file**
+
 ```bash
 cp .env.example .env
 ```
@@ -88,6 +94,7 @@ cp .env.example .env
 4. **Configure environment variables** (see [Environment Variables](#environment-variables))
 
 5. **Start the server**
+
 ```bash
 # Development
 npm run dev
@@ -97,11 +104,13 @@ npm start
 ```
 
 6. **Verify installation**
+
 ```bash
 curl http://localhost:5000/api/auth/ping
 ```
 
 Expected response:
+
 ```json
 {
   "message": "pong",
@@ -121,7 +130,7 @@ PORT=5000
 NODE_ENV=development
 
 # Database
-MONGODB_URI=mongodb://localhost:27017/yourhaat
+MONGODB_URI=mongodb://localhost:27017/SmartBuy BD
 
 # JWT Secret
 JWT_SECRET=your_super_secret_jwt_key_here_min_32_chars
@@ -133,7 +142,7 @@ ADMIN_SECRET=your_admin_secret_key
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
-CLOUDINARY_FOLDER=yourhaat/products
+CLOUDINARY_FOLDER=SmartBuy BD/products
 
 # Image Optimization
 IMG_MAX_WIDTH=1600
@@ -192,7 +201,7 @@ node -e "console.log(require('crypto').randomBytes(16).toString('hex'))"
 ## 🗂️ Project Structure
 
 ```
-yourhaatbackend/
+SmartBuy BDbackend/
 ├── index.js                 # Main server file
 ├── routes/
 │   ├── auth.js             # Authentication routes
@@ -233,6 +242,7 @@ yourhaatbackend/
 ## 🔑 API Overview
 
 ### Base URL
+
 ```
 Development: http://localhost:5000
 Production: https://api.yourdomain.com
@@ -240,24 +250,26 @@ Production: https://api.yourdomain.com
 
 ### Main Endpoints
 
-| Category | Base Path | Description |
-|----------|-----------|-------------|
-| **Auth** | `/api/auth` | User/admin authentication |
-| **User** | `/api/user` | User profile & addresses |
-| **Products** | `/api/products` | Product catalog, reviews, Q&A |
-| **Blog** | `/api/blog` | Blog posts |
-| **Orders** | `/api/orders` | Order processing & payments |
-| **Admin** | `/api/admin` | Admin dashboard & management |
-| **Public** | `/api/*` | Public content (banners, featured, etc.) |
+| Category     | Base Path       | Description                              |
+| ------------ | --------------- | ---------------------------------------- |
+| **Auth**     | `/api/auth`     | User/admin authentication                |
+| **User**     | `/api/user`     | User profile & addresses                 |
+| **Products** | `/api/products` | Product catalog, reviews, Q&A            |
+| **Blog**     | `/api/blog`     | Blog posts                               |
+| **Orders**   | `/api/orders`   | Order processing & payments              |
+| **Admin**    | `/api/admin`    | Admin dashboard & management             |
+| **Public**   | `/api/*`        | Public content (banners, featured, etc.) |
 
 ### Quick Examples
 
 **List Products:**
+
 ```bash
 curl http://localhost:5000/api/products?page=1&limit=20
 ```
 
 **Create Order:**
+
 ```bash
 curl -X POST http://localhost:5000/api/orders \
   -H "Content-Type: application/json" \
@@ -270,11 +282,12 @@ curl -X POST http://localhost:5000/api/orders \
 ```
 
 **Admin Login:**
+
 ```bash
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@yourhaat.com",
+    "email": "admin@SmartBuy BD.com",
     "password": "admin123",
     "secret": "your_admin_secret"
   }'
@@ -287,6 +300,7 @@ curl -X POST http://localhost:5000/api/admin/login \
 ## 👥 User Roles
 
 ### User (Customer)
+
 - Browse and search products
 - Submit reviews and ask questions
 - Create and manage orders
@@ -294,6 +308,7 @@ curl -X POST http://localhost:5000/api/admin/login \
 - Subscribe/unsubscribe from newsletter
 
 ### Moderator
+
 - All user permissions
 - Edit products, categories, content
 - Answer questions officially
@@ -303,6 +318,7 @@ curl -X POST http://localhost:5000/api/admin/login \
 - ❌ Cannot access /authorized routes
 
 ### Admin
+
 - Full access to all features
 - Create/delete any resource
 - Manage users, orders, and admins
@@ -362,10 +378,11 @@ curl -X POST http://localhost:5000/api/products/upload \
 ```
 
 **Response:**
+
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "yourhaat/products/abc123"
+  "public_id": "SmartBuy BD/products/abc123"
 }
 ```
 
@@ -389,23 +406,27 @@ The admin dashboard (`GET /api/admin/dashboard-overview`) provides:
 ## 🔒 Security Features
 
 ### Authentication
+
 - JWT tokens stored in httpOnly cookies
 - 7-day token expiration
 - Secure: true, sameSite: 'none' for production
 
 ### Password Security
+
 - Bcrypt hashing (12 rounds)
 - Password reset tokens (1-hour expiry)
 - Failed login tracking (max 5 attempts)
 - Account lockout (2 hours)
 
 ### API Security
+
 - Admin secret required for admin creation
 - Role-based access control
 - Input validation on all endpoints
 - SQL injection prevention (Mongoose)
 
 ### Recommended Additions
+
 - Rate limiting (express-rate-limit)
 - Helmet.js for security headers
 - CORS restricted to specific domains
@@ -416,12 +437,14 @@ The admin dashboard (`GET /api/admin/dashboard-overview`) provides:
 ## 📧 Email Notifications
 
 Emails are sent for:
+
 - Order confirmation (customer & admin)
 - Payment confirmation
 - Password reset
 - Admin forgot password
 
 **Configure SMTP in `.env`:**
+
 ```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
@@ -430,6 +453,7 @@ SMTP_PASS=your_app_password
 ```
 
 **For Gmail:**
+
 1. Enable 2FA
 2. Generate App Password
 3. Use app password in SMTP_PASS
@@ -443,6 +467,7 @@ SMTP_PASS=your_app_password
 See [API_TESTING_GUIDE.md](./API_TESTING_GUIDE.md) for detailed testing instructions.
 
 **Quick Test:**
+
 ```bash
 # Test server health
 curl http://localhost:5000/api/auth/ping
@@ -486,7 +511,7 @@ Import the API collection structure from [API_TESTING_GUIDE.md](./API_TESTING_GU
 heroku login
 
 # Create app
-heroku create yourhaat-api
+heroku create SmartBuy BD-api
 
 # Set environment variables
 heroku config:set NODE_ENV=production
@@ -513,11 +538,11 @@ sudo npm install -g pm2
 
 # Clone and setup
 git clone <your-repo>
-cd yourhaatbackend
+cd SmartBuy BDbackend
 npm install
 
 # Start with PM2
-pm2 start index.js --name yourhaat-api
+pm2 start index.js --name SmartBuy BD-api
 pm2 startup
 pm2 save
 
@@ -526,6 +551,7 @@ pm2 save
 ```
 
 **Nginx Config:**
+
 ```nginx
 server {
     listen 80;
@@ -547,10 +573,13 @@ server {
 ## 🐛 Troubleshooting
 
 ### MongoDB Connection Error
+
 ```
 Error: connect ECONNREFUSED 127.0.0.1:27017
 ```
+
 **Solution:** Ensure MongoDB is running
+
 ```bash
 # Start MongoDB (local)
 mongod
@@ -559,33 +588,43 @@ mongod
 ```
 
 ### Cloudinary Upload Fails
+
 ```
 Error: Must supply api_key
 ```
+
 **Solution:** Verify Cloudinary credentials in `.env`
 
 ### Payment Gateway Error
+
 ```
 Error: 502 Bad Gateway
 ```
+
 **Solution:**
+
 - Check SSLCommerz credentials
 - Verify IS_LIVE setting matches account type (sandbox/live)
 - Ensure callback URLs are publicly accessible
 
 ### JWT Cookie Not Set
+
 ```
 401 Unauthorized
 ```
+
 **Solution:**
+
 - Check CORS configuration
 - Ensure `credentials: 'include'` in frontend fetch
 - Verify cookie settings (secure, sameSite)
 
 ### Image Upload Too Large
+
 ```
 Error: File too large
 ```
+
 **Solution:** Images must be < 10MB. Resize before uploading.
 
 ---
@@ -593,20 +632,23 @@ Error: File too large
 ## 📈 Performance Optimization
 
 ### Database Indexing
+
 ```javascript
 // Already implemented in models
-Product: ['slug', 'categoryId', 'status', 'featured']
-Order: ['userId', 'userEmail', 'status', 'paymentStatus']
-User: ['email']
+Product: ["slug", "categoryId", "status", "featured"];
+Order: ["userId", "userEmail", "status", "paymentStatus"];
+User: ["email"];
 ```
 
 ### Caching Recommendations
+
 - Redis for session storage
 - Cache product listings (5 min TTL)
 - Cache category tree (1 hour TTL)
 - Cache dashboard stats (5 min TTL)
 
 ### Image Optimization
+
 - Already implemented: WebP conversion, resizing
 - Consider: Lazy loading, responsive images, CDN
 
@@ -620,7 +662,7 @@ This project is proprietary and confidential.
 
 ## 📞 Support
 
-- **Email:** support@yourhaat.com
+- **Email:** support@SmartBuy BD.com
 - **Documentation:** See `/docs` folder
 - **Issues:** Create GitHub issue
 
@@ -629,6 +671,7 @@ This project is proprietary and confidential.
 ## 🎯 Roadmap
 
 ### Upcoming Features
+
 - [ ] Rate limiting implementation
 - [ ] Redis caching layer
 - [ ] WebSocket for real-time notifications
@@ -653,7 +696,7 @@ This project is proprietary and confidential.
 
 ---
 
-**Built with ❤️ by the yourHaat Team**
+**Built with ❤️ by the SmartBuy BD Team**
 
 **Version:** 1.0.0
 **Last Updated:** March 28, 2026
@@ -668,60 +711,55 @@ This project is proprietary and confidential.
 - 🌐 [Frontend Repository](#)
 - 📊 [Admin Dashboard](#)
 
-
-
 // Connect to MongoDB (with fallback if SRV DNS lookup fails)
-const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/yourhaat';
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/SmartBuy BD';
 const MONGODB_URI_DIRECT = process.env.MONGODB_URI_DIRECT;
 
 async function connectMongo() {
 
-  try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('MongoDB connected');
+try {
+await mongoose.connect(MONGODB_URI);
+console.log('MongoDB connected');
 
-
-  } catch (err) {
-    const isSrvLookupFailure = err?.syscall === 'querySrv' || err?.code === 'ECONNREFUSED';
-    if (isSrvLookupFailure && MONGODB_URI_DIRECT) {
-      console.warn('MongoDB SRV lookup failed; trying MONGODB_URI_DIRECT fallback...');
-      await mongoose.connect(MONGODB_URI_DIRECT);
-      console.log('MongoDB connected (direct URI fallback)');
-      return;
-    }
-    console.error('MongoDB connection error', err);
-  }
+} catch (err) {
+const isSrvLookupFailure = err?.syscall === 'querySrv' || err?.code === 'ECONNREFUSED';
+if (isSrvLookupFailure && MONGODB_URI_DIRECT) {
+console.warn('MongoDB SRV lookup failed; trying MONGODB_URI_DIRECT fallback...');
+await mongoose.connect(MONGODB_URI_DIRECT);
+console.log('MongoDB connected (direct URI fallback)');
+return;
+}
+console.error('MongoDB connection error', err);
+}
 }
 
 connectMongo();
 
 // Helpful startup info
 console.log(
-  'Using MongoDB URI:',
-  process.env.MONGODB_URI ? 'MONGODB_URI' : (process.env.MONGO_URI ? 'MONGO_URI' : 'default localhost'),
-  process.env.MONGODB_URI_DIRECT ? '(direct fallback configured)' : '(no direct fallback)'
+'Using MongoDB URI:',
+process.env.MONGODB_URI ? 'MONGODB_URI' : (process.env.MONGO_URI ? 'MONGO_URI' : 'default localhost'),
+process.env.MONGODB_URI_DIRECT ? '(direct fallback configured)' : '(no direct fallback)'
 );
 
 app.get("/", (req, res) => {
-  res.send("Welcome to Budget Friendly Backend!");
+res.send("Welcome to Budget Friendly Backend!");
 });
-
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+console.log(`Server is running on port ${PORT}`);
 });
 
-
-
-
 ADMIN_EMAIL=naimaa2it@gmail.com
-ADMIN_SECRET=yourhaatadminsecrect262626
+ADMIN_SECRET=SmartBuy BDadminsecrect262626
 CLOUDINARY_API_KEY=446279722954425
 CLOUDINARY_API_SECRET=6f286BxKJk2FEgR1kHYKoqlyTyY
 CLOUDINARY_CLOUD_NAME=dqyaobg8j
-# FRONTEND_ORIGIN=https://yourhaatfrontend-ei5y.vercel.app
+
+# FRONTEND_ORIGIN=https://SmartBuy BDfrontend-ei5y.vercel.app
+
 FRONTEND_ORIGIN=http://localhost:3000
-MONGODB_URI="mongodb://yourhaat:yourhaat@ac-uarjbv7-shard-00-00.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-01.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-02.txpmesm.mongodb.net:27017/yourhaat?ssl=true&replicaSet=atlas-ji89w4-shard-0&authSource=admin&retryWrites=true&w=majority"
+MONGODB_URI="mongodb://SmartBuy BD:SmartBuy BD@ac-uarjbv7-shard-00-00.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-01.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-02.txpmesm.mongodb.net:27017/SmartBuy BD?ssl=true&replicaSet=atlas-ji89w4-shard-0&authSource=admin&retryWrites=true&w=majority"
 PORT=5000
 SMTP_HOST=smtp.gmail.com
 SMTP_PASS="obsi iufk hodz hses"
@@ -732,8 +770,6 @@ STORE_ID=a2it69acfd899c29d
 STORE_NAME=budgetfriendly
 STORE_PASSWORD=a2it69acfd899c29d@ssl
 STORE_PHONE=01884242851
-
-
 
 // dotenv/config MUST be the very first import.
 // With ESM all static imports are hoisted before any code runs, so
@@ -758,11 +794,11 @@ import couponRoutes from './routes/coupons.js';
 const app = express();
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 const WHITELIST = new Set([
-  FRONTEND_ORIGIN,
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173'
+FRONTEND_ORIGIN,
+'http://localhost:3000',
+'http://127.0.0.1:3000',
+'http://localhost:5173',
+'http://127.0.0.1:5173'
 ]);
 
 const store_id = process.env.STORE_ID;
@@ -774,21 +810,21 @@ const is_live = false //true for live, false for sandbox
 // Credentials are still guarded — cookies are only sent from allowed origins
 // and verified server-side via JWT/session checks in each route.
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    // Always reflect the caller's origin so cookies work on every domain
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+const origin = req.headers.origin;
+if (origin) {
+// Always reflect the caller's origin so cookies work on every domain
+res.setHeader('Access-Control-Allow-Origin', origin);
+}
+res.setHeader('Access-Control-Allow-Credentials', 'true');
+res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  if (req.method === 'OPTIONS') {
-    console.log(`Preflight (OPTIONS) from ${origin} for ${req.url}`);
-    return res.sendStatus(204);
-  }
+if (req.method === 'OPTIONS') {
+console.log(`Preflight (OPTIONS) from ${origin} for ${req.url}`);
+return res.sendStatus(204);
+}
 
-  next();
+next();
 });
 
 app.use(express.json());
@@ -796,43 +832,43 @@ app.use(cookieParser());
 
 // request logger to help debug incoming calls
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.url} Origin:${req.headers.origin} Cookie:${req.headers.cookie || ''}`);
-  next();
+console.log(`${new Date().toISOString()} ${req.method} ${req.url} Origin:${req.headers.origin} Cookie:${req.headers.cookie || ''}`);
+next();
 });
 
 const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB (with fallback if SRV DNS lookup fails)
-const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/yourhaat';
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/SmartBuy BD';
 const MONGODB_URI_DIRECT = process.env.MONGODB_URI_DIRECT;
 
 async function connectMongo() {
-  try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('MongoDB connected');
-  } catch (err) {
-    const isSrvLookupFailure = err?.syscall === 'querySrv' || err?.code === 'ECONNREFUSED';
-    if (isSrvLookupFailure && MONGODB_URI_DIRECT) {
-      console.warn('MongoDB SRV lookup failed; trying MONGODB_URI_DIRECT fallback...');
-      await mongoose.connect(MONGODB_URI_DIRECT);
-      console.log('MongoDB connected (direct URI fallback)');
-      return;
-    }
-    console.error('MongoDB connection error', err);
-  }
+try {
+await mongoose.connect(MONGODB_URI);
+console.log('MongoDB connected');
+} catch (err) {
+const isSrvLookupFailure = err?.syscall === 'querySrv' || err?.code === 'ECONNREFUSED';
+if (isSrvLookupFailure && MONGODB_URI_DIRECT) {
+console.warn('MongoDB SRV lookup failed; trying MONGODB_URI_DIRECT fallback...');
+await mongoose.connect(MONGODB_URI_DIRECT);
+console.log('MongoDB connected (direct URI fallback)');
+return;
+}
+console.error('MongoDB connection error', err);
+}
 }
 
 connectMongo();
 
 // Helpful startup info
 console.log(
-  'Using MongoDB URI:',
-  process.env.MONGODB_URI ? 'MONGODB_URI' : (process.env.MONGO_URI ? 'MONGO_URI' : 'default localhost'),
-  process.env.MONGODB_URI_DIRECT ? '(direct fallback configured)' : '(no direct fallback)'
+'Using MongoDB URI:',
+process.env.MONGODB_URI ? 'MONGODB_URI' : (process.env.MONGO_URI ? 'MONGO_URI' : 'default localhost'),
+process.env.MONGODB_URI_DIRECT ? '(direct fallback configured)' : '(no direct fallback)'
 );
 
 app.get("/", (req, res) => {
-  res.send("Welcome to Budget Friendly Backend!");
+res.send("Welcome to Budget Friendly Backend!");
 });
 
 app.use('/api/auth', authRoutes);// here have all of the auth related routes like login, register, logout, refresh token etc.
@@ -851,22 +887,22 @@ app.use('/api/blog', blogRoutes);//here have all of the blog related routes like
 
 // Public: list active occasion sections (used by homepage)
 app.get('/api/occasions', async (req, res) => {
-  try {
-    const { default: OccasionSection } = await import('./models/OccasionSection.js');
-    const items = await OccasionSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    console.error('GET /api/occasions error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+try {
+const { default: OccasionSection } = await import('./models/OccasionSection.js');
+const items = await OccasionSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+res.json({ items });
+} catch (err) {
+console.error('GET /api/occasions error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 // Public: list active featured sections with populated products (used by homepage)
 app.get('/api/featured', async (req, res) => {
-  try {
-    const { default: FeaturedSection } = await import('./models/FeaturedSection.js');
-    const { default: Product } = await import('./models/Product.js');
-    const sections = await FeaturedSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+try {
+const { default: FeaturedSection } = await import('./models/FeaturedSection.js');
+const { default: Product } = await import('./models/Product.js');
+const sections = await FeaturedSection.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
 
     const result = await Promise.all(sections.map(async (sec) => {
       let products = [];
@@ -886,98 +922,99 @@ app.get('/api/featured', async (req, res) => {
     }));
 
     res.json({ items: result });
-  } catch (err) {
-    console.error('GET /api/featured error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+
+} catch (err) {
+console.error('GET /api/featured error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 // Public: list active promo strip items (used below homepage banner)
 app.get('/api/promo-strip', async (req, res) => {
-  try {
-    const { default: PromoStripItem } = await import('./models/PromoStripItem.js');
-    const items = await PromoStripItem.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    console.error('GET /api/promo-strip error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+try {
+const { default: PromoStripItem } = await import('./models/PromoStripItem.js');
+const items = await PromoStripItem.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+res.json({ items });
+} catch (err) {
+console.error('GET /api/promo-strip error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 // Public: list active promo panels (used by Popular Picks left panel)
 app.get('/api/promo-panels', async (req, res) => {
-  try {
-    const { default: PromoPanel } = await import('./models/PromoPanel.js');
-    const items = await PromoPanel.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    console.error('GET /api/promo-panels error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+try {
+const { default: PromoPanel } = await import('./models/PromoPanel.js');
+const items = await PromoPanel.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+res.json({ items });
+} catch (err) {
+console.error('GET /api/promo-panels error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 // Public: list active banner slides (used by homepage)
 app.get('/api/banners', async (req, res) => {
-  try {
-    const { default: Banner } = await import('./models/Banner.js');
-    const items = await Banner.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    console.error('GET /api/banners error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+try {
+const { default: Banner } = await import('./models/Banner.js');
+const items = await Banner.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+res.json({ items });
+} catch (err) {
+console.error('GET /api/banners error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 // Public: get active popup (used by frontend on page load)
 app.get('/api/popup', async (req, res) => {
-  try {
-    const { default: Popup } = await import('./models/Popup.js');
-    const popup = await Popup.findOne({ isActive: true });
-    res.json({ popup: popup || null });
-  } catch (err) {
-    console.error('GET /api/popup error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+try {
+const { default: Popup } = await import('./models/Popup.js');
+const popup = await Popup.findOne({ isActive: true });
+res.json({ popup: popup || null });
+} catch (err) {
+console.error('GET /api/popup error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 // Public: list active discount offers (used by OffersToSayYes on homepage)
 app.get('/api/discounts', async (req, res) => {
-  try {
-    const { default: Discount } = await import('./models/Discount.js');
-    const items = await Discount.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    console.error('GET /api/discounts error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+try {
+const { default: Discount } = await import('./models/Discount.js');
+const items = await Discount.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+res.json({ items });
+} catch (err) {
+console.error('GET /api/discounts error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 // Public: join product waitlist
 app.post('/api/waitlist', async (req, res) => {
-  try {
-    const { productId, productTitle, email, phone } = req.body;
-    if (!productId) return res.status(400).json({ error: 'productId is required' });
-    if (!email && !phone) return res.status(400).json({ error: 'email or phone is required' });
-    const { default: Waitlist } = await import('./models/Waitlist.js');
-    // Deduplicate: prevent same contact joining waitlist for the same product twice
-    const dupFilter = { productId };
-    if (email) dupFilter.email = email.trim().toLowerCase();
-    else if (phone) dupFilter.phone = phone.trim();
-    const existing = await Waitlist.findOne(dupFilter);
-    if (existing) return res.status(200).json({ ok: true, entry: existing, duplicate: true });
-    const entry = await Waitlist.create({
-      productId,
-      productTitle,
-      email: email ? email.trim().toLowerCase() : undefined,
-      phone: phone ? phone.trim() : undefined
-    });
-    res.status(201).json({ ok: true, entry });
-  } catch (err) {
-    console.error('POST /api/waitlist error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
+try {
+const { productId, productTitle, email, phone } = req.body;
+if (!productId) return res.status(400).json({ error: 'productId is required' });
+if (!email && !phone) return res.status(400).json({ error: 'email or phone is required' });
+const { default: Waitlist } = await import('./models/Waitlist.js');
+// Deduplicate: prevent same contact joining waitlist for the same product twice
+const dupFilter = { productId };
+if (email) dupFilter.email = email.trim().toLowerCase();
+else if (phone) dupFilter.phone = phone.trim();
+const existing = await Waitlist.findOne(dupFilter);
+if (existing) return res.status(200).json({ ok: true, entry: existing, duplicate: true });
+const entry = await Waitlist.create({
+productId,
+productTitle,
+email: email ? email.trim().toLowerCase() : undefined,
+phone: phone ? phone.trim() : undefined
+});
+res.status(201).json({ ok: true, entry });
+} catch (err) {
+console.error('POST /api/waitlist error:', err);
+res.status(500).json({ error: 'Server error' });
+}
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+console.log(`Server is running on port ${PORT}`);
 });

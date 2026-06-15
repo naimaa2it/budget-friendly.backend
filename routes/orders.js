@@ -43,7 +43,7 @@ const FRONTEND_URL = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
 // resolved after dotenv has populated process.env, regardless of ESM
 // module evaluation order.
 const getSSLCreds = () => [process.env.STORE_ID, process.env.STORE_PASSWORD];
-const is_live = process.env.IS_LIVE === 'true';
+const is_live = process.env.IS_LIVE === "true";
 
 // Dhaka city name variants (case-insensitive match)
 const DHAKA_NAMES = ["dhaka", "ঢাকা"];
@@ -567,55 +567,99 @@ router.post("/", orderLimiter, async (req, res) => {
 
     // ── Fake Order Protection ─────────────────────────────────────────────────
     try {
-      const Setting = (await import('../models/Setting.js')).default;
+      const Setting = (await import("../models/Setting.js")).default;
       const fop = (await Setting.findOne().lean())?.fakeOrderProtection;
       if (fop?.installed) {
         const clientIp =
-          (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
-          req.socket?.remoteAddress || '';
-        const phone = billingDetails.phone?.replace(/\s+/g, '') || '';
+          (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+          req.socket?.remoteAddress ||
+          "";
+        const phone = billingDetails.phone?.replace(/\s+/g, "") || "";
         const now = new Date();
 
         // Sync blocklist checks first (no DB round-trips)
         if (fop.phoneOrder?.enabled && phone) {
-          const phoneBlocklist = (fop.phoneOrder.blocklist || '').split(',').map(p => p.trim()).filter(Boolean);
+          const phoneBlocklist = (fop.phoneOrder.blocklist || "")
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean);
           if (phoneBlocklist.includes(phone)) {
-            return res.status(400).json({ error: 'এই নম্বর থেকে অর্ডার করা সম্ভব নয়।' });
+            return res
+              .status(400)
+              .json({ error: "এই নম্বর থেকে অর্ডার করা সম্ভব নয়।" });
           }
         }
         if (fop.ipOrder?.enabled && clientIp) {
-          const ipBlocklist = (fop.ipOrder.blocklist || '').split(',').map(p => p.trim()).filter(Boolean);
+          const ipBlocklist = (fop.ipOrder.blocklist || "")
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean);
           if (ipBlocklist.includes(clientIp)) {
-            return res.status(400).json({ error: 'এই IP থেকে অর্ডার করা সম্ভব নয়।' });
+            return res
+              .status(400)
+              .json({ error: "এই IP থেকে অর্ডার করা সম্ভব নয়।" });
           }
         }
 
         // Run all three rate-limit DB checks in parallel
-        const mkSince = (dur, unit) => new Date(now - (unit === 'hours' ? dur * 3600000 : dur * 60000));
-        const mkLabel = (dur, unit) => unit === 'hours' ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
+        const mkSince = (dur, unit) =>
+          new Date(now - (unit === "hours" ? dur * 3600000 : dur * 60000));
+        const mkLabel = (dur, unit) =>
+          unit === "hours" ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
 
-        const phonePromise = (fop.phoneOrder?.enabled && phone) ? (() => {
-          const dur = Number(fop.phoneOrder.limitDuration) || 5;
-          const unit = fop.phoneOrder.limitDurationUnit || 'minutes';
-          return Order.countDocuments({ 'billingDetails.phone': phone, createdAt: { $gte: mkSince(dur, unit) } })
-            .then(n => n > 0 ? `এই নম্বর থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।` : null);
-        })() : Promise.resolve(null);
+        const phonePromise =
+          fop.phoneOrder?.enabled && phone
+            ? (() => {
+                const dur = Number(fop.phoneOrder.limitDuration) || 5;
+                const unit = fop.phoneOrder.limitDurationUnit || "minutes";
+                return Order.countDocuments({
+                  "billingDetails.phone": phone,
+                  createdAt: { $gte: mkSince(dur, unit) },
+                }).then((n) =>
+                  n > 0
+                    ? `এই নম্বর থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।`
+                    : null,
+                );
+              })()
+            : Promise.resolve(null);
 
-        const ipPromise = (fop.ipOrder?.enabled && clientIp) ? (() => {
-          const dur = Number(fop.ipOrder.limitDuration) || 5;
-          const unit = fop.ipOrder.limitDurationUnit || 'minutes';
-          return Order.countDocuments({ clientIp, createdAt: { $gte: mkSince(dur, unit) } })
-            .then(n => n > 0 ? `এই লোকেশন থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।` : null);
-        })() : Promise.resolve(null);
+        const ipPromise =
+          fop.ipOrder?.enabled && clientIp
+            ? (() => {
+                const dur = Number(fop.ipOrder.limitDuration) || 5;
+                const unit = fop.ipOrder.limitDurationUnit || "minutes";
+                return Order.countDocuments({
+                  clientIp,
+                  createdAt: { $gte: mkSince(dur, unit) },
+                }).then((n) =>
+                  n > 0
+                    ? `এই লোকেশন থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।`
+                    : null,
+                );
+              })()
+            : Promise.resolve(null);
 
-        const devicePromise = (fop.deviceOrder?.enabled && deviceId) ? (() => {
-          const dur = Number(fop.deviceOrder.limitDuration) || 5;
-          const unit = fop.deviceOrder.limitDurationUnit || 'minutes';
-          return Order.countDocuments({ deviceId, createdAt: { $gte: mkSince(dur, unit) } })
-            .then(n => n > 0 ? `এই ডিভাইস থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।` : null);
-        })() : Promise.resolve(null);
+        const devicePromise =
+          fop.deviceOrder?.enabled && deviceId
+            ? (() => {
+                const dur = Number(fop.deviceOrder.limitDuration) || 5;
+                const unit = fop.deviceOrder.limitDurationUnit || "minutes";
+                return Order.countDocuments({
+                  deviceId,
+                  createdAt: { $gte: mkSince(dur, unit) },
+                }).then((n) =>
+                  n > 0
+                    ? `এই ডিভাইস থেকে ইতিমধ্যে একটি অর্ডার করা হয়েছে। অনুগ্রহ করে ${mkLabel(dur, unit)} পরে আবার চেষ্টা করুন।`
+                    : null,
+                );
+              })()
+            : Promise.resolve(null);
 
-        const [phoneErr, ipErr, deviceErr] = await Promise.all([phonePromise, ipPromise, devicePromise]);
+        const [phoneErr, ipErr, deviceErr] = await Promise.all([
+          phonePromise,
+          ipPromise,
+          devicePromise,
+        ]);
         if (phoneErr) return res.status(400).json({ error: phoneErr });
         if (ipErr) return res.status(400).json({ error: ipErr });
         if (deviceErr) return res.status(400).json({ error: deviceErr });
@@ -658,7 +702,9 @@ router.post("/", orderLimiter, async (req, res) => {
     } = quote;
 
     if (pointsRedeemed > 0 && !resolvedUserId) {
-      return res.status(400).json({ error: "Login required to use reward points." });
+      return res
+        .status(400)
+        .json({ error: "Login required to use reward points." });
     }
 
     const order = new Order({
@@ -681,14 +727,22 @@ router.post("/", orderLimiter, async (req, res) => {
       rewardPointsRedeemed: pointsRedeemed || 0,
       rewardPointsDiscount: pointsDiscount || 0,
       status: "pending",
-      paymentStatus: ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(paymentMethod) ? "cod" : "unpaid",
-      clientIp: (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '',
-      deviceId: deviceId || '',
+      paymentStatus: ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(
+        paymentMethod,
+      )
+        ? "cod"
+        : "unpaid",
+      clientIp:
+        (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+        req.socket?.remoteAddress ||
+        "",
+      deviceId: deviceId || "",
       // COD / manual mobile-banking orders auto-confirm 1 hour after placement
-      confirmAfter:
-        ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(paymentMethod)
-          ? new Date(Date.now() + 1 * 60 * 60 * 1000)
-          : null,
+      confirmAfter: ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(
+        paymentMethod,
+      )
+        ? new Date(Date.now() + 1 * 60 * 60 * 1000)
+        : null,
     });
 
     await order.save();
@@ -696,8 +750,8 @@ router.post("/", orderLimiter, async (req, res) => {
     // Mark any open checkout sessions for this user as completed
     if (resolvedUserId) {
       CheckoutSession.updateMany(
-        { userId: resolvedUserId, status: 'incomplete' },
-        { status: 'completed', completedAt: new Date() },
+        { userId: resolvedUserId, status: "incomplete" },
+        { status: "completed", completedAt: new Date() },
       ).catch(() => {});
     }
 
@@ -735,14 +789,14 @@ router.post("/", orderLimiter, async (req, res) => {
 
     // ── Manual Mobile Banking (bKash, Nagad, Rocket) ──────────────────────────
     if (["bkash", "nagad", "rocket"].includes(paymentMethod)) {
-      const Setting = (await import('../models/Setting.js')).default;
+      const Setting = (await import("../models/Setting.js")).default;
       const settings = await Setting.findOne().lean();
       const cfg = settings?.mobileBanking?.[paymentMethod] || {};
       return res.json({
         ok: true,
         orderId: order._id.toString(),
         method: paymentMethod,
-        merchantNumber: cfg.merchantNumber || '',
+        merchantNumber: cfg.merchantNumber || "",
         amount: total,
       });
     }
@@ -774,12 +828,13 @@ router.post("/", orderLimiter, async (req, res) => {
         items
           .map((i) => i.title)
           .join(", ")
-          .slice(0, 255) || "YourHaat Order",
+          .slice(0, 255) || "SmartBuy BD Order",
       product_category: "Mixed",
       product_profile: "general",
       num_of_item: items.reduce((s, i) => s + i.quantity, 0),
       cus_name: billingDetails.name,
-      cus_email: billingDetails.email || userEmail || "customer@yourhaat.com",
+      cus_email:
+        billingDetails.email || userEmail || "customer@SmartBuy BD.com",
       cus_add1: billingDetails.address || "N/A",
       cus_city: billingDetails.city || "Dhaka",
       cus_postcode: "1000",
@@ -849,7 +904,7 @@ router.post("/payment/success", async (req, res) => {
 
         const paidAmt = parseFloat(validation.amount || amount || 0);
         if (Math.abs(paidAmt - order.total) > 1) {
-            await Order.findByIdAndUpdate(tran_id, {
+          await Order.findByIdAndUpdate(tran_id, {
             status: "failed",
             paymentStatus: "failed",
             updatedAt: new Date(),
@@ -1026,12 +1081,12 @@ router.post("/:id/pay", async (req, res) => {
         (order.items || [])
           .map((i) => i.title)
           .join(", ")
-          .slice(0, 255) || "YourHaat Order",
+          .slice(0, 255) || "SmartBuy BD Order",
       product_category: "Mixed",
       product_profile: "general",
       num_of_item: (order.items || []).reduce((s, i) => s + i.quantity, 0),
       cus_name: billing.name || "Customer",
-      cus_email: billing.email || order.userEmail || "customer@yourhaat.com",
+      cus_email: billing.email || order.userEmail || "customer@SmartBuy BD.com",
       cus_add1: billing.address || "N/A",
       cus_city: billing.city || "Dhaka",
       cus_postcode: "1000",
@@ -1118,8 +1173,7 @@ router.get("/my", async (req, res) => {
             );
             if (idx >= 0) orders[idx] = result.order;
           }
-        } catch (err) {
-        }
+        } catch (err) {}
       }),
     );
 
@@ -1137,7 +1191,9 @@ router.get("/my", async (req, res) => {
 // ── POST /api/orders/webhooks/steadfast — Steadfast tracking / delivery callbacks
 router.post("/webhooks/steadfast", async (req, res) => {
   try {
-    const bearer = process.env.STEADFAST_WEBHOOK_BEARER || process.env.STEADFAST_BEARER_TOKEN;
+    const bearer =
+      process.env.STEADFAST_WEBHOOK_BEARER ||
+      process.env.STEADFAST_BEARER_TOKEN;
     if (bearer) {
       const auth = req.headers.authorization || "";
       if (auth !== `Bearer ${bearer}`) {
@@ -1151,7 +1207,8 @@ router.post("/webhooks/steadfast", async (req, res) => {
       payload.trackingCode ||
       payload.tracking_id ||
       null;
-    const consignmentId = payload.consignment_id || payload.consignmentId || null;
+    const consignmentId =
+      payload.consignment_id || payload.consignmentId || null;
     const message =
       payload.tracking_message ||
       payload.status ||
@@ -1160,16 +1217,22 @@ router.post("/webhooks/steadfast", async (req, res) => {
     const atRaw = payload.updated_at || payload.updatedAt || new Date();
 
     const filters = [];
-    if (trackingCode) filters.push({ "shipment.trackingId": String(trackingCode) });
-    if (consignmentId) filters.push({ "shipment.trackingId": String(consignmentId) });
+    if (trackingCode)
+      filters.push({ "shipment.trackingId": String(trackingCode) });
+    if (consignmentId)
+      filters.push({ "shipment.trackingId": String(consignmentId) });
 
     if (!filters.length) {
-      return res.status(400).json({ error: "tracking_code or consignment_id required" });
+      return res
+        .status(400)
+        .json({ error: "tracking_code or consignment_id required" });
     }
 
     const order = await Order.findOne({ $or: filters });
     if (!order) {
-      return res.status(404).json({ error: "Order not found for tracking reference." });
+      return res
+        .status(404)
+        .json({ error: "Order not found for tracking reference." });
     }
 
     if (!order.shipment) order.shipment = { trackingEvents: [] };
@@ -1221,7 +1284,8 @@ router.post("/webhooks/pathao", async (req, res) => {
   try {
     const secret = process.env.PATHAO_WEBHOOK_SECRET;
     if (secret) {
-      const incoming = req.headers["x-pathao-signature"] || req.headers["x-webhook-secret"];
+      const incoming =
+        req.headers["x-pathao-signature"] || req.headers["x-webhook-secret"];
       if (incoming !== secret) {
         return res.status(401).json({ error: "Invalid webhook signature." });
       }
@@ -1243,9 +1307,13 @@ router.post("/webhooks/pathao", async (req, res) => {
       return res.status(400).json({ error: "consignment_id is required." });
     }
 
-    const order = await Order.findOne({ "shipment.trackingId": String(consignmentId) });
+    const order = await Order.findOne({
+      "shipment.trackingId": String(consignmentId),
+    });
     if (!order) {
-      return res.status(404).json({ error: "Order not found for consignment." });
+      return res
+        .status(404)
+        .json({ error: "Order not found for consignment." });
     }
 
     await syncOrderShipment(order, { force: true });
@@ -1276,7 +1344,9 @@ async function lazyConfirmCodOrder(order) {
 // ── GET /api/orders/track — public lookup by order ID, tracking ID, or tracking URL
 router.get("/track", async (req, res) => {
   try {
-    const orderId = String(req.query.orderId || "").trim().replace(/^#/, "");
+    const orderId = String(req.query.orderId || "")
+      .trim()
+      .replace(/^#/, "");
     const trackingId = String(req.query.trackingId || "").trim();
     const trackingUrl = String(req.query.trackingUrl || "").trim();
 
@@ -1309,8 +1379,7 @@ router.get("/track", async (req, res) => {
       if (syncResult.ok && syncResult.order) {
         order = syncResult.order;
       }
-    } catch (syncErr) {
-    }
+    } catch (syncErr) {}
 
     const courierLabels = await getCourierLabelMap();
     const publicOrder = toPublicTrackOrder(order);
@@ -1343,7 +1412,7 @@ router.get("/:id", async (req, res) => {
     }
 
     const identity = await getRequesterIdentity(req);
-    const isAdmin = identity?.type === 'admin';
+    const isAdmin = identity?.type === "admin";
     const isOwner = ownsOrder(order, identity);
 
     if (isAdmin || isOwner) {
@@ -1363,7 +1432,11 @@ router.get("/:id", async (req, res) => {
       shipping: order.shipping,
       discount: order.discount,
       couponCode: order.couponCode,
-      items: (order.items || []).map(i => ({ title: i.title, quantity: i.quantity, price: i.price })),
+      items: (order.items || []).map((i) => ({
+        title: i.title,
+        quantity: i.quantity,
+        price: i.price,
+      })),
       createdAt: order.createdAt,
     };
     res.json({ order: publicOrder });
@@ -1391,11 +1464,9 @@ router.patch("/:id/cancel", async (req, res) => {
         .json({ error: "Only COD orders can be cancelled here." });
     }
     if (order.status !== "pending") {
-      return res
-        .status(400)
-        .json({
-          error: `Order is already ${order.status} and cannot be cancelled.`,
-        });
+      return res.status(400).json({
+        error: `Order is already ${order.status} and cannot be cancelled.`,
+      });
     }
     if (order.confirmAfter && new Date() > order.confirmAfter) {
       return res
@@ -1405,10 +1476,18 @@ router.patch("/:id/cancel", async (req, res) => {
 
     const reason = (req.body?.reason || "").trim();
     if (reason.length < 5) {
-      return res.status(400).json({ error: "Please provide a cancellation reason (at least 5 characters)." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Please provide a cancellation reason (at least 5 characters).",
+        });
     }
 
-    applyOrderStatusChange(order, "cancelled", { reason, changedBy: "customer" });
+    applyOrderStatusChange(order, "cancelled", {
+      reason,
+      changedBy: "customer",
+    });
     order.paymentStatus = "cancelled";
     order.updatedAt = new Date();
     await order.save();
@@ -1417,7 +1496,9 @@ router.patch("/:id/cancel", async (req, res) => {
       await refundUserRewardPoints(order.userId, order.rewardPointsRedeemed);
     }
 
-    sendOrderCancelledEmail(order, { reason, cancelledBy: "customer" }).catch(() => {});
+    sendOrderCancelledEmail(order, { reason, cancelledBy: "customer" }).catch(
+      () => {},
+    );
 
     res.json({ ok: true, order });
   } catch (err) {
@@ -1439,11 +1520,9 @@ router.patch("/:id/edit", async (req, res) => {
       return res.status(403).json({ error: "Not your order" });
 
     if (order.status !== "pending") {
-      return res
-        .status(400)
-        .json({
-          error: `Order is already ${order.status} and cannot be edited.`,
-        });
+      return res.status(400).json({
+        error: `Order is already ${order.status} and cannot be edited.`,
+      });
     }
     if (order.confirmAfter && new Date() > order.confirmAfter) {
       return res
@@ -1451,7 +1530,8 @@ router.patch("/:id/edit", async (req, res) => {
         .json({ error: "The 1-hour edit window has passed." });
     }
 
-    const { note, address, phone, billingDetails, items, addItems } = req.body || {};
+    const { note, address, phone, billingDetails, items, addItems } =
+      req.body || {};
     const billingPatch =
       billingDetails && typeof billingDetails === "object"
         ? billingDetails
@@ -1521,7 +1601,6 @@ router.patch("/:id/edit", async (req, res) => {
           }
         }
       }
-
     }
 
     // Add new products to the order
@@ -1531,7 +1610,8 @@ router.patch("/:id/edit", async (req, res) => {
         const prod = await Product.findById(ni.productId).lean();
         if (!prod) continue;
         const qty = Math.max(1, parseInt(ni.quantity) || 1);
-        const price = resolveVariantPrice(prod, ni.color, ni.size) ?? prod.price ?? 0;
+        const price =
+          resolveVariantPrice(prod, ni.color, ni.size) ?? prod.price ?? 0;
         order.items.push({
           productId: prod._id,
           title: prod.title,
@@ -1546,7 +1626,10 @@ router.patch("/:id/edit", async (req, res) => {
     }
 
     // Recalculate totals whenever items changed
-    if ((Array.isArray(items) && items.length > 0) || (Array.isArray(addItems) && addItems.length > 0)) {
+    if (
+      (Array.isArray(items) && items.length > 0) ||
+      (Array.isArray(addItems) && addItems.length > 0)
+    ) {
       const newSubtotal = order.items.reduce(
         (sum, it) => sum + (it.price || 0) * it.quantity,
         0,
@@ -1576,14 +1659,18 @@ router.patch("/:id/switch-to-cod", async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found." });
 
-    if (!ownsOrder(order, identity) && identity.type !== 'admin') {
+    if (!ownsOrder(order, identity) && identity.type !== "admin") {
       return res.status(403).json({ error: "Not your order." });
     }
     if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
-      return res.status(400).json({ error: "Order is not a mobile-banking order." });
+      return res
+        .status(400)
+        .json({ error: "Order is not a mobile-banking order." });
     }
     if (order.status !== "pending") {
-      return res.status(400).json({ error: "Only pending orders can be switched." });
+      return res
+        .status(400)
+        .json({ error: "Only pending orders can be switched." });
     }
     order.paymentMethod = "cash-on-delivery";
     order.paymentStatus = "cod";
@@ -1610,13 +1697,13 @@ router.patch("/:id/mobile-payment", async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found." });
 
-    if (!ownsOrder(order, identity) && identity.type !== 'admin') {
+    if (!ownsOrder(order, identity) && identity.type !== "admin") {
       return res.status(403).json({ error: "Not your order." });
     }
     if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
       return res.status(400).json({ error: "Not a mobile-banking order." });
     }
-    order.paymentNote = `TxID: ${transactionId.trim()}${senderNumber ? ` | Sender: ${senderNumber.trim()}` : ''}`;
+    order.paymentNote = `TxID: ${transactionId.trim()}${senderNumber ? ` | Sender: ${senderNumber.trim()}` : ""}`;
     order.paymentStatus = "pending_verification";
     await order.save();
     res.json({ ok: true });
