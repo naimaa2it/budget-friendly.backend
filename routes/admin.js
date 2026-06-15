@@ -2265,36 +2265,39 @@ router.delete('/popup', requireAdmin, async (req, res) => {
 // ─── Media Library (Cloudinary) ────────────────────────────────────────────────
 
 // GET /api/admin/media?folder=&next_cursor=&q=
-// Lists images stored in Cloudinary (up to 60 per page)
+// Lists images and videos stored in Cloudinary (up to 60 per page)
 router.get('/media', requireAdmin, async (req, res) => {
   try {
     ensureCloudinaryConfigured();
     const { folder = '', next_cursor, q } = req.query;
 
-    const opts = {
-      type: 'upload',
-      resource_type: 'image',
-      max_results: 60,
+    const buildOpts = (resource_type) => {
+      const opts = { type: 'upload', resource_type, max_results: 30 };
+      if (folder) opts.prefix = folder;
+      if (next_cursor) opts.next_cursor = next_cursor;
+      return opts;
     };
-    if (folder) opts.prefix = folder;
-    if (next_cursor) opts.next_cursor = next_cursor;
 
-    const result = await cloudinary.api.resources(opts);
+    const [imgResult, vidResult] = await Promise.all([
+      cloudinary.api.resources(buildOpts('image')).catch(() => ({ resources: [] })),
+      cloudinary.api.resources(buildOpts('video')).catch(() => ({ resources: [] })),
+    ]);
 
-    let resources = result.resources || [];
+    let resources = [
+      ...(imgResult.resources || []).map(r => ({ ...r, resource_type: 'image' })),
+      ...(vidResult.resources || []).map(r => ({ ...r, resource_type: 'video' })),
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    // client-side name filter (Cloudinary doesn't support full-text search on free tier)
     if (q) {
       const lower = q.toLowerCase();
-      resources = resources.filter(r =>
-        r.public_id.toLowerCase().includes(lower)
-      );
+      resources = resources.filter(r => r.public_id.toLowerCase().includes(lower));
     }
 
     res.json({
       items: resources.map(r => ({
         public_id: r.public_id,
         url: r.secure_url || r.url,
+        resource_type: r.resource_type,
         width: r.width,
         height: r.height,
         bytes: r.bytes,
@@ -2302,7 +2305,7 @@ router.get('/media', requireAdmin, async (req, res) => {
         created_at: r.created_at,
         folder: r.folder || r.public_id.split('/').slice(0, -1).join('/'),
       })),
-      next_cursor: result.next_cursor || null,
+      next_cursor: imgResult.next_cursor || vidResult.next_cursor || null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Cloudinary error' });
@@ -2322,16 +2325,17 @@ router.get('/media/folders', requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/admin/media  — delete one or more images from Cloudinary
-// body: { public_ids: ['folder/name', ...] }
+// DELETE /api/admin/media  — delete one or more images/videos from Cloudinary
+// body: { public_ids: ['folder/name', ...], resource_type?: 'image'|'video' }
 router.delete('/media', requireAdmin, async (req, res) => {
   try {
     ensureCloudinaryConfigured();
-    const { public_ids } = req.body || {};
+    const { public_ids, resource_type } = req.body || {};
     if (!Array.isArray(public_ids) || public_ids.length === 0) {
       return res.status(400).json({ error: 'public_ids array required' });
     }
-    const result = await cloudinary.api.delete_resources(public_ids, { resource_type: 'image' });
+    const type = resource_type === 'video' ? 'video' : 'image';
+    const result = await cloudinary.api.delete_resources(public_ids, { resource_type: type });
     res.json({ ok: true, deleted: result.deleted });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Delete failed' });
