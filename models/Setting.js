@@ -31,7 +31,7 @@ const SettingsSchema = new mongoose.Schema({
   lowStockThreshold: { type: Number, default: 5 },
   defaultShipping: { type: Number, default: 0 },
   paymentProviders: { type: PaymentProvidersSchema, default: () => ({}) },
-  cloudinaryFolder: { type: String, default: "SmartBuy BD/products" },
+  cloudinaryFolder: { type: String, default: "SmartBuyBD/products" },
   topBannerEnabled: { type: Boolean, default: false },
   topBannerHtml: { type: String, default: "" },
   topBannerConfig: {

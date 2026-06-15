@@ -195,7 +195,7 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
     }
 
     // Get folder from request body or query (default to products)
-    const folder = req.body.folder || req.query.folder || 'SmartBuy BD/products';
+    const folder = req.body.folder || req.query.folder || `${process.env.CLOUDINARY_FOLDER || 'SmartBuyBD'}/media`;
     
     // Detect if file is a video based on mimetype
     const isVideo = req.file.mimetype.startsWith('video/');
