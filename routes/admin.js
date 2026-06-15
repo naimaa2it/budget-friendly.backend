@@ -1734,7 +1734,7 @@ router.get('/users/:id/profile', requireAdmin, async (req, res) => {
 
     res.json({
       user,
-      SmartBuy BD: {
+      "SmartBuy BD": {
         stats: analytics.stats,
         percentages: analytics.percentages,
         courierBreakdown: analytics.courierBreakdown,

@@ -767,7 +767,7 @@ SMTP_PORT=465
 SMTP_USER=naimaa2it@gmail.com
 STORE_EMAIL=naimaa2it@gmail.com
 STORE_ID=a2it69acfd899c29d
-STORE_NAME=budgetfriendly
+STORE_NAME=SmartBuy BD
 STORE_PASSWORD=a2it69acfd899c29d@ssl
 STORE_PHONE=01884242851
 
