@@ -13,6 +13,7 @@ import {
   sendOrderConfirmationEmail,
   sendAdminOrderNotification,
   sendPaymentConfirmedEmail,
+  sendOrderCancelledEmail,
 } from "../lib/mailer.js";
 import { syncOrderShipment } from "../lib/shipmentTracking.js";
 import { getCourierLabelMap } from "../lib/courierDefaults.js";
@@ -1415,6 +1416,8 @@ router.patch("/:id/cancel", async (req, res) => {
     if (order.userId && order.rewardPointsRedeemed > 0) {
       await refundUserRewardPoints(order.userId, order.rewardPointsRedeemed);
     }
+
+    sendOrderCancelledEmail(order, { reason, cancelledBy: "customer" }).catch(() => {});
 
     res.json({ ok: true, order });
   } catch (err) {

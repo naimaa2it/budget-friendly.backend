@@ -54,6 +54,7 @@ import {
   appendManualTrackingEvent,
   syncOrderShipment,
 } from '../lib/shipmentTracking.js';
+import { sendOrderCancelledEmail } from '../lib/mailer.js';
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
@@ -2940,6 +2941,12 @@ router.put('/orders/:id/status', requireAdmin, async (req, res) => {
       await creditOrderRewardPoints(order);
     }
     await order.save();
+    if (status === 'cancelled') {
+      sendOrderCancelledEmail(order, {
+        reason: String(reason || '').trim(),
+        cancelledBy: 'admin',
+      }).catch(() => {});
+    }
     res.json(order);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
