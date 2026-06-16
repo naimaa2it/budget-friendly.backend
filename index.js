@@ -54,6 +54,11 @@ import { redisClient } from "./lib/redis.js";
 
 const app = express();
 
+// Vercel (and Render/Railway) sit behind exactly one reverse-proxy hop that
+// sets X-Forwarded-For — trust it so req.ip and express-rate-limit resolve
+// the real client IP instead of the proxy's.
+app.set("trust proxy", 1);
+
 // Allowed origins: explicit whitelist only — never reflect unknown origins.
 // Add all production domains + Vercel preview pattern to ALLOWED_ORIGINS env var.
 const ALLOWED_ORIGINS = new Set(
