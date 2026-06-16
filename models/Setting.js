@@ -23,7 +23,7 @@ const SocialLinkSchema = new mongoose.Schema(
 );
 
 const SettingsSchema = new mongoose.Schema({
-  storeName: { type: String, default: "Budget Friendly" },
+  storeName: { type: String, default: "SmartBuy BD" },
   storeEmail: { type: String, default: "" },
   footerInfo: {
     phone: { type: String, default: "" },

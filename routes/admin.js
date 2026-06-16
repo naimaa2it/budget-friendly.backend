@@ -2488,6 +2488,11 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       };
     };
 
+    const last12MonthsStart = new Date(now);
+    last12MonthsStart.setMonth(last12MonthsStart.getMonth() - 11);
+    last12MonthsStart.setDate(1);
+    last12MonthsStart.setHours(0, 0, 0, 0);
+
     const [
       totalOrders,
       pendingOrders,
@@ -2504,6 +2509,10 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       topProductsAgg,
       hourlyRevenueAgg,
       trackedProducts,
+      monthlyRevenueAgg,
+      paymentMethodAgg,
+      newCustomersCount,
+      returningCustomersCount,
     ] = await Promise.all([
       Order.countDocuments(),
       Order.countDocuments({ status: 'pending' }),
@@ -2553,6 +2562,38 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       Product.find({ status: { $ne: 'archived' } })
         .select('title inventory variants updatedAt')
         .lean(),
+      // Monthly revenue for the last 12 months
+      Order.aggregate([
+        { $match: { createdAt: { $gte: last12MonthsStart }, status: { $nin: ['cancelled', 'failed'] } } },
+        {
+          $group: {
+            _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+            revenue: { $sum: '$total' },
+            orders: { $sum: 1 },
+          },
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1 } },
+      ]),
+      // Revenue by payment method (last 30 days)
+      Order.aggregate([
+        { $match: { createdAt: { $gte: last30Start }, status: { $nin: ['cancelled', 'failed'] } } },
+        {
+          $group: {
+            _id: '$paymentMethod',
+            revenue: { $sum: '$total' },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { revenue: -1 } },
+      ]),
+      // New customers (registered in last 30 days)
+      User.countDocuments({ createdAt: { $gte: last30Start } }),
+      // Returning customers (placed more than 1 order)
+      Order.aggregate([
+        { $group: { _id: '$billingDetails.phone', orderCount: { $sum: 1 } } },
+        { $match: { orderCount: { $gt: 1 } } },
+        { $count: 'total' },
+      ]),
     ]);
 
     const statusCounts = statusCountsAgg.reduce((acc, row) => {
@@ -2596,6 +2637,24 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       .sort((a, b) => a.totalInventory - b.totalInventory)
       .slice(0, 8);
 
+    // Build 12-month revenue array with labels
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthlyMap = monthlyRevenueAgg.reduce((acc, row) => {
+      acc[`${row._id.year}-${row._id.month}`] = { revenue: row.revenue, orders: row.orders };
+      return acc;
+    }, {});
+    const monthlyRevenue = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(last12MonthsStart);
+      d.setMonth(d.getMonth() + i);
+      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      return {
+        month: MONTH_NAMES[d.getMonth()],
+        year: d.getFullYear(),
+        revenue: monthlyMap[key]?.revenue || 0,
+        orders: monthlyMap[key]?.orders || 0,
+      };
+    });
+
     res.json({
       overview: {
         totalOrders,
@@ -2622,6 +2681,16 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       recentOrders,
       topSellingProducts: topProductsAgg,
       hourlyRevenue,
+      monthlyRevenue,
+      paymentBreakdown: paymentMethodAgg.map((p) => ({
+        method: p._id || 'unknown',
+        revenue: p.revenue,
+        count: p.count,
+      })),
+      customerStats: {
+        newLast30Days: newCustomersCount,
+        returningCustomers: returningCustomersCount[0]?.total || 0,
+      },
       stock: {
         threshold: lowStockThreshold,
         outOfStockCount: stockRows.filter((row) => row.totalInventory <= 0).length,

@@ -438,10 +438,47 @@ async function requireAdmin(req, res, next) {
   }
 }
 
+// Upload review images — authenticated users only, max 4 images, 3MB each
+const reviewImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024, files: 4 },
+  fileFilter: (_, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed"), false);
+    }
+    cb(null, true);
+  },
+});
+
+router.post("/review-images/upload", requireUser, reviewImageUpload.array("images", 4), async (req, res) => {
+  try {
+    ensureCloudinaryConfigured();
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+    const urls = await Promise.all(
+      req.files.map((file) =>
+        new Promise((resolve, reject) => {
+          cloudinary.uploader.upload_stream(
+            { folder: `${process.env.CLOUDINARY_FOLDER || "SmartBuyBD"}/reviews`, quality: "auto", fetch_format: "auto" },
+            (err, result) => {
+              if (err) reject(err);
+              else resolve(result.secure_url);
+            },
+          ).end(file.buffer);
+        }),
+      ),
+    );
+    res.json({ ok: true, urls });
+  } catch (err) {
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
+
 // Submit a review (must be logged-in user)
 router.post("/:id/reviews", requireUser, reviewLimiter, async (req, res) => {
   try {
-    const { authorName, rating, body } = req.body;
+    const { authorName, rating, body, images } = req.body;
     if (!rating || rating < 1 || rating > 5)
       return res.status(400).json({ error: "Rating (1-5) is required" });
     if (!body?.trim())
@@ -450,11 +487,16 @@ router.post("/:id/reviews", requireUser, reviewLimiter, async (req, res) => {
     if (!prod) return res.status(404).json({ error: "Product not found" });
     const displayName =
       authorName?.trim() || req.user.name || req.user.email.split("@")[0];
+    // validate images: max 4 URLs, must be strings
+    const reviewImages = Array.isArray(images)
+      ? images.filter((u) => typeof u === "string" && u.startsWith("http")).slice(0, 4)
+      : [];
     prod.reviews.push({
       user: req.user._id,
       authorName: displayName,
       rating: Number(rating),
       body: body.trim(),
+      images: reviewImages,
       createdAt: new Date(),
     });
     await prod.save();
@@ -472,7 +514,7 @@ router.post("/:id/reviews", requireUser, reviewLimiter, async (req, res) => {
 // Edit a review (must be the review's owner)
 router.put("/:id/reviews/:index", requireUser, async (req, res) => {
   try {
-    const { authorName, rating, body } = req.body;
+    const { authorName, rating, body, images } = req.body;
     if (!rating || rating < 1 || rating > 5)
       return res.status(400).json({ error: "Rating (1-5) is required" });
     if (!body?.trim())
@@ -491,6 +533,9 @@ router.put("/:id/reviews/:index", requireUser, async (req, res) => {
       authorName?.trim() || req.user.name || req.user.email.split("@")[0];
     review.rating = Number(rating);
     review.body = body.trim();
+    if (Array.isArray(images)) {
+      review.images = images.filter((u) => typeof u === "string" && u.startsWith("http")).slice(0, 4);
+    }
     await prod.save();
     res.json({
       ok: true,
