@@ -5,6 +5,7 @@ import { v2 as cloudinary } from "cloudinary";
 import sharp from "sharp";
 import User from "../models/User.js";
 import { buildUserRewardsSummary } from "../lib/rewards.js";
+import { getUserLoyaltySummary } from "../lib/loyaltyTiers.js";
 
 const router = express.Router();
 const upload = multer({
@@ -272,6 +273,16 @@ router.get("/rewards", requireUser, async (req, res) => {
     const summary = await buildUserRewardsSummary(req.user._id);
     if (!summary) return res.status(404).json({ error: "User not found" });
     res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/user/loyalty — lifetime spend, current tier, and progress to next tier
+router.get("/loyalty", requireUser, async (req, res) => {
+  try {
+    const summary = await getUserLoyaltySummary(req.user._id);
+    res.json({ ok: true, ...summary });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }

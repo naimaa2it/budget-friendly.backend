@@ -250,6 +250,7 @@ const resolveAndQuote = async (
       color: ci.color || null,
       size: ci.size || null,
       rewardPoints: Math.max(0, Number(prod.rewardPoints) || 0),
+      isPreorder: prod.availability === "pre_order",
     });
   }
 
@@ -1115,6 +1116,63 @@ router.post("/:id/pay", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: "Server error." });
+  }
+});
+
+async function requireAdmin(req, res, next) {
+  try {
+    const token = req.cookies?.token;
+    if (!token) return res.status(401).json({ error: "Not authenticated" });
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.type !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
+    const admin = await Admin.findById(payload.id);
+    if (!admin || !admin.isActive)
+      return res.status(403).json({ error: "Admin not found or disabled" });
+    req.admin = admin;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+// Admin: flat list of every pre-ordered line item across all orders (dashboard)
+router.get("/admin/preorders", requireAdmin, async (req, res) => {
+  try {
+    const orders = await Order.find(
+      { "items.isPreorder": true },
+      "items billingDetails userEmail status paymentStatus createdAt",
+    )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const rows = [];
+    orders.forEach((o) => {
+      (o.items || []).forEach((item, idx) => {
+        if (!item.isPreorder) return;
+        rows.push({
+          orderId: o._id,
+          itemIndex: idx,
+          productId: item.productId,
+          productTitle: item.title,
+          image: item.image,
+          price: item.price,
+          quantity: item.quantity,
+          color: item.color,
+          size: item.size,
+          customerName: o.billingDetails?.name || null,
+          customerPhone: o.billingDetails?.phone || null,
+          customerEmail: o.userEmail || o.billingDetails?.email || null,
+          status: o.status,
+          paymentStatus: o.paymentStatus,
+          createdAt: o.createdAt,
+        });
+      });
+    });
+
+    res.json({ ok: true, rows });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 

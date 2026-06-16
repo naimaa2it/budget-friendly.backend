@@ -10,6 +10,7 @@ const OrderItemSchema = new mongoose.Schema(
     color: { type: String, default: null },
     size: { type: String, default: null },
     rewardPoints: { type: Number, default: 0 },
+    isPreorder: { type: Boolean, default: false },
   },
   { _id: false },
 );
