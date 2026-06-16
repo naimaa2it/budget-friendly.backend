@@ -287,10 +287,11 @@ router.get('/top-banner', async (req, res) => {
       storeName: s?.storeName || '',
       footerInfo: s?.footerInfo || { phone: '', email: '', address: '' },
       contactInfo: s?.contactInfo || { phone: '', email: '', address: '' },
-      megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : []
+      megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : [],
+      socialLinks: s?.socialLinks || {},
     });
   } catch (err) {
-    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, storeName: '', footerInfo: { phone: '', email: '', address: '' }, contactInfo: { phone: '', email: '', address: '' }, megaMenuTags: [] });
+    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, storeName: '', footerInfo: { phone: '', email: '', address: '' }, contactInfo: { phone: '', email: '', address: '' }, megaMenuTags: [], socialLinks: {} });
   }
 });
 

@@ -14,6 +14,14 @@ const PaymentProvidersSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const SocialLinkSchema = new mongoose.Schema(
+  {
+    url:     { type: String, default: '' },
+    enabled: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
 const SettingsSchema = new mongoose.Schema({
   storeName: { type: String, default: "Budget Friendly" },
   storeEmail: { type: String, default: "" },
@@ -26,6 +34,13 @@ const SettingsSchema = new mongoose.Schema({
     phone: { type: String, default: "" },
     email: { type: String, default: "" },
     address: { type: String, default: "" },
+  },
+  socialLinks: {
+    facebook:  { type: SocialLinkSchema, default: () => ({}) },
+    instagram: { type: SocialLinkSchema, default: () => ({}) },
+    twitter:   { type: SocialLinkSchema, default: () => ({}) },
+    tiktok:    { type: SocialLinkSchema, default: () => ({}) },
+    youtube:   { type: SocialLinkSchema, default: () => ({}) },
   },
   taxPercent: { type: Number, default: 0 },
   lowStockThreshold: { type: Number, default: 5 },
