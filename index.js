@@ -64,7 +64,7 @@ app.set("trust proxy", 1);
 const ALLOWED_ORIGINS = new Set(
   (
     process.env.ALLOWED_ORIGINS ||
-    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://budget-friendly-backend.vercel.app"
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://budget-friendly-backend.vercel.app,https://smartproductbuy.com"
   )
     .split(",")
     .map((o) => o.trim())
