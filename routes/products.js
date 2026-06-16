@@ -321,6 +321,41 @@ router.get("/admin-reviews", requireAdmin, async (req, res) => {
   }
 });
 
+// Logged-in customer: get all reviews they've personally written
+router.get("/my-reviews", requireUser, async (req, res) => {
+  try {
+    const products = await Product.find(
+      { "reviews.user": req.user._id },
+      "title slug images reviews",
+    ).lean();
+
+    const myReviews = [];
+    products.forEach((p) => {
+      (p.reviews || []).forEach((r, idx) => {
+        if (String(r.user) === String(req.user._id)) {
+          myReviews.push({
+            productId: p._id,
+            productTitle: p.title,
+            productSlug: p.slug,
+            productImage: p.images?.[0]?.url || null,
+            reviewIndex: idx,
+            rating: r.rating,
+            title: r.title,
+            body: r.body,
+            images: r.images,
+            helpful: r.helpful,
+            createdAt: r.createdAt,
+          });
+        }
+      });
+    });
+    myReviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json({ reviews: myReviews });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 router.get("/barcode/:code", async (req, res) => {
   try {
     const code = normalizeBarcodeCode(req.params.code);
