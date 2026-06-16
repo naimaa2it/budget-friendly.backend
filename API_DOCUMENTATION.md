@@ -1516,7 +1516,7 @@ POST /api/admin/login
 **Validation:**
 
 - `secret` must match `ADMIN_SECRET` environment variable
-- Max 5 failed login attempts
+- Max 20 failed login attempts
 - Account locks for 2 hours after max attempts
 
 **Response:**

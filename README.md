@@ -415,7 +415,7 @@ The admin dashboard (`GET /api/admin/dashboard-overview`) provides:
 
 - Bcrypt hashing (12 rounds)
 - Password reset tokens (1-hour expiry)
-- Failed login tracking (max 5 attempts)
+- Failed login tracking (max 20 attempts)
 - Account lockout (2 hours)
 
 ### API Security

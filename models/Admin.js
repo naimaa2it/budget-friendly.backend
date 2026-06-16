@@ -49,7 +49,7 @@ AdminSchema.methods.incLoginAttempts = async function() {
   }
 
   const updates = { $inc: { loginAttempts: 1 } };
-  const maxAttempts = 5;
+  const maxAttempts = 20;
   const lockTime = 30 * 60 * 1000; // 30 minutes
 
   // Lock the account if max attempts reached
