@@ -19,6 +19,7 @@ import Order from '../models/Order.js';
 import Courier from '../models/Courier.js';
 import TimelinePreset from '../models/TimelinePreset.js';
 import { formatOrderIdSuffix } from '../lib/orderLookup.js';
+import { requirePermission, sanitizePermissions } from '../lib/permissions.js';
 import sharp from 'sharp';
 import categoryRoutes from './category.js';
 import { defaultTrackingUrl } from '../lib/couriers/constants.js';
@@ -695,7 +696,7 @@ router.patch('/inventory/:id', requireAdmin, async (req, res) => {
 });
 
 // Admin product management (protected)
-router.get('/products', requireAdmin, async (req, res) => {
+router.get('/products', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const { page = 1, limit = 20, q, categoryId, status } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
@@ -733,7 +734,7 @@ router.get('/products', requireAdmin, async (req, res) => {
 });
 
 // Product variation catalog, used by dashboard product forms.
-router.get('/variations', requireAdmin, async (req, res) => {
+router.get('/variations', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const perPage = Math.min(50, Math.max(1, Number(req.query.per_page || req.query.limit) || 50));
@@ -774,7 +775,7 @@ router.get('/variations', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/variations', requireAdmin, async (req, res) => {
+router.post('/variations', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Variation name is required' });
@@ -798,7 +799,7 @@ router.post('/variations', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/variations/:id', requireAdmin, async (req, res) => {
+router.put('/variations/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Variation name is required' });
@@ -827,7 +828,7 @@ router.put('/variations/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/variations/:id', requireAdmin, async (req, res) => {
+router.delete('/variations/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const deleted = await Variation.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Variation not found' });
@@ -837,7 +838,7 @@ router.delete('/variations/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/products', requireAdmin, async (req, res) => {
+router.post('/products', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     let payload = req.body || {};
     const nextBarcode = normalizeBarcodeCode(payload.barcode);
@@ -921,7 +922,7 @@ router.post('/products', requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/products/:id', requireAdmin, async (req, res) => {
+router.get('/products/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const p = await Product.findById(req.params.id)
       .populate('frequentlyBoughtTogether', 'title price compareAtPrice images slug availability _id');
@@ -935,7 +936,7 @@ router.get('/products/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/products/:id', requireAdmin, async (req, res) => {
+router.put('/products/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const updates = req.body || {};
     const nextBarcode = normalizeBarcodeCode(updates.barcode);
@@ -1045,7 +1046,7 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/products/:id', requireAdmin, async (req, res) => {
+router.delete('/products/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const force = req.query.force === 'true' || req.query.force === '1';
 
@@ -1086,10 +1087,48 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/admin/products/:id/duplicate — clone a product as a new draft
+// (images/Cloudinary assets are referenced, not re-uploaded; barcode/slug/sku
+// are cleared so the clone never collides with the source product)
+router.post('/products/:id/duplicate', requireAdmin, requirePermission('catalog'), async (req, res) => {
+  try {
+    const source = await Product.findById(req.params.id).lean();
+    if (!source) return res.status(404).json({ error: 'Not found' });
+
+    const clone = { ...source };
+    delete clone._id;
+    delete clone.__v;
+    delete clone.createdAt;
+    delete clone.updatedAt;
+    delete clone.slug;
+    delete clone.barcode;
+    delete clone.sku;
+    delete clone.reviews;
+
+    clone.title = `${source.title} (Copy)`;
+    clone.status = 'draft';
+    clone.createdBy = req.admin._id;
+    clone.reviewCount = 0;
+    clone.averageRating = 0;
+    clone.monthlySold = 0;
+    clone.inventory = 0;
+    if (Array.isArray(clone.variants)) {
+      clone.variants = clone.variants.map(({ _id, ...rest }) => ({ ...rest, inventory: 0 }));
+    }
+
+    const p = new Product(clone);
+    await p.save();
+    clearProductsCache();
+    res.json({ ok: true, product: p });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // --- Blog (admin) ---
 
 // List / search blog posts (admin)
-router.get('/blog', requireAdmin, async (req, res) => {
+router.get('/blog', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const { page = 1, limit = 20, q, status } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
@@ -1108,7 +1147,7 @@ router.get('/blog', requireAdmin, async (req, res) => {
 });
 
 // Create post
-router.post('/blog', requireAdmin, async (req, res) => {
+router.post('/blog', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const payload = req.body || {};
     const p = new BlogPost(payload);
@@ -1120,7 +1159,7 @@ router.post('/blog', requireAdmin, async (req, res) => {
 });
 
 // Get all unique tags from blog posts (must be BEFORE /blog/:id route)
-router.get('/blog/tags', requireAdmin, async (req, res) => {
+router.get('/blog/tags', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const tags = await BlogPost.distinct('tags');
     res.json({ tags: tags.filter(t => t).sort() });
@@ -1130,7 +1169,7 @@ router.get('/blog/tags', requireAdmin, async (req, res) => {
 });
 
 // Get single post (admin)
-router.get('/blog/:id', requireAdmin, async (req, res) => {
+router.get('/blog/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const p = await BlogPost.findById(req.params.id).populate('categories');
     if (!p) return res.status(404).json({ error: 'Not found' });
@@ -1141,7 +1180,7 @@ router.get('/blog/:id', requireAdmin, async (req, res) => {
 });
 
 // Update post
-router.put('/blog/:id', requireAdmin, async (req, res) => {
+router.put('/blog/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const updates = req.body || {};
     if (updates.status === 'published') updates.publishedAt = updates.publishedAt || Date.now();
@@ -1154,7 +1193,7 @@ router.put('/blog/:id', requireAdmin, async (req, res) => {
 });
 
 // Delete / archive post
-router.delete('/blog/:id', requireAdmin, async (req, res) => {
+router.delete('/blog/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const p = await BlogPost.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
@@ -1167,7 +1206,7 @@ router.delete('/blog/:id', requireAdmin, async (req, res) => {
 // --- Blog Categories (admin) ---
 
 // List all blog categories
-router.get('/blog-categories', requireAdmin, async (req, res) => {
+router.get('/blog-categories', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const categories = await BlogCategory.find().sort({ name: 1 });
     res.json({ categories });
@@ -1177,7 +1216,7 @@ router.get('/blog-categories', requireAdmin, async (req, res) => {
 });
 
 // Create blog category
-router.post('/blog-categories', requireAdmin, async (req, res) => {
+router.post('/blog-categories', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const { name, description } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
@@ -1194,7 +1233,7 @@ router.post('/blog-categories', requireAdmin, async (req, res) => {
 });
 
 // Update blog category
-router.put('/blog-categories/:id', requireAdmin, async (req, res) => {
+router.put('/blog-categories/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const { name, description } = req.body;
     const updates = {};
@@ -1213,7 +1252,7 @@ router.put('/blog-categories/:id', requireAdmin, async (req, res) => {
 });
 
 // Delete blog category
-router.delete('/blog-categories/:id', requireAdmin, async (req, res) => {
+router.delete('/blog-categories/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const category = await BlogCategory.findByIdAndDelete(req.params.id);
     if (!category) return res.status(404).json({ error: 'Category not found' });
@@ -1309,14 +1348,22 @@ router.get('/admins/:id', requireAdmin, async (req, res) => {
 router.post('/admins', requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, email, password, role } = req.body || {};
+    const { name, email, password, role, permissions } = req.body || {};
     if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' });
     const existing = await Admin.findOne({ email: email.toLowerCase() });
     if (existing) return res.status(400).json({ error: 'Admin with this email already exists' });
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
-    const admin = new Admin({ name, email: email.toLowerCase(), hashedPassword: hashed, role: role === 'moderator' ? 'moderator' : 'admin', isActive: true });
+    const resolvedRole = role === 'moderator' ? 'moderator' : 'admin';
+    const admin = new Admin({
+      name,
+      email: email.toLowerCase(),
+      hashedPassword: hashed,
+      role: resolvedRole,
+      isActive: true,
+      permissions: resolvedRole === 'moderator' ? sanitizePermissions(permissions) : [],
+    });
     await admin.save();
-    res.json({ ok: true, admin: { email: admin.email, name: admin.name, role: admin.role, _id: admin._id } });
+    res.json({ ok: true, admin: { email: admin.email, name: admin.name, role: admin.role, permissions: admin.permissions, _id: admin._id } });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -1326,7 +1373,7 @@ router.post('/admins', requireAdmin, async (req, res) => {
 router.put('/admins/:id', requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, email, newPassword, role, isActive } = req.body || {};
+    const { name, email, newPassword, role, isActive, permissions } = req.body || {};
     const a = await Admin.findById(req.params.id);
     if (!a) return res.status(404).json({ error: 'Not found' });
 
@@ -1339,9 +1386,14 @@ router.put('/admins/:id', requireAdmin, async (req, res) => {
     if (typeof isActive === 'boolean') a.isActive = isActive;
     if (role) a.role = role === 'moderator' ? 'moderator' : 'admin';
     if (newPassword) a.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    if (typeof permissions !== 'undefined') {
+      a.permissions = a.role === 'moderator' ? sanitizePermissions(permissions) : [];
+    } else if (a.role === 'admin') {
+      a.permissions = [];
+    }
 
     await a.save();
-    res.json({ ok: true, admin: { _id: a._id, name: a.name, email: a.email, role: a.role, isActive: a.isActive } });
+    res.json({ ok: true, admin: { _id: a._id, name: a.name, email: a.email, role: a.role, isActive: a.isActive, permissions: a.permissions } });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -1375,7 +1427,7 @@ router.delete('/admins/:id', requireAdmin, async (req, res) => {
 });
 
 // --- Customer tag management -----------------------------------------
-router.get('/customer-tags', requireAdmin, async (req, res) => {
+router.get('/customer-tags', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const items = await CustomerTag.find({}).sort({ name: 1 });
     res.json({ items });
@@ -1384,7 +1436,7 @@ router.get('/customer-tags', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/customer-tags', requireAdmin, async (req, res) => {
+router.post('/customer-tags', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const { name, color, description } = req.body || {};
     if (!name || !String(name).trim()) {
@@ -1401,7 +1453,7 @@ router.post('/customer-tags', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/customer-tags/:id', requireAdmin, async (req, res) => {
+router.put('/customer-tags/:id', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const { name, color, description } = req.body || {};
     const tag = await CustomerTag.findById(req.params.id);
@@ -1416,7 +1468,7 @@ router.put('/customer-tags/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/customer-tags/:id', requireAdmin, async (req, res) => {
+router.delete('/customer-tags/:id', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const tag = await CustomerTag.findById(req.params.id);
     if (!tag) return res.status(404).json({ error: 'Not found' });
@@ -1429,7 +1481,7 @@ router.delete('/customer-tags/:id', requireAdmin, async (req, res) => {
 });
 
 // --- Barcode management ----------------------------------------------
-router.get('/barcodes', requireAdmin, async (req, res) => {
+router.get('/barcodes', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const { q = '', code = '', limit = 100, page = 1 } = req.query;
     const filter = {};
@@ -1463,7 +1515,7 @@ router.get('/barcodes', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/barcodes', requireAdmin, async (req, res) => {
+router.post('/barcodes', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const code = normalizeBarcodeCode(req.body?.code || generateBarcodeCode());
     const label = String(req.body?.label || "").trim();
@@ -1502,7 +1554,7 @@ router.post('/barcodes', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/barcodes/:id', requireAdmin, async (req, res) => {
+router.put('/barcodes/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const item = await Barcode.findById(req.params.id);
     if (!item) return res.status(404).json({ error: 'Not found' });
@@ -1554,7 +1606,7 @@ router.put('/barcodes/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/barcodes/:id', requireAdmin, async (req, res) => {
+router.delete('/barcodes/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const item = await Barcode.findById(req.params.id);
     if (!item) return res.status(404).json({ error: 'Not found' });
@@ -1569,7 +1621,7 @@ router.delete('/barcodes/:id', requireAdmin, async (req, res) => {
 });
 
 // --- User management -------------------------------------------------
-router.get('/users', requireAdmin, async (req, res) => {
+router.get('/users', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const { q = '', limit = 200, includeStats } = req.query;
     const filter = {};
@@ -1609,7 +1661,7 @@ router.get('/users', requireAdmin, async (req, res) => {
 });
 
 // Get single user
-router.get('/users/:id', requireAdmin, async (req, res) => {
+router.get('/users/:id', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const u = await User.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires').populate('tags');
     if (!u) return res.status(404).json({ error: 'Not found' });
@@ -1700,7 +1752,7 @@ function buildCustomerOrderFilter(user) {
 }
 
 // GET /api/admin/phones/:phone/lifetime-stats — cross-platform courier fraud check by mobile
-router.get('/phones/:phone/lifetime-stats', requireAdmin, async (req, res) => {
+router.get('/phones/:phone/lifetime-stats', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
     const lifetime = await fetchLifetimeCourierStats(req.params.phone, {
@@ -1713,7 +1765,7 @@ router.get('/phones/:phone/lifetime-stats', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/users/:id/profile — customer analytics and order history
-router.get('/users/:id/profile', requireAdmin, async (req, res) => {
+router.get('/users/:id/profile', requireAdmin, requirePermission('customers'), async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .select('-hashedPassword -resetToken -resetExpires')
@@ -1813,7 +1865,7 @@ router.post('/reset', async (req, res) => {
 // ─── Occasion Sections (admin CRUD) ───────────────────────────────────────────
 
 // GET  /api/admin/occasions  — list all sections sorted by order
-router.get('/occasions', requireAdmin, async (req, res) => {
+router.get('/occasions', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const OccasionSection = (await import('../models/OccasionSection.js')).default;
     const items = await OccasionSection.find().sort({ order: 1, createdAt: 1 });
@@ -1824,7 +1876,7 @@ router.get('/occasions', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/occasions  — create a new section
-router.post('/occasions', requireAdmin, async (req, res) => {
+router.post('/occasions', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const OccasionSection = (await import('../models/OccasionSection.js')).default;
     const payload = req.body || {};
@@ -1839,7 +1891,7 @@ router.post('/occasions', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/occasions/:id  — single section
-router.get('/occasions/:id', requireAdmin, async (req, res) => {
+router.get('/occasions/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const OccasionSection = (await import('../models/OccasionSection.js')).default;
     const section = await OccasionSection.findById(req.params.id);
@@ -1851,7 +1903,7 @@ router.get('/occasions/:id', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/occasions/:id  — update section (title, cards, isActive, order, etc.)
-router.put('/occasions/:id', requireAdmin, async (req, res) => {
+router.put('/occasions/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const OccasionSection = (await import('../models/OccasionSection.js')).default;
     const updates = { ...req.body, updatedAt: Date.now() };
@@ -1864,7 +1916,7 @@ router.put('/occasions/:id', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/occasions/:id  — permanently delete a section
-router.delete('/occasions/:id', requireAdmin, async (req, res) => {
+router.delete('/occasions/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const OccasionSection = (await import('../models/OccasionSection.js')).default;
     const section = await OccasionSection.findByIdAndDelete(req.params.id);
@@ -1877,7 +1929,7 @@ router.delete('/occasions/:id', requireAdmin, async (req, res) => {
 
 // PUT /api/admin/occasions/reorder  — update order for multiple sections at once
 // body: [ { _id, order }, … ]
-router.put('/occasions-reorder', requireAdmin, async (req, res) => {
+router.put('/occasions-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const OccasionSection = (await import('../models/OccasionSection.js')).default;
     const items = req.body || [];
@@ -1893,7 +1945,7 @@ router.put('/occasions-reorder', requireAdmin, async (req, res) => {
 // ─── Featured Sections (admin CRUD) ───────────────────────────────────────────
 
 // GET  /api/admin/featured  — list all featured sections sorted by order
-router.get('/featured', requireAdmin, async (req, res) => {
+router.get('/featured', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
     const items = await FeaturedSection.find().sort({ order: 1, createdAt: 1 });
@@ -1904,7 +1956,7 @@ router.get('/featured', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/featured  — create a new featured section
-router.post('/featured', requireAdmin, async (req, res) => {
+router.post('/featured', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
     const payload = req.body || {};
@@ -1919,7 +1971,7 @@ router.post('/featured', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/featured/:id  — single featured section
-router.get('/featured/:id', requireAdmin, async (req, res) => {
+router.get('/featured/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
     const section = await FeaturedSection.findById(req.params.id);
@@ -1931,7 +1983,7 @@ router.get('/featured/:id', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/featured/:id  — update a featured section
-router.put('/featured/:id', requireAdmin, async (req, res) => {
+router.put('/featured/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
     const updates = { ...req.body, updatedAt: Date.now() };
@@ -1944,7 +1996,7 @@ router.put('/featured/:id', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/featured/:id  — permanently delete a featured section
-router.delete('/featured/:id', requireAdmin, async (req, res) => {
+router.delete('/featured/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
     const section = await FeaturedSection.findByIdAndDelete(req.params.id);
@@ -1957,7 +2009,7 @@ router.delete('/featured/:id', requireAdmin, async (req, res) => {
 
 // PUT /api/admin/featured-reorder  — update order for multiple sections at once
 // body: [ { _id, order }, … ]
-router.put('/featured-reorder', requireAdmin, async (req, res) => {
+router.put('/featured-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
     const items = req.body || [];
@@ -1973,7 +2025,7 @@ router.put('/featured-reorder', requireAdmin, async (req, res) => {
 // ─── Promo Strip Items (admin CRUD) ─────────────────────────────────────────
 
 // GET /api/admin/promo-strip — list all promo strip items sorted by order
-router.get('/promo-strip', requireAdmin, async (req, res) => {
+router.get('/promo-strip', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
     const items = await PromoStripItem.find().sort({ order: 1, createdAt: 1 });
@@ -1984,7 +2036,7 @@ router.get('/promo-strip', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/promo-strip — create a new promo strip item
-router.post('/promo-strip', requireAdmin, async (req, res) => {
+router.post('/promo-strip', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
     const payload = req.body || {};
@@ -1999,7 +2051,7 @@ router.post('/promo-strip', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/promo-strip/:id — single promo strip item
-router.get('/promo-strip/:id', requireAdmin, async (req, res) => {
+router.get('/promo-strip/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
     const item = await PromoStripItem.findById(req.params.id);
@@ -2011,7 +2063,7 @@ router.get('/promo-strip/:id', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/promo-strip/:id — update promo strip item
-router.put('/promo-strip/:id', requireAdmin, async (req, res) => {
+router.put('/promo-strip/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
     const updates = { ...req.body, updatedAt: Date.now() };
@@ -2024,7 +2076,7 @@ router.put('/promo-strip/:id', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/promo-strip/:id — delete promo strip item
-router.delete('/promo-strip/:id', requireAdmin, async (req, res) => {
+router.delete('/promo-strip/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
     const item = await PromoStripItem.findByIdAndDelete(req.params.id);
@@ -2037,7 +2089,7 @@ router.delete('/promo-strip/:id', requireAdmin, async (req, res) => {
 
 // PUT /api/admin/promo-strip-reorder — batch update order
 // body: [ { _id, order }, … ]
-router.put('/promo-strip-reorder', requireAdmin, async (req, res) => {
+router.put('/promo-strip-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
     const items = req.body || [];
@@ -2052,7 +2104,7 @@ router.put('/promo-strip-reorder', requireAdmin, async (req, res) => {
 
 // ─── Banners (admin CRUD) ─────────────────────────────────────────────────────
 
-router.get('/banners', requireAdmin, async (req, res) => {
+router.get('/banners', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Banner = (await import('../models/Banner.js')).default;
     const items = await Banner.find().sort({ order: 1, createdAt: 1 });
@@ -2062,7 +2114,7 @@ router.get('/banners', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/banners', requireAdmin, async (req, res) => {
+router.post('/banners', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Banner = (await import('../models/Banner.js')).default;
     const payload = req.body || {};
@@ -2076,7 +2128,7 @@ router.post('/banners', requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/banners/:id', requireAdmin, async (req, res) => {
+router.get('/banners/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Banner = (await import('../models/Banner.js')).default;
     const banner = await Banner.findById(req.params.id);
@@ -2087,7 +2139,7 @@ router.get('/banners/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/banners/:id', requireAdmin, async (req, res) => {
+router.put('/banners/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Banner = (await import('../models/Banner.js')).default;
     const updates = { ...req.body, updatedAt: Date.now() };
@@ -2099,7 +2151,7 @@ router.put('/banners/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/banners/:id', requireAdmin, async (req, res) => {
+router.delete('/banners/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Banner = (await import('../models/Banner.js')).default;
     const banner = await Banner.findByIdAndDelete(req.params.id);
@@ -2117,7 +2169,7 @@ router.delete('/banners/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/banners-reorder', requireAdmin, async (req, res) => {
+router.put('/banners-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Banner = (await import('../models/Banner.js')).default;
     const items = req.body || [];
@@ -2132,7 +2184,7 @@ router.put('/banners-reorder', requireAdmin, async (req, res) => {
 
 // ─── Promo Panels (admin CRUD – for Popular Picks left panel) ────────────────
 
-router.get('/promo-panels', requireAdmin, async (req, res) => {
+router.get('/promo-panels', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
     const items = await PromoPanel.find()
@@ -2144,7 +2196,7 @@ router.get('/promo-panels', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/promo-panels', requireAdmin, async (req, res) => {
+router.post('/promo-panels', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
     const payload = req.body || {};
@@ -2158,7 +2210,7 @@ router.post('/promo-panels', requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/promo-panels/:id', requireAdmin, async (req, res) => {
+router.get('/promo-panels/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
     const panel = await PromoPanel.findById(req.params.id)
@@ -2170,7 +2222,7 @@ router.get('/promo-panels/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/promo-panels/:id', requireAdmin, async (req, res) => {
+router.put('/promo-panels/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
     const updates = { ...req.body, updatedAt: Date.now() };
@@ -2182,7 +2234,7 @@ router.put('/promo-panels/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/promo-panels/:id', requireAdmin, async (req, res) => {
+router.delete('/promo-panels/:id', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
     const panel = await PromoPanel.findByIdAndDelete(req.params.id);
@@ -2199,7 +2251,7 @@ router.delete('/promo-panels/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/promo-panels-reorder', requireAdmin, async (req, res) => {
+router.put('/promo-panels-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const PromoPanel = (await import('../models/PromoPanel.js')).default;
     const items = req.body || [];
@@ -2215,7 +2267,7 @@ router.put('/promo-panels-reorder', requireAdmin, async (req, res) => {
 // ─── Popup (admin CRUD – singleton) ──────────────────────────────────────────
 
 // GET current popup settings
-router.get('/popup', requireAdmin, async (req, res) => {
+router.get('/popup', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Popup = (await import('../models/Popup.js')).default;
     const popup = await Popup.findOne();
@@ -2226,7 +2278,7 @@ router.get('/popup', requireAdmin, async (req, res) => {
 });
 
 // PUT (upsert) popup settings
-router.put('/popup', requireAdmin, async (req, res) => {
+router.put('/popup', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Popup = (await import('../models/Popup.js')).default;
     const { image, link, isActive } = req.body;
@@ -2246,7 +2298,7 @@ router.put('/popup', requireAdmin, async (req, res) => {
 });
 
 // DELETE popup image (reset to empty)
-router.delete('/popup', requireAdmin, async (req, res) => {
+router.delete('/popup', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     const Popup = (await import('../models/Popup.js')).default;
     const popup = await Popup.findOne();
@@ -2267,7 +2319,7 @@ router.delete('/popup', requireAdmin, async (req, res) => {
 
 // GET /api/admin/media?folder=&next_cursor=&q=
 // Lists images and videos stored in Cloudinary (up to 60 per page)
-router.get('/media', requireAdmin, async (req, res) => {
+router.get('/media', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     ensureCloudinaryConfigured();
     const { folder = '', next_cursor, q } = req.query;
@@ -2314,7 +2366,7 @@ router.get('/media', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/media/folders  — list all folder prefixes found across uploaded assets
-router.get('/media/folders', requireAdmin, async (req, res) => {
+router.get('/media/folders', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     ensureCloudinaryConfigured();
     const result = await cloudinary.api.root_folders();
@@ -2328,7 +2380,7 @@ router.get('/media/folders', requireAdmin, async (req, res) => {
 
 // DELETE /api/admin/media  — delete one or more images/videos from Cloudinary
 // body: { public_ids: ['folder/name', ...], resource_type?: 'image'|'video' }
-router.delete('/media', requireAdmin, async (req, res) => {
+router.delete('/media', requireAdmin, requirePermission('content'), async (req, res) => {
   try {
     ensureCloudinaryConfigured();
     const { public_ids, resource_type } = req.body || {};
@@ -2345,7 +2397,7 @@ router.delete('/media', requireAdmin, async (req, res) => {
 
 // ─── Discounts / Offers (admin CRUD) ─────────────────────────────────────────
 
-router.get('/discounts', requireAdmin, async (req, res) => {
+router.get('/discounts', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Discount = (await import('../models/Discount.js')).default;
     const items = await Discount.find().sort({ order: 1, createdAt: 1 });
@@ -2355,7 +2407,7 @@ router.get('/discounts', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/discounts', requireAdmin, async (req, res) => {
+router.post('/discounts', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Discount = (await import('../models/Discount.js')).default;
     const payload = req.body || {};
@@ -2369,7 +2421,7 @@ router.post('/discounts', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/discounts-reorder', requireAdmin, async (req, res) => {
+router.put('/discounts-reorder', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Discount = (await import('../models/Discount.js')).default;
     const items = req.body || [];
@@ -2380,7 +2432,7 @@ router.put('/discounts-reorder', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/discounts/:id', requireAdmin, async (req, res) => {
+router.put('/discounts/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Discount = (await import('../models/Discount.js')).default;
     const updates = { ...req.body, updatedAt: Date.now() };
@@ -2392,7 +2444,7 @@ router.put('/discounts/:id', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/discounts/:id', requireAdmin, async (req, res) => {
+router.delete('/discounts/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Discount = (await import('../models/Discount.js')).default;
     const item = await Discount.findByIdAndDelete(req.params.id);
@@ -2404,7 +2456,7 @@ router.delete('/discounts/:id', requireAdmin, async (req, res) => {
 });
 
 // Waitlist routes
-router.get('/waitlist', requireAdmin, async (req, res) => {
+router.get('/waitlist', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Waitlist = (await import('../models/Waitlist.js')).default;
     const { productId, notified } = req.query;
@@ -2418,7 +2470,7 @@ router.get('/waitlist', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/waitlist/:id/notified', requireAdmin, async (req, res) => {
+router.put('/waitlist/:id/notified', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Waitlist = (await import('../models/Waitlist.js')).default;
     const entry = await Waitlist.findByIdAndUpdate(req.params.id, { notified: true }, { new: true });
@@ -2429,7 +2481,7 @@ router.put('/waitlist/:id/notified', requireAdmin, async (req, res) => {
   }
 });
 
-router.delete('/waitlist/:id', requireAdmin, async (req, res) => {
+router.delete('/waitlist/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const Waitlist = (await import('../models/Waitlist.js')).default;
     const entry = await Waitlist.findByIdAndDelete(req.params.id);
@@ -2711,8 +2763,43 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/notifications/orders?since=<ISO date> — recent orders for the
+// dashboard notification bell. Lightweight by design (no aggregations) so it
+// can be polled frequently.
+router.get('/notifications/orders', requireAdmin, requirePermission('orders'), async (req, res) => {
+  try {
+    const since = req.query.since
+      ? new Date(req.query.since)
+      : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const orders = await Order.find(
+      { createdAt: { $gt: since } },
+      'billingDetails userEmail total status paymentMethod createdAt',
+    )
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    res.json({
+      ok: true,
+      count: orders.length,
+      serverTime: new Date(),
+      orders: orders.map((o) => ({
+        _id: o._id,
+        orderId: formatOrderIdSuffix(o._id),
+        customerName: o.billingDetails?.name || o.userEmail || 'Guest',
+        total: o.total,
+        status: o.status,
+        paymentMethod: o.paymentMethod,
+        createdAt: o.createdAt,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/admin/orders
-router.get('/orders', requireAdmin, async (req, res) => {
+router.get('/orders', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking, hasNote, dateFrom, dateTo, userId } =
       req.query;
@@ -2794,7 +2881,7 @@ router.get('/orders', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/orders/timeline — recent status-change events across all orders
-router.get('/orders/timeline', requireAdmin, async (req, res) => {
+router.get('/orders/timeline', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const orders = await Order.find(
@@ -2827,7 +2914,7 @@ router.get('/orders/timeline', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/orders/returns — list orders with return requests
-router.get('/orders/returns', requireAdmin, async (req, res) => {
+router.get('/orders/returns', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { page = 1, limit = 20, status, q } = req.query;
     const filter = { returnRequest: { $ne: null } };
@@ -2876,7 +2963,7 @@ router.get('/orders/returns', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/orders/:id/return — create a return request
-router.post('/orders/:id/return', requireAdmin, async (req, res) => {
+router.post('/orders/:id/return', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { reason } = req.body;
     if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required' });
@@ -2902,7 +2989,7 @@ router.post('/orders/:id/return', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/return — approve or reject a return request
-router.put('/orders/:id/return', requireAdmin, async (req, res) => {
+router.put('/orders/:id/return', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { status, refundAmount, adminNote } = req.body;
     if (!['pending', 'approved', 'rejected'].includes(status)) {
@@ -2928,7 +3015,7 @@ router.put('/orders/:id/return', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/orders/:id/return — remove a return request
-router.delete('/orders/:id/return', requireAdmin, async (req, res) => {
+router.delete('/orders/:id/return', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -2942,7 +3029,7 @@ router.delete('/orders/:id/return', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/orders/:id
-router.get('/orders/:id', requireAdmin, async (req, res) => {
+router.get('/orders/:id', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     let order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -3002,7 +3089,7 @@ router.get('/orders/:id', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/status
-router.put('/orders/:id/status', requireAdmin, async (req, res) => {
+router.put('/orders/:id/status', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const VALID = ['pending', 'accepted', 'picked', 'approved', 'rejected', 'confirmed', 'processing', 'shipped', 'delivered', 'failed', 'cancelled'];
     const { status, reason } = req.body;
@@ -3031,7 +3118,7 @@ router.put('/orders/:id/status', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/payment-status
-router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
+router.put('/orders/:id/payment-status', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const VALID = ['unpaid', 'cod', 'paid', 'failed', 'cancelled'];
     const { paymentStatus, paidAmount } = req.body;
@@ -3054,7 +3141,7 @@ router.put('/orders/:id/payment-status', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/line-items — update items, shipping, discount; recalc totals
-router.put('/orders/:id/line-items', requireAdmin, async (req, res) => {
+router.put('/orders/:id/line-items', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -3117,7 +3204,7 @@ router.get('/couriers/booking-options', requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/rewards — all users & orders with reward activity
-router.get('/rewards', requireAdmin, async (req, res) => {
+router.get('/rewards', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const users = await User.find({ rewardPointsBalance: { $gt: 0 } })
       .select('name email rewardPointsBalance createdAt')
@@ -3178,7 +3265,7 @@ router.get('/rewards', requireAdmin, async (req, res) => {
 const PICKED_STATUSES = ['accepted', 'picked', 'approved'];
 
 // PUT /api/admin/orders/:id/pick — pick toggle assigns picker + status accepted
-router.put('/orders/:id/pick', requireAdmin, async (req, res) => {
+router.put('/orders/:id/pick', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { pick } = req.body || {};
     const order = await Order.findById(req.params.id);
@@ -3248,7 +3335,7 @@ router.get('/admins/:id/pick-profile', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/customer — update order customer info and sync user profile/address
-router.put('/orders/:id/customer', requireAdmin, async (req, res) => {
+router.put('/orders/:id/customer', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -3615,7 +3702,7 @@ router.delete('/timeline-presets/:id', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/shipment — assign courier + tracking, mark handed over
-router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
+router.put('/orders/:id/shipment', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { courier, trackingId, trackingUrl, markHandedOver = true } = req.body || {};
     const order = await Order.findById(req.params.id);
@@ -3675,7 +3762,7 @@ router.put('/orders/:id/shipment', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/orders/:id/shipment/events — manual tracking line (no courier API)
-router.post('/orders/:id/shipment/events', requireAdmin, async (req, res) => {
+router.post('/orders/:id/shipment/events', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { status, message } = req.body || {};
     const label = message || status;
@@ -3708,7 +3795,7 @@ router.post('/orders/:id/shipment/events', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/orders/:id/shipment/events/:index — edit manual tracking event
-router.put('/orders/:id/shipment/events/:index', requireAdmin, async (req, res) => {
+router.put('/orders/:id/shipment/events/:index', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const index = parseInt(req.params.index, 10);
     const { status, message } = req.body || {};
@@ -3730,7 +3817,7 @@ router.put('/orders/:id/shipment/events/:index', requireAdmin, async (req, res) 
 });
 
 // DELETE /api/admin/orders/:id/shipment/events/:index — remove tracking event
-router.delete('/orders/:id/shipment/events/:index', requireAdmin, async (req, res) => {
+router.delete('/orders/:id/shipment/events/:index', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const index = parseInt(req.params.index, 10);
     const order = await Order.findById(req.params.id);
@@ -3750,7 +3837,7 @@ router.delete('/orders/:id/shipment/events/:index', requireAdmin, async (req, re
 });
 
 // POST /api/admin/orders/:id/book-courier — create parcel via courier API
-router.post('/orders/:id/book-courier', requireAdmin, async (req, res) => {
+router.post('/orders/:id/book-courier', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { courier, weight, codAmount, note, deliveryAreaId, deliveryAreaName, itemQuantity } =
       req.body || {};
@@ -3820,7 +3907,7 @@ router.post('/orders/:id/book-courier', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/orders/:id/shipment/sync — pull latest status from courier API
-router.post('/orders/:id/shipment/sync', requireAdmin, async (req, res) => {
+router.post('/orders/:id/shipment/sync', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -3851,7 +3938,7 @@ router.post('/orders/:id/shipment/sync', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/orders/:id
-router.delete('/orders/:id', requireAdmin, async (req, res) => {
+router.delete('/orders/:id', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -3864,7 +3951,7 @@ router.delete('/orders/:id', requireAdmin, async (req, res) => {
 // ── Abandoned Carts ──────────────────────────────────────────────────────────
 
 // GET /api/admin/abandoned-carts — users with non-empty saved cart (5+ min old)
-router.get('/abandoned-carts', requireAdmin, async (req, res) => {
+router.get('/abandoned-carts', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { page = 1, limit = 20, q } = req.query;
     const pg = Math.max(1, parseInt(page));
@@ -3898,7 +3985,7 @@ router.get('/abandoned-carts', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/abandoned-carts/:userId/clear — clear a user's saved cart
-router.delete('/abandoned-carts/:userId/clear', requireAdmin, async (req, res) => {
+router.delete('/abandoned-carts/:userId/clear', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     await User.findByIdAndUpdate(req.params.userId, { savedCart: null });
     res.json({ ok: true });
@@ -3910,7 +3997,7 @@ router.delete('/abandoned-carts/:userId/clear', requireAdmin, async (req, res) =
 // ── Abandoned Checkouts ──────────────────────────────────────────────────────
 
 // GET /api/admin/abandoned-checkouts — incomplete checkout sessions from the last 30 days
-router.get('/abandoned-checkouts', requireAdmin, async (req, res) => {
+router.get('/abandoned-checkouts', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { page = 1, limit = 20, q } = req.query;
     const pg = Math.max(1, parseInt(page));
@@ -3956,7 +4043,7 @@ router.get('/abandoned-checkouts', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/abandoned-checkouts/:id — remove a checkout session record
-router.delete('/abandoned-checkouts/:id', requireAdmin, async (req, res) => {
+router.delete('/abandoned-checkouts/:id', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     await CheckoutSession.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
@@ -3968,7 +4055,7 @@ router.delete('/abandoned-checkouts/:id', requireAdmin, async (req, res) => {
 // ── All Wishlists ────────────────────────────────────────────────────────────
 
 // GET /api/admin/wishlists — products ranked by wishlist count
-router.get('/wishlists', requireAdmin, async (req, res) => {
+router.get('/wishlists', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     const pg = Math.max(1, parseInt(page));
@@ -4015,7 +4102,7 @@ router.get('/wishlists', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/wishlists/:productId — remove product from ALL users' wishlists
-router.delete('/wishlists/:productId', requireAdmin, async (req, res) => {
+router.delete('/wishlists/:productId', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { productId } = req.params;
     await User.updateMany(
@@ -4029,7 +4116,7 @@ router.delete('/wishlists/:productId', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/wishlists/:productId/users/:userId — remove one user's wishlist entry
-router.delete('/wishlists/:productId/users/:userId', requireAdmin, async (req, res) => {
+router.delete('/wishlists/:productId/users/:userId', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { productId, userId } = req.params;
     await User.findByIdAndUpdate(userId, { $pull: { wishlist: productId } });

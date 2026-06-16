@@ -16,6 +16,7 @@ import {
   sendOrderCancelledEmail,
 } from "../lib/mailer.js";
 import { syncOrderShipment } from "../lib/shipmentTracking.js";
+import { requirePermission } from "../lib/permissions.js";
 import { getCourierLabelMap } from "../lib/courierDefaults.js";
 import {
   findOrderByIdOrSuffix,
@@ -738,6 +739,7 @@ router.post("/", orderLimiter, async (req, res) => {
         req.socket?.remoteAddress ||
         "",
       deviceId: deviceId || "",
+      userAgent: req.headers["user-agent"] || "",
       // COD / manual mobile-banking orders auto-confirm 1 hour after placement
       confirmAfter: ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(
         paymentMethod,
@@ -1137,7 +1139,7 @@ async function requireAdmin(req, res, next) {
 }
 
 // Admin: flat list of every pre-ordered line item across all orders (dashboard)
-router.get("/admin/preorders", requireAdmin, async (req, res) => {
+router.get("/admin/preorders", requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const orders = await Order.find(
       { "items.isPreorder": true },

@@ -223,6 +223,7 @@ const OrderSchema = new mongoose.Schema({
   returnRequest: { type: ReturnRequestSchema, default: null },
   clientIp: { type: String, default: '' },
   deviceId: { type: String, default: '' },
+  userAgent: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

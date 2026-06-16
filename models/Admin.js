@@ -5,7 +5,10 @@ const AdminSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   hashedPassword: { type: String, required: true },
   role: { type: String, enum: ['admin', 'moderator'], default: 'admin', required: true },
-  
+  // Section keys this moderator is restricted to (see lib/permissions.js).
+  // Empty array = unrestricted (full access), matching legacy behaviour.
+  permissions: { type: [String], default: [] },
+
   // Security fields
   isActive: { type: Boolean, default: true },
   isLocked: { type: Boolean, default: false },
