@@ -529,6 +529,11 @@ router.put("/:id/reviews/:index", requireUser, async (req, res) => {
       return res
         .status(403)
         .json({ error: "You can only edit your own reviews." });
+    const EDIT_WINDOW_MS = 10 * 60 * 1000;
+    if (Date.now() - new Date(review.createdAt).getTime() > EDIT_WINDOW_MS)
+      return res
+        .status(403)
+        .json({ error: "Edit window expired. Reviews can only be edited within 10 minutes of posting." });
     review.authorName =
       authorName?.trim() || req.user.name || req.user.email.split("@")[0];
     review.rating = Number(rating);

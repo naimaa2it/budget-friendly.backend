@@ -198,6 +198,7 @@ const ProductSchema = new mongoose.Schema(
         rating: { type: Number, min: 1, max: 5, required: true },
         title: { type: String },
         body: { type: String },
+        images: { type: [String], default: [] },
         helpful: { type: Number, default: 0 },
         createdAt: { type: Date, default: Date.now },
       },
