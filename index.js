@@ -44,6 +44,7 @@ import analyticsRoutes from "./routes/analytics.js";
 import brandRoutes from "./routes/brands.js";
 import contactRoutes from "./routes/contact.js";
 import cartRoutes from "./routes/cart.js";
+import cronRoutes from "./routes/cron.js";
 import { syncActiveShipments } from "./lib/shipmentTracking.js";
 import { seedDefaultsIfEmpty } from "./lib/courierDefaults.js";
 import { generalLimiter, authLimiter } from "./lib/rateLimiters.js";
@@ -228,7 +229,13 @@ function startBackgroundJobs() {
 }
 
 connectMongo()
-  .then(() => startBackgroundJobs())
+  .then(() => {
+    // On Vercel, function instances freeze between requests, so setInterval
+    // jobs can't run reliably — those jobs are exposed as /api/cron/* routes
+    // instead and triggered by an external pinger. Only run them in-process
+    // on always-on hosts (Render/Railway/local).
+    if (!process.env.VERCEL) startBackgroundJobs();
+  })
   .catch(() => {});
 
 app.get("/", (req, res) => {
@@ -254,6 +261,7 @@ app.use("/api/analytics", analyticsRoutes); // checkout session tracking for aba
 app.use("/api/brands", brandRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/cart", cartRoutes); // shareable cart links
+app.use("/api/cron", cronRoutes); // external-pinger-triggered background jobs (Vercel-safe)
 
 // Public: list active occasion sections (used by homepage)
 app.get("/api/occasions", async (req, res) => {
@@ -629,22 +637,29 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: message });
 });
 
-const server = app.listen(PORT, () => {
-  logger.info(`Server is running on port ${PORT}`);
-});
-
-// Graceful shutdown — allow in-flight requests to complete before exiting.
-// Render/Railway send SIGTERM before killing the process.
-const gracefulShutdown = (signal) => {
-  logger.info(`${signal} received — shutting down gracefully`);
-  server.close(async () => {
-    try {
-      await mongoose.connection.close();
-    } catch {}
-    logger.info("MongoDB disconnected. Exiting.");
-    process.exit(0);
+// On Vercel, the platform itself invokes the exported app per-request — it
+// must NOT call app.listen(). On always-on hosts (Render/Railway/local) we
+// still need a real listening server plus graceful shutdown on SIGTERM.
+if (!process.env.VERCEL) {
+  const server = app.listen(PORT, () => {
+    logger.info(`Server is running on port ${PORT}`);
   });
-  setTimeout(() => process.exit(1), 30_000);
-};
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+  // Graceful shutdown — allow in-flight requests to complete before exiting.
+  // Render/Railway send SIGTERM before killing the process.
+  const gracefulShutdown = (signal) => {
+    logger.info(`${signal} received — shutting down gracefully`);
+    server.close(async () => {
+      try {
+        await mongoose.connection.close();
+      } catch {}
+      logger.info("MongoDB disconnected. Exiting.");
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 30_000);
+  };
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+}
+
+export default app;
