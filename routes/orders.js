@@ -22,8 +22,10 @@ import {
   findOrderByIdOrSuffix,
   findOrderByTrackingId,
   findOrderByTrackingUrl,
+  findOrdersByPhone,
   formatOrderIdSuffix,
   toPublicTrackOrder,
+  phoneMatchesOrder,
 } from "../lib/orderLookup.js";
 import { applyOrderStatusChange } from "../lib/orderStatus.js";
 import {
@@ -1400,18 +1402,35 @@ async function lazyConfirmCodOrder(order) {
   }
 }
 
-// ── GET /api/orders/track — public lookup by order ID, tracking ID, or tracking URL
+// ── GET /api/orders/track — public lookup by order ID or phone number
 router.get("/track", async (req, res) => {
   try {
     const orderId = String(req.query.orderId || "")
       .trim()
       .replace(/^#/, "");
+    const phone = String(req.query.phone || "").trim();
     const trackingId = String(req.query.trackingId || "").trim();
     const trackingUrl = String(req.query.trackingUrl || "").trim();
 
-    if (!orderId && !trackingId && !trackingUrl) {
+    if (!orderId && !phone && !trackingId && !trackingUrl) {
       return res.status(400).json({
-        error: "Order ID, tracking ID, or tracking URL is required.",
+        error: "Order ID or phone number is required.",
+      });
+    }
+
+    // Phone-only lookup: return all orders for this phone
+    if (phone && !orderId && !trackingId && !trackingUrl) {
+      const orders = await findOrdersByPhone(phone);
+      if (!orders.length) {
+        return res.status(404).json({
+          error: "No orders found for this phone number.",
+          code: "order_not_found",
+        });
+      }
+      const courierLabels = await getCourierLabelMap();
+      return res.json({
+        orders: orders.map(toPublicTrackOrder),
+        courierLabels,
       });
     }
 
