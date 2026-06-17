@@ -9,6 +9,7 @@ const CardSchema = new mongoose.Schema({
 
 const OccasionSectionSchema = new mongoose.Schema({
   title:       { type: String, required: true },   // e.g. "Eid Fest on Kitchen Appliances!"
+  titleBn:     { type: String, default: '' },      // Bangla title
   viewAllLink: { type: String, default: '/' },
   isActive:    { type: Boolean, default: true },
   order:       { type: Number, default: 0 },
