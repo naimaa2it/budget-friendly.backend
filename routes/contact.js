@@ -19,16 +19,16 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "Message must be at least 10 characters." });
   }
 
-  try {
-    await sendContactEmail({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      message: message.trim(),
-    });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to send message. Please try again later." });
-  }
+  // Respond immediately — email goes out in background so the form never freezes
+  res.json({ success: true });
+
+  sendContactEmail({
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    message: message.trim(),
+  }).catch((err) => {
+    console.error("[contact] Background email error:", err.message);
+  });
 });
 
 export default router;
