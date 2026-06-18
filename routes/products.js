@@ -702,6 +702,7 @@ router.post("/:id/questions/:qIdx/answers", requireUser, async (req, res) => {
       helpfulBy: [],
       createdAt: new Date(),
     });
+    prod.markModified("faqs");
     await prod.save();
     res.json({ ok: true, faqs: prod.faqs });
   } catch (err) {
@@ -737,6 +738,7 @@ router.put(
           .status(403)
           .json({ error: "You can only edit your own answers." });
       ans.body = body.trim();
+      prod.markModified("faqs");
       await prod.save();
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
@@ -772,6 +774,7 @@ router.post(
         ans.helpfulBy = [...(ans.helpfulBy || []), req.user._id];
         ans.helpful = (ans.helpful || 0) + 1;
       }
+      prod.markModified("faqs");
       await prod.save();
       res.json({
         ok: true,
@@ -821,6 +824,7 @@ router.put(
           });
         }
       }
+      prod.markModified("faqs");
       await prod.save();
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
@@ -845,6 +849,7 @@ router.delete(
       if (aIdx < 0 || aIdx >= answers.length)
         return res.status(404).json({ error: "Answer not found" });
       prod.faqs[qIdx].answers.splice(aIdx, 1);
+      prod.markModified("faqs");
       await prod.save();
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
