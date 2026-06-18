@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { clearProductsCache } from '../lib/redis.js';
+import { clearProductsCache, clearProductCache } from '../lib/redis.js';
 import mongoose from 'mongoose';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -843,13 +843,21 @@ const normalizeFaqs = (faqs) => {
   return faqs
     .filter((f) => f?.question?.trim())
     .map((f) => {
-      if (Array.isArray(f.answers)) return f;
       const body = (f.answer || '').trim();
+      const communityAnswers = (f.answers || []).filter((a) => !a.isOfficial);
+      const existingOfficial = (f.answers || []).find((a) => a.isOfficial);
+      if (!body) {
+        return {
+          question: f.question.trim(),
+          answers: f.answers || [],
+        };
+      }
+      const officialAnswer = existingOfficial
+        ? { ...existingOfficial, body, createdAt: new Date() }
+        : { body, isOfficial: true, authorName: 'Seller', helpful: 0, helpfulBy: [], createdAt: new Date() };
       return {
         question: f.question.trim(),
-        answers: body
-          ? [{ body, isOfficial: true, authorName: 'Seller', helpful: 0, helpfulBy: [], createdAt: new Date() }]
-          : [],
+        answers: [officialAnswer, ...communityAnswers],
       };
     });
 };
@@ -1041,6 +1049,7 @@ router.put('/products/:id', requireAdmin, requirePermission('catalog'), async (r
     const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (!p) return res.status(404).json({ error: 'Not found' });
     clearProductsCache();
+    clearProductCache(req.params.id);
     if (nextBarcode) {
       await syncProductBarcode({
         productId: p._id,
