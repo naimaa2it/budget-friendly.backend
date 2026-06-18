@@ -7,7 +7,6 @@ const VariantSchema = new mongoose.Schema({
     hex: { type: String }, // e.g., "#FF000
   },
   size: { type: String }, // e.g., "L" or "16 inch"
-  sku: { type: String },
   buyingPrice: { type: Number },
   price: { type: Number, required: true },
   compareAtPrice: { type: Number },

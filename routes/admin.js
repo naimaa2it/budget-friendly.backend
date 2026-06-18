@@ -421,7 +421,6 @@ router.get('/profit-margin', requireAdmin, async (req, res) => {
         variantMargins = p.variants.map((v, i) => ({
           index: i,
           name: [v.color?.name, v.size].filter(Boolean).join(' / ') || v.name || `Variant ${i + 1}`,
-          sku: v.sku,
           ...calcMargin(v.price || p.price, v.buyingPrice ?? p.buyingPrice),
         }));
         const validVariants = variantMargins.filter((v) => v.hasData);
@@ -614,7 +613,7 @@ router.get('/inventory', requireAdmin, async (req, res) => {
     const filter = { status: { $ne: 'archived' } };
     if (q) {
       const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ title: re }, { sku: re }, { 'variants.sku': re }];
+      filter.$or = [{ title: re }, { sku: re }];
     }
 
     const allProducts = await Product.find(filter)
