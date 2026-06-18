@@ -38,7 +38,8 @@ const CARD_SELECT = [
   "availability inventory badges averageRating reviewCount",
   "freeShipping flashSale flashSalePrice flashSaleEndsAt",
   "variants categoryId department status updatedAt monthlySold",
-  "coupon skinTypes spf fragranceFree parabenFree crueltyFree vegan",
+  "coupon featured clearance tags rewardPoints",
+  "skinTypes spf fragranceFree parabenFree crueltyFree vegan",
 ].join(" ");
 
 //get products with optional filters: ?q=search&categoryId=123&badge=best-seller&flag=featured&page=1&limit=20&status=published&sort=position&minPrice=10&maxPrice=100&brand=BrandA&minRating=4
@@ -50,6 +51,7 @@ router.get("/", async (req, res) => {
       categoryId,
       badge,
       flag,
+      tag,
       page = 1,
       limit = 20,
       status = "published",
@@ -81,6 +83,10 @@ router.get("/", async (req, res) => {
       else if (ids.length > 1) filter.categoryId = { $in: ids };
     }
     if (badge) filter.badges = badge;
+    if (tag) {
+      const tagVal = String(tag).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.tags = { $regex: tagVal, $options: "i" };
+    }
     // boolean flag fields — whitelist to prevent injection
     const FLAG_MAP = {
       featured: "featured",

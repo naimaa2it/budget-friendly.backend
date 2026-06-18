@@ -67,7 +67,7 @@ router.post('/', requireAdmin, async (req, res) => {
     if (req.admin.role !== 'admin' && req.admin.role !== 'moderator') {
       return res.status(403).json({ error: 'Admin or moderator access required' });
     }
-    const { name, parentId } = req.body || {};
+    const { name, parentId, description } = req.body || {};
     if (!name) return res.status(400).json({ error: 'Name is required' });
     const Category = (await import('../models/Category.js')).default;
 
@@ -83,6 +83,7 @@ router.post('/', requireAdmin, async (req, res) => {
 
     const cat = new (await import('../models/Category.js')).default({ name, parent: parentId || undefined, level, order: 0, isActive: true });
 
+    if (typeof description === 'string') cat.description = description.trim();
     // allow initial images array (frontend should upload to /api/admin/upload first)
     if (Array.isArray(req.body.images)) cat.images = req.body.images;
 
@@ -99,7 +100,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     if (req.admin.role !== 'admin' && req.admin.role !== 'moderator') {
       return res.status(403).json({ error: 'Admin or moderator access required' });
     }
-    const { name, parentId, isActive, images, removedImages } = req.body || {};
+    const { name, parentId, isActive, images, removedImages, description } = req.body || {};
     const Category = (await import('../models/Category.js')).default;
     const cat = await Category.findById(req.params.id);
     if (!cat) return res.status(404).json({ error: 'Not found' });
@@ -175,6 +176,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     }
 
     if (name) cat.name = name;
+    if (typeof description === 'string') cat.description = description.trim();
     if (typeof isActive === 'boolean') cat.isActive = isActive;
 
     // accept images array when provided (frontend uploads images separately to /admin/upload)
