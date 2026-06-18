@@ -2889,7 +2889,7 @@ router.get('/orders', requireAdmin, requirePermission('orders'), async (req, res
       })),
     );
     // Summary counts
-    const [pending, accepted, rejected, confirmed, processing, shipped, delivered, cancelled, failed] = await Promise.all([
+    const [pending, accepted, rejected, confirmed, processing, shipped, delivered, returned, cancelled, failed] = await Promise.all([
       Order.countDocuments({ status: 'pending' }),
       Order.countDocuments({ status: { $in: ['accepted', 'picked', 'approved'] } }),
       Order.countDocuments({ status: 'rejected' }),
@@ -2897,6 +2897,7 @@ router.get('/orders', requireAdmin, requirePermission('orders'), async (req, res
       Order.countDocuments({ status: 'processing' }),
       Order.countDocuments({ status: 'shipped' }),
       Order.countDocuments({ status: 'delivered' }),
+      Order.countDocuments({ status: 'returned' }),
       Order.countDocuments({ status: 'cancelled' }),
       Order.countDocuments({ status: 'failed' }),
     ]);
@@ -2910,7 +2911,7 @@ router.get('/orders', requireAdmin, requirePermission('orders'), async (req, res
       pages: Math.ceil(total / parseInt(limit)),
       stats: {
         all: total,
-        pending, accepted, rejected, confirmed, processing, shipped, delivered, cancelled, failed,
+        pending, accepted, rejected, confirmed, processing, shipped, delivered, returned, cancelled, failed,
         revenue: revenueAgg[0]?.total || 0,
       },
     });
@@ -3039,6 +3040,7 @@ router.put('/orders/:id/return', requireAdmin, requirePermission('orders'), asyn
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (!order.returnRequest) return res.status(404).json({ error: 'No return request found for this order' });
 
+    const prevStatus = order.returnRequest.status;
     order.returnRequest.status = status;
     if (adminNote !== undefined) order.returnRequest.adminNote = adminNote.trim();
     if (refundAmount !== undefined) order.returnRequest.refundAmount = Math.max(0, Number(refundAmount) || 0);
@@ -3046,6 +3048,18 @@ router.put('/orders/:id/return', requireAdmin, requirePermission('orders'), asyn
       order.returnRequest.resolvedAt = new Date();
       order.returnRequest.resolvedBy = req.admin?.name || req.admin?.email || 'admin';
     }
+
+    if (prevStatus !== status) {
+      const changedBy = req.admin?.name || req.admin?.email || 'admin';
+      const note = adminNote?.trim() || '';
+      appendStatusHistory(order, {
+        previousStatus: `return-${prevStatus}`,
+        newStatus: `return-${status}`,
+        reason: note,
+        changedBy,
+      });
+    }
+
     await order.save();
     res.json(order);
   } catch (err) {
