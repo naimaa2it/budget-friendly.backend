@@ -704,6 +704,9 @@ router.post("/:id/questions/:qIdx/answers", requireUser, async (req, res) => {
     });
     prod.markModified("faqs");
     await prod.save();
+    if (redisClient?.isReady) {
+      redisClient.del(`product:${req.params.id}`).catch(() => {});
+    }
     res.json({ ok: true, faqs: prod.faqs });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
@@ -740,6 +743,9 @@ router.put(
       ans.body = body.trim();
       prod.markModified("faqs");
       await prod.save();
+      if (redisClient?.isReady) {
+        redisClient.del(`product:${req.params.id}`).catch(() => {});
+      }
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
@@ -826,6 +832,9 @@ router.put(
       }
       prod.markModified("faqs");
       await prod.save();
+      if (redisClient?.isReady) {
+        redisClient.del(`product:${req.params.productId}`).catch(() => {});
+      }
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
@@ -851,6 +860,9 @@ router.delete(
       prod.faqs[qIdx].answers.splice(aIdx, 1);
       prod.markModified("faqs");
       await prod.save();
+      if (redisClient?.isReady) {
+        redisClient.del(`product:${req.params.productId}`).catch(() => {});
+      }
       res.json({ ok: true, faqs: prod.faqs });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
