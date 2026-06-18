@@ -5,7 +5,7 @@ import Product from '../models/Product.js';
 import { v2 as cloudinary } from 'cloudinary';
 import { redisClient } from '../lib/redis.js';
 
-const CAT_CACHE_KEY = 'products:categories:v1';
+const CAT_CACHE_KEY = 'products:categories:v2';
 const bustCatCache = () => {
   if (redisClient?.isReady) redisClient.del(CAT_CACHE_KEY).catch(() => {});
 };

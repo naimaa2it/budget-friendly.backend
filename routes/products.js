@@ -216,7 +216,7 @@ router.get("/", async (req, res) => {
 // Public categories listing (tree-friendly)
 router.get("/categories", async (req, res) => {
   try {
-    const CAT_CACHE_KEY = "products:categories:v1";
+    const CAT_CACHE_KEY = "products:categories:v2";
     if (redisClient?.isReady) {
       try {
         const cached = await redisClient.get(CAT_CACHE_KEY);
