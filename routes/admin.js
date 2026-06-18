@@ -356,6 +356,19 @@ router.put('/settings', requireAdmin, async (req, res) => {
   }
 });
 
+// Badge options — moderators with catalog permission can manage
+router.put('/settings/badges', requireAdmin, requirePermission('catalog'), async (req, res) => {
+  try {
+    const { productBadgeOptions } = req.body || {};
+    if (!Array.isArray(productBadgeOptions)) return res.status(400).json({ error: 'productBadgeOptions must be an array' });
+    const Setting = (await import('../models/Setting.js')).default;
+    const settings = await Setting.findOneAndUpdate({}, { $set: { productBadgeOptions } }, { upsert: true, new: true });
+    res.json({ ok: true, settings });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ─── Profit Margin ───────────────────────────────────────────────────────────
 
 router.get('/profit-margin', requireAdmin, async (req, res) => {
