@@ -2953,23 +2953,45 @@ router.get('/orders/timeline', requireAdmin, requirePermission('orders'), async 
   }
 });
 
-// GET /api/admin/orders/returns — list orders with return requests
+// GET /api/admin/orders/returns — list orders with status "returned"
 router.get('/orders/returns', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
     const { page = 1, limit = 20, status, q } = req.query;
-    const filter = { returnRequest: { $ne: null } };
-    if (status && status !== 'all') filter['returnRequest.status'] = status;
+
+    // Base: all orders whose delivery status is "returned"
+    const filter = { status: 'returned' };
+
+    // Sub-filter by returnRequest processing status
+    if (status && status !== 'all') {
+      if (status === 'pending') {
+        // pending = no returnRequest yet, OR returnRequest.status is pending
+        filter.$or = [
+          { returnRequest: null },
+          { returnRequest: { $exists: false } },
+          { 'returnRequest.status': 'pending' },
+        ];
+      } else {
+        filter['returnRequest.status'] = status;
+      }
+    }
+
     if (q) {
-      filter.$or = [
+      const qFilter = [
         { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
         { 'billingDetails.name': { $regex: q, $options: 'i' } },
         { 'billingDetails.phone': { $regex: q, $options: 'i' } },
       ].filter(c => Object.values(c)[0] !== null);
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: qFilter }];
+        delete filter.$or;
+      } else {
+        filter.$or = qFilter;
+      }
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const [ordersRaw, total] = await Promise.all([
-      Order.find(filter).sort({ 'returnRequest.requestedAt': -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Order.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
       Order.countDocuments(filter),
     ]);
 
@@ -2981,13 +3003,16 @@ router.get('/orders/returns', requireAdmin, requirePermission('orders'), async (
       })),
     );
 
-    const [pending, approved, rejected] = await Promise.all([
-      Order.countDocuments({ 'returnRequest.status': 'pending' }),
-      Order.countDocuments({ 'returnRequest.status': 'approved' }),
-      Order.countDocuments({ 'returnRequest.status': 'rejected' }),
+    const [approved, rejected] = await Promise.all([
+      Order.countDocuments({ status: 'returned', 'returnRequest.status': 'approved' }),
+      Order.countDocuments({ status: 'returned', 'returnRequest.status': 'rejected' }),
     ]);
+    const pendingCount = await Order.countDocuments({
+      status: 'returned',
+      $or: [{ returnRequest: null }, { returnRequest: { $exists: false } }, { 'returnRequest.status': 'pending' }],
+    });
     const refundAgg = await Order.aggregate([
-      { $match: { 'returnRequest.status': 'approved' } },
+      { $match: { status: 'returned', 'returnRequest.status': 'approved' } },
       { $group: { _id: null, total: { $sum: '$returnRequest.refundAmount' } } },
     ]);
 
@@ -2995,7 +3020,7 @@ router.get('/orders/returns', requireAdmin, requirePermission('orders'), async (
       orders,
       total,
       pages: Math.ceil(total / parseInt(limit)),
-      stats: { pending, approved, rejected, totalRefund: refundAgg[0]?.total || 0 },
+      stats: { pending: pendingCount, approved, rejected, totalRefund: refundAgg[0]?.total || 0 },
     });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -3038,7 +3063,12 @@ router.put('/orders/:id/return', requireAdmin, requirePermission('orders'), asyn
 
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!order.returnRequest) return res.status(404).json({ error: 'No return request found for this order' });
+
+    // Auto-create returnRequest if order is "returned" but has no request yet
+    if (!order.returnRequest) {
+      if (order.status !== 'returned') return res.status(404).json({ error: 'No return request found for this order' });
+      order.returnRequest = { reason: '', requestedAt: new Date(), status: 'pending', refundAmount: 0, adminNote: '' };
+    }
 
     const prevStatus = order.returnRequest.status;
     order.returnRequest.status = status;
