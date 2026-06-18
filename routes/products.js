@@ -243,6 +243,7 @@ router.get("/categories", async (req, res) => {
         _id: c._id,
         name: c.name,
         slug: c.slug,
+        description: c.description || '',
         parent: c.parent ? String(c.parent) : null,
         level: c.level,
         order: c.order,

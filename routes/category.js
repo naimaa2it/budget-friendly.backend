@@ -3,6 +3,12 @@ import jwt from 'jsonwebtoken';
 import Admin from '../models/Admin.js';
 import Product from '../models/Product.js';
 import { v2 as cloudinary } from 'cloudinary';
+import { redisClient } from '../lib/redis.js';
+
+const CAT_CACHE_KEY = 'products:categories:v1';
+const bustCatCache = () => {
+  if (redisClient?.isReady) redisClient.del(CAT_CACHE_KEY).catch(() => {});
+};
 
 const router = express.Router();
 
@@ -88,6 +94,7 @@ router.post('/', requireAdmin, async (req, res) => {
     if (Array.isArray(req.body.images)) cat.images = req.body.images;
 
     await cat.save();
+    bustCatCache();
     res.json({ ok: true, category: cat });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -183,6 +190,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     if (Array.isArray(images)) cat.images = images;
 
     await cat.save();
+    bustCatCache();
     res.json({ ok: true, category: cat });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -221,6 +229,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     }
 
     await cat.deleteOne();
+    bustCatCache();
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
