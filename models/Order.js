@@ -79,17 +79,17 @@ const AssignedAgentSchema = new mongoose.Schema(
 
 const ReturnRequestSchema = new mongoose.Schema(
   {
-    reason: { type: String, default: '' },
+    reason: { type: String, default: "" },
     requestedAt: { type: Date, default: Date.now },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
-      default: 'pending',
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
     },
     refundAmount: { type: Number, default: 0 },
-    adminNote: { type: String, default: '' },
+    adminNote: { type: String, default: "" },
     resolvedAt: { type: Date, default: null },
-    resolvedBy: { type: String, default: '' },
+    resolvedBy: { type: String, default: "" },
   },
   { _id: false },
 );
@@ -152,7 +152,7 @@ const ShipmentSchema = new mongoose.Schema(
     bookedAt: { type: Date, default: null },
     bookingSource: {
       type: String,
-      enum: ['api', 'manual'],
+      enum: ["api", "manual"],
       default: null,
     },
     trackingEvents: { type: [TrackingEventSchema], default: [] },
@@ -188,6 +188,7 @@ const OrderSchema = new mongoose.Schema({
       "processing",
       "shipped",
       "delivered",
+      "returned",
       "failed",
       "cancelled",
     ],
@@ -195,7 +196,14 @@ const OrderSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ["unpaid", "cod", "paid", "failed", "cancelled", "pending_verification"],
+    enum: [
+      "unpaid",
+      "cod",
+      "paid",
+      "failed",
+      "cancelled",
+      "pending_verification",
+    ],
     default: "unpaid",
   },
   transactionId: { type: String, default: null },
@@ -221,9 +229,9 @@ const OrderSchema = new mongoose.Schema({
   rewardPointsCreditedAt: { type: Date, default: null },
   statusHistory: { type: [StatusHistorySchema], default: [] },
   returnRequest: { type: ReturnRequestSchema, default: null },
-  clientIp: { type: String, default: '' },
-  deviceId: { type: String, default: '' },
-  userAgent: { type: String, default: '' },
+  clientIp: { type: String, default: "" },
+  deviceId: { type: String, default: "" },
+  userAgent: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -233,7 +241,7 @@ OrderSchema.pre("save", async function () {
 });
 
 // Compound indexes for dashboard queries and fraud-prevention lookups
-OrderSchema.index({ 'billingDetails.phone': 1, createdAt: -1 });
+OrderSchema.index({ "billingDetails.phone": 1, createdAt: -1 });
 OrderSchema.index({ clientIp: 1, createdAt: -1 });
 OrderSchema.index({ deviceId: 1, createdAt: -1 });
 OrderSchema.index({ userId: 1, status: 1 });
@@ -241,7 +249,7 @@ OrderSchema.index({ userId: 1, createdAt: -1 }); // fast "my orders" sort
 OrderSchema.index({ status: 1, createdAt: -1 });
 OrderSchema.index({ userEmail: 1, createdAt: -1 });
 OrderSchema.index({ paymentStatus: 1, createdAt: -1 });
-OrderSchema.index({ 'shipment.trackingId': 1 }, { sparse: true }); // webhook lookups
+OrderSchema.index({ "shipment.trackingId": 1 }, { sparse: true }); // webhook lookups
 OrderSchema.index({ confirmAfter: 1 }, { sparse: true }); // lazy-confirm batch job
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

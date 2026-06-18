@@ -3130,7 +3130,7 @@ router.get('/orders/:id', requireAdmin, requirePermission('orders'), async (req,
 // PUT /api/admin/orders/:id/status
 router.put('/orders/:id/status', requireAdmin, requirePermission('orders'), async (req, res) => {
   try {
-    const VALID = ['pending', 'accepted', 'picked', 'approved', 'rejected', 'confirmed', 'processing', 'shipped', 'delivered', 'failed', 'cancelled'];
+    const VALID = ['pending', 'accepted', 'picked', 'approved', 'rejected', 'confirmed', 'processing', 'shipped', 'delivered', 'returned', 'failed', 'cancelled'];
     const { status, reason } = req.body;
     if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
     if (!String(reason || '').trim()) return res.status(400).json({ error: 'Reason is required' });
