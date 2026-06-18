@@ -838,9 +838,26 @@ router.delete('/variations/:id', requireAdmin, requirePermission('catalog'), asy
   }
 });
 
+const normalizeFaqs = (faqs) => {
+  if (!Array.isArray(faqs)) return faqs;
+  return faqs
+    .filter((f) => f?.question?.trim())
+    .map((f) => {
+      if (Array.isArray(f.answers)) return f;
+      const body = (f.answer || '').trim();
+      return {
+        question: f.question.trim(),
+        answers: body
+          ? [{ body, isOfficial: true, authorName: 'Seller', helpful: 0, helpfulBy: [], createdAt: new Date() }]
+          : [],
+      };
+    });
+};
+
 router.post('/products', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     let payload = req.body || {};
+    if (payload.faqs) payload.faqs = normalizeFaqs(payload.faqs);
     const nextBarcode = normalizeBarcodeCode(payload.barcode);
 
     // ensure drafts and new products are attributed to the current admin
@@ -939,6 +956,7 @@ router.get('/products/:id', requireAdmin, requirePermission('catalog'), async (r
 router.put('/products/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
   try {
     const updates = req.body || {};
+    if (updates.faqs) updates.faqs = normalizeFaqs(updates.faqs);
     const nextBarcode = normalizeBarcodeCode(updates.barcode);
 
     // parse stringified customization options if needed
