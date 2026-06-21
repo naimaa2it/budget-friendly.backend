@@ -61,6 +61,11 @@ const BlogPostSchema = new mongoose.Schema({
   publishDate: { type: Date },
   // Reading time in minutes
   readingTime: { type: Number, default: 5 },
+  seo: {
+    title: { type: String },
+    description: { type: String },
+    keywords: { type: [String], default: [] },
+  },
   status: { type: String, enum: ['draft','published','archived'], default: 'draft' },
   publishedAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
