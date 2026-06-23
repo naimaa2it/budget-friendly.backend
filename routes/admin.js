@@ -241,7 +241,7 @@ router.post(
       const folder =
         req.body.folder ||
         req.query.folder ||
-        `${process.env.CLOUDINARY_FOLDER || "SmartBuyBD"}/media`;
+        `${process.env.CLOUDINARY_FOLDER || "Pickob"}/media`;
 
       // Detect if file is a video based on mimetype
       const isVideo = req.file.mimetype.startsWith("video/");
@@ -5732,6 +5732,226 @@ router.delete(
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// ─── Migrate Cloudinary folder + all DB image references ─────────────────────
+// POST /api/admin/migrate-cloudinary-folder
+// Body: { from?: "SmartBuyBD", to?: "Pickob" }
+// Renames every Cloudinary asset under `from/` to `to/` (keeping sub-paths),
+// then updates every image URL / public_id in all MongoDB collections.
+router.post(
+  "/migrate-cloudinary-folder",
+  requireAdmin,
+  async (req, res) => {
+    const { from = "SmartBuyBD", to = "Pickob" } = req.body || {};
+    if (!from || !to || from === to) {
+      return res.status(400).json({ error: "Provide different from/to folder names" });
+    }
+
+    const log = { cloudinary: { renamed: 0, skipped: 0, errors: [] }, db: {} };
+
+    // Recursively replace every occurrence of `from` with `to` in any JS value
+    const rep = (v) => {
+      if (typeof v === "string") return v.replaceAll(from, to);
+      if (Array.isArray(v)) return v.map(rep);
+      if (v && typeof v === "object") {
+        const o = {};
+        for (const [k, iv] of Object.entries(v)) o[k] = rep(iv);
+        return o;
+      }
+      return v;
+    };
+
+    try {
+      // ── Phase 1: rename Cloudinary assets ──────────────────────────────────
+      const fetchAll = async (resource_type) => {
+        const items = [];
+        let cursor;
+        do {
+          const r = await cloudinary.api.resources({
+            type: "upload",
+            resource_type,
+            prefix: `${from}/`,
+            max_results: 500,
+            ...(cursor ? { next_cursor: cursor } : {}),
+          });
+          items.push(...(r.resources || []));
+          cursor = r.next_cursor;
+        } while (cursor);
+        return items.map((a) => ({ ...a, resource_type }));
+      };
+
+      const allAssets = [
+        ...(await fetchAll("image")),
+        ...(await fetchAll("video")),
+      ];
+
+      // Rename in batches of 5 to stay within Cloudinary rate limits
+      for (let i = 0; i < allAssets.length; i += 5) {
+        await Promise.all(
+          allAssets.slice(i, i + 5).map(async (a) => {
+            const newId = to + a.public_id.slice(from.length);
+            try {
+              await cloudinary.uploader.rename(a.public_id, newId, {
+                resource_type: a.resource_type,
+                overwrite: false,
+              });
+              log.cloudinary.renamed++;
+            } catch (e) {
+              if (/already exists/i.test(e.message || "")) {
+                log.cloudinary.skipped++;
+              } else {
+                log.cloudinary.errors.push(`${a.public_id}: ${e.message}`);
+              }
+            }
+          }),
+        );
+      }
+
+      // ── Phase 2: update MongoDB ─────────────────────────────────────────────
+
+      // User — image (URL string) + imagePublicId
+      const userRes = await User.updateMany(
+        { $or: [{ image: { $regex: from } }, { imagePublicId: { $regex: from } }] },
+        [{ $set: {
+          image: { $cond: [
+            { $regexMatch: { input: { $ifNull: ["$image", ""] }, regex: from } },
+            { $replaceOne: { input: "$image", find: from, replacement: to } },
+            "$image",
+          ]},
+          imagePublicId: { $cond: [
+            { $regexMatch: { input: { $ifNull: ["$imagePublicId", ""] }, regex: from } },
+            { $replaceOne: { input: "$imagePublicId", find: from, replacement: to } },
+            "$imagePublicId",
+          ]},
+        }}],
+      );
+      log.db.users = userRes.modifiedCount;
+
+      // Category — images[] objects
+      const CategoryModel = (await import("../models/Category.js")).default;
+      const catDocs = await CategoryModel.find({ "images.url": { $regex: from } }).lean();
+      let catCount = 0;
+      for (const d of catDocs) {
+        await CategoryModel.updateOne({ _id: d._id }, { $set: { images: rep(d.images) } });
+        catCount++;
+      }
+      log.db.categories = catCount;
+
+      // Product — images[] + detailedDescription (Mixed)
+      const prodDocs = await Product.find({
+        $or: [
+          { "images.url": { $regex: from } },
+          { "images.public_id": { $regex: from } },
+        ],
+      }).lean();
+      let prodCount = 0;
+      for (const d of prodDocs) {
+        const upd = {};
+        if (d.images?.length) upd.images = rep(d.images);
+        if (d.detailedDescription) upd.detailedDescription = rep(d.detailedDescription);
+        if (Object.keys(upd).length) {
+          await Product.updateOne({ _id: d._id }, { $set: upd });
+          prodCount++;
+        }
+      }
+      log.db.products = prodCount;
+
+      // Review (separate collection) — images[] of URL strings
+      const ReviewModel = (await import("../models/Review.js")).default;
+      const reviewRes = await ReviewModel.updateMany(
+        { images: { $elemMatch: { $regex: from } } },
+        [{ $set: {
+          images: {
+            $map: {
+              input: "$images",
+              in: { $replaceOne: { input: "$$this", find: from, replacement: to } },
+            },
+          },
+        }}],
+      );
+      log.db.reviews = reviewRes.modifiedCount;
+
+      // BlogPost — featuredImage + additionalImages + videos + dynamicSections
+      const blogDocs = await BlogPost.find({
+        $or: [
+          { "featuredImage.url": { $regex: from } },
+          { "featuredImage.public_id": { $regex: from } },
+          { "additionalImages.url": { $regex: from } },
+          { "videos.url": { $regex: from } },
+        ],
+      }).lean();
+      let blogCount = 0;
+      for (const d of blogDocs) {
+        const upd = {};
+        if (d.featuredImage) upd.featuredImage = rep(d.featuredImage);
+        if (d.additionalImages?.length) upd.additionalImages = rep(d.additionalImages);
+        if (d.videos?.length) upd.videos = rep(d.videos);
+        if (d.dynamicSections?.length) upd.dynamicSections = rep(d.dynamicSections);
+        if (Object.keys(upd).length) {
+          await BlogPost.updateOne({ _id: d._id }, { $set: upd });
+          blogCount++;
+        }
+      }
+      log.db.blogposts = blogCount;
+
+      // Setting — websiteLogo + cloudinaryFolder
+      const SettingModel = (await import("../models/Setting.js")).default;
+      const settingDocs = await SettingModel.find({
+        $or: [
+          { "websiteLogo.url": { $regex: from } },
+          { cloudinaryFolder: { $regex: from } },
+        ],
+      }).lean();
+      let settingCount = 0;
+      for (const d of settingDocs) {
+        const upd = {};
+        if (d.websiteLogo?.url?.includes(from)) upd.websiteLogo = rep(d.websiteLogo);
+        if (d.cloudinaryFolder?.includes(from))
+          upd.cloudinaryFolder = d.cloudinaryFolder.replaceAll(from, to);
+        if (Object.keys(upd).length) {
+          await SettingModel.updateOne({ _id: d._id }, { $set: upd });
+          settingCount++;
+        }
+      }
+      log.db.settings = settingCount;
+
+      // Banner / PromoPanel / Popup / PromoStripItem — simple image.url + image.public_id
+      const patchImageModel = async (modelPath, key) => {
+        const M = (await import(modelPath)).default;
+        const r2 = await M.updateMany(
+          { $or: [{ "image.url": { $regex: from } }, { "image.public_id": { $regex: from } }] },
+          [{ $set: {
+            "image.url": { $replaceOne: {
+              input: { $ifNull: ["$image.url", ""] }, find: from, replacement: to,
+            }},
+            "image.public_id": { $replaceOne: {
+              input: { $ifNull: ["$image.public_id", ""] }, find: from, replacement: to,
+            }},
+          }}],
+        );
+        log.db[key] = r2.modifiedCount;
+      };
+      await patchImageModel("../models/Banner.js", "banners");
+      await patchImageModel("../models/PromoPanel.js", "promopanels");
+      await patchImageModel("../models/Popup.js", "popups");
+      await patchImageModel("../models/PromoStripItem.js", "promostripitems");
+
+      // OccasionSection — cards[].image
+      const OccModel = (await import("../models/OccasionSection.js")).default;
+      const occDocs = await OccModel.find({ "cards.image.url": { $regex: from } }).lean();
+      let occCount = 0;
+      for (const d of occDocs) {
+        await OccModel.updateOne({ _id: d._id }, { $set: { cards: rep(d.cards) } });
+        occCount++;
+      }
+      log.db.occasionsections = occCount;
+
+      res.json({ ok: true, log });
+    } catch (err) {
+      res.status(500).json({ error: err.message, log });
     }
   },
 );

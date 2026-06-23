@@ -511,7 +511,7 @@ router.post(
               cloudinary.uploader
                 .upload_stream(
                   {
-                    folder: `${process.env.CLOUDINARY_FOLDER || "SmartBuyBD"}/reviews`,
+                    folder: `${process.env.CLOUDINARY_FOLDER || "Pickob"}/reviews`,
                     quality: "auto",
                     fetch_format: "auto",
                   },
@@ -961,7 +961,7 @@ router.post(
         new Promise((resolve, reject) => {
           const stream = cloudinary.uploader.upload_stream(
             {
-              folder: `${process.env.CLOUDINARY_FOLDER || "SmartBuyBD"}/products`,
+              folder: `${process.env.CLOUDINARY_FOLDER || "Pickob"}/products`,
               resource_type: "image",
             },
             (error, result) => {
