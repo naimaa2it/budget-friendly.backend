@@ -241,7 +241,7 @@ router.post(
       const folder =
         req.body.folder ||
         req.query.folder ||
-        `${process.env.CLOUDINARY_FOLDER || "PickobBD"}/media`;
+        `${process.env.CLOUDINARY_FOLDER || "SmartBuyBD"}/media`;
 
       // Detect if file is a video based on mimetype
       const isVideo = req.file.mimetype.startsWith("video/");

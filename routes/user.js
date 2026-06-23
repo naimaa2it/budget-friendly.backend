@@ -112,7 +112,7 @@ router.put(
           new Promise((resolve, reject) => {
             const stream = cloudinary.uploader.upload_stream(
               {
-                folder: `${process.env.CLOUDINARY_FOLDER || 'PickobBD'}/profiles`,
+                folder: `${process.env.CLOUDINARY_FOLDER || 'SmartBuyBD'}/profiles`,
                 resource_type: "image",
               },
               (error, result) => {
