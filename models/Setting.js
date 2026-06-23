@@ -22,6 +22,22 @@ const SocialLinkSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const PolicyItemSchema = new mongoose.Schema(
+  {
+    question: { type: String, default: '' },
+    answer:   { type: String, default: '' },
+  },
+  { _id: false },
+);
+
+const PolicySectionSchema = new mongoose.Schema(
+  {
+    heading: { type: String, default: '' },
+    content: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
 const SettingsSchema = new mongoose.Schema({
   storeName: { type: String, default: "SmartBuy BD" },
   storeEmail: { type: String, default: "" },
@@ -171,6 +187,13 @@ const SettingsSchema = new mongoose.Schema({
       categoryPage: { type: Boolean, default: true },
       blogPage: { type: Boolean, default: true },
     },
+  },
+  policyContent: {
+    shipping: { type: [PolicyItemSchema],   default: [] },
+    return:   { type: [PolicyItemSchema],   default: [] },
+    faq:      { type: [PolicyItemSchema],   default: [] },
+    privacy:  { type: [PolicySectionSchema], default: [] },
+    terms:    { type: [PolicySectionSchema], default: [] },
   },
   updatedAt: { type: Date, default: Date.now },
 });

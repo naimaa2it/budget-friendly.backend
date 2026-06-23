@@ -290,9 +290,10 @@ router.get('/top-banner', async (req, res) => {
       contactInfo: s?.contactInfo || { phone: '', email: '', address: '' },
       megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : [],
       socialLinks: s?.socialLinks || {},
+      policyContent: s?.policyContent || { shipping: [], return: [], faq: [], privacy: [], terms: [] },
     });
   } catch (err) {
-    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, storeName: '', footerInfo: { phone: '', email: '', address: '' }, contactInfo: { phone: '', email: '', address: '' }, megaMenuTags: [], socialLinks: {} });
+    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, storeName: '', footerInfo: { phone: '', email: '', address: '' }, contactInfo: { phone: '', email: '', address: '' }, megaMenuTags: [], socialLinks: {}, policyContent: { shipping: [], return: [], faq: [], privacy: [], terms: [] } });
   }
 });
 
