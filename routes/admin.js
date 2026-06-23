@@ -5810,25 +5810,20 @@ router.post(
         );
       }
 
-      // ── Phase 2: update MongoDB ─────────────────────────────────────────────
+      // ── Phase 2: update MongoDB (simple fetch-modify-save, no pipeline) ──────
 
-      // User — image (URL string) + imagePublicId
-      const userRes = await User.updateMany(
-        { $or: [{ image: { $regex: from } }, { imagePublicId: { $regex: from } }] },
-        [{ $set: {
-          image: { $cond: [
-            { $regexMatch: { input: { $ifNull: ["$image", ""] }, regex: from } },
-            { $replaceOne: { input: "$image", find: from, replacement: to } },
-            "$image",
-          ]},
-          imagePublicId: { $cond: [
-            { $regexMatch: { input: { $ifNull: ["$imagePublicId", ""] }, regex: from } },
-            { $replaceOne: { input: "$imagePublicId", find: from, replacement: to } },
-            "$imagePublicId",
-          ]},
-        }}],
-      );
-      log.db.users = userRes.modifiedCount;
+      // User — image URL + imagePublicId
+      const userDocs = await User.find({
+        $or: [{ image: { $regex: from } }, { imagePublicId: { $regex: from } }],
+      }).lean();
+      let userCount = 0;
+      for (const d of userDocs) {
+        const upd = {};
+        if (d.image?.includes(from)) upd.image = d.image.replaceAll(from, to);
+        if (d.imagePublicId?.includes(from)) upd.imagePublicId = d.imagePublicId.replaceAll(from, to);
+        if (Object.keys(upd).length) { await User.updateOne({ _id: d._id }, { $set: upd }); userCount++; }
+      }
+      log.db.users = userCount;
 
       // Category — images[] objects
       const CategoryModel = (await import("../models/Category.js")).default;
@@ -5842,37 +5837,27 @@ router.post(
 
       // Product — images[] + detailedDescription (Mixed)
       const prodDocs = await Product.find({
-        $or: [
-          { "images.url": { $regex: from } },
-          { "images.public_id": { $regex: from } },
-        ],
+        $or: [{ "images.url": { $regex: from } }, { "images.public_id": { $regex: from } }],
       }).lean();
       let prodCount = 0;
       for (const d of prodDocs) {
         const upd = {};
         if (d.images?.length) upd.images = rep(d.images);
         if (d.detailedDescription) upd.detailedDescription = rep(d.detailedDescription);
-        if (Object.keys(upd).length) {
-          await Product.updateOne({ _id: d._id }, { $set: upd });
-          prodCount++;
-        }
+        if (Object.keys(upd).length) { await Product.updateOne({ _id: d._id }, { $set: upd }); prodCount++; }
       }
       log.db.products = prodCount;
 
-      // Review (separate collection) — images[] of URL strings
+      // Review — images[] of URL strings
       const ReviewModel = (await import("../models/Review.js")).default;
-      const reviewRes = await ReviewModel.updateMany(
-        { images: { $elemMatch: { $regex: from } } },
-        [{ $set: {
-          images: {
-            $map: {
-              input: "$images",
-              in: { $replaceOne: { input: "$$this", find: from, replacement: to } },
-            },
-          },
-        }}],
-      );
-      log.db.reviews = reviewRes.modifiedCount;
+      const reviewDocs = await ReviewModel.find({ images: { $elemMatch: { $regex: from } } }).lean();
+      let reviewCount = 0;
+      for (const d of reviewDocs) {
+        const newImages = d.images.map((u) => (u?.includes(from) ? u.replaceAll(from, to) : u));
+        await ReviewModel.updateOne({ _id: d._id }, { $set: { images: newImages } });
+        reviewCount++;
+      }
+      log.db.reviews = reviewCount;
 
       // BlogPost — featuredImage + additionalImages + videos + dynamicSections
       const blogDocs = await BlogPost.find({
@@ -5890,49 +5875,38 @@ router.post(
         if (d.additionalImages?.length) upd.additionalImages = rep(d.additionalImages);
         if (d.videos?.length) upd.videos = rep(d.videos);
         if (d.dynamicSections?.length) upd.dynamicSections = rep(d.dynamicSections);
-        if (Object.keys(upd).length) {
-          await BlogPost.updateOne({ _id: d._id }, { $set: upd });
-          blogCount++;
-        }
+        if (Object.keys(upd).length) { await BlogPost.updateOne({ _id: d._id }, { $set: upd }); blogCount++; }
       }
       log.db.blogposts = blogCount;
 
       // Setting — websiteLogo + cloudinaryFolder
       const SettingModel = (await import("../models/Setting.js")).default;
       const settingDocs = await SettingModel.find({
-        $or: [
-          { "websiteLogo.url": { $regex: from } },
-          { cloudinaryFolder: { $regex: from } },
-        ],
+        $or: [{ "websiteLogo.url": { $regex: from } }, { cloudinaryFolder: { $regex: from } }],
       }).lean();
       let settingCount = 0;
       for (const d of settingDocs) {
         const upd = {};
         if (d.websiteLogo?.url?.includes(from)) upd.websiteLogo = rep(d.websiteLogo);
-        if (d.cloudinaryFolder?.includes(from))
-          upd.cloudinaryFolder = d.cloudinaryFolder.replaceAll(from, to);
-        if (Object.keys(upd).length) {
-          await SettingModel.updateOne({ _id: d._id }, { $set: upd });
-          settingCount++;
-        }
+        if (d.cloudinaryFolder?.includes(from)) upd.cloudinaryFolder = d.cloudinaryFolder.replaceAll(from, to);
+        if (Object.keys(upd).length) { await SettingModel.updateOne({ _id: d._id }, { $set: upd }); settingCount++; }
       }
       log.db.settings = settingCount;
 
-      // Banner / PromoPanel / Popup / PromoStripItem — simple image.url + image.public_id
+      // Banner / PromoPanel / Popup / PromoStripItem — image.url + image.public_id
       const patchImageModel = async (modelPath, key) => {
         const M = (await import(modelPath)).default;
-        const r2 = await M.updateMany(
-          { $or: [{ "image.url": { $regex: from } }, { "image.public_id": { $regex: from } }] },
-          [{ $set: {
-            "image.url": { $replaceOne: {
-              input: { $ifNull: ["$image.url", ""] }, find: from, replacement: to,
-            }},
-            "image.public_id": { $replaceOne: {
-              input: { $ifNull: ["$image.public_id", ""] }, find: from, replacement: to,
-            }},
-          }}],
-        );
-        log.db[key] = r2.modifiedCount;
+        const docs = await M.find({
+          $or: [{ "image.url": { $regex: from } }, { "image.public_id": { $regex: from } }],
+        }).lean();
+        let count = 0;
+        for (const d of docs) {
+          const upd = {};
+          if (d.image?.url?.includes(from)) upd["image.url"] = d.image.url.replaceAll(from, to);
+          if (d.image?.public_id?.includes(from)) upd["image.public_id"] = d.image.public_id.replaceAll(from, to);
+          if (Object.keys(upd).length) { await M.updateOne({ _id: d._id }, { $set: upd }); count++; }
+        }
+        log.db[key] = count;
       };
       await patchImageModel("../models/Banner.js", "banners");
       await patchImageModel("../models/PromoPanel.js", "promopanels");
