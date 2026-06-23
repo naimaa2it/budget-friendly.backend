@@ -832,13 +832,12 @@ router.post("/", orderLimiter, async (req, res) => {
         items
           .map((i) => i.title)
           .join(", ")
-          .slice(0, 255) || "SmartBuy BD Order",
+          .slice(0, 255) || "Pickob Order",
       product_category: "Mixed",
       product_profile: "general",
       num_of_item: items.reduce((s, i) => s + i.quantity, 0),
       cus_name: billingDetails.name,
-      cus_email:
-        billingDetails.email || userEmail || "customer@SmartBuy BD.com",
+      cus_email: billingDetails.email || userEmail || "customer@Pickob.com",
       cus_add1: billingDetails.address || "N/A",
       cus_city: billingDetails.city || "Dhaka",
       cus_postcode: "1000",
@@ -1085,12 +1084,12 @@ router.post("/:id/pay", async (req, res) => {
         (order.items || [])
           .map((i) => i.title)
           .join(", ")
-          .slice(0, 255) || "SmartBuy BD Order",
+          .slice(0, 255) || "Pickob Order",
       product_category: "Mixed",
       product_profile: "general",
       num_of_item: (order.items || []).reduce((s, i) => s + i.quantity, 0),
       cus_name: billing.name || "Customer",
-      cus_email: billing.email || order.userEmail || "customer@SmartBuy BD.com",
+      cus_email: billing.email || order.userEmail || "customer@Pickob.com",
       cus_add1: billing.address || "N/A",
       cus_city: billing.city || "Dhaka",
       cus_postcode: "1000",
@@ -1140,44 +1139,49 @@ async function requireAdmin(req, res, next) {
 }
 
 // Admin: flat list of every pre-ordered line item across all orders (dashboard)
-router.get("/admin/preorders", requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const orders = await Order.find(
-      { "items.isPreorder": true },
-      "items billingDetails userEmail status paymentStatus createdAt",
-    )
-      .sort({ createdAt: -1 })
-      .lean();
+router.get(
+  "/admin/preorders",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const orders = await Order.find(
+        { "items.isPreorder": true },
+        "items billingDetails userEmail status paymentStatus createdAt",
+      )
+        .sort({ createdAt: -1 })
+        .lean();
 
-    const rows = [];
-    orders.forEach((o) => {
-      (o.items || []).forEach((item, idx) => {
-        if (!item.isPreorder) return;
-        rows.push({
-          orderId: o._id,
-          itemIndex: idx,
-          productId: item.productId,
-          productTitle: item.title,
-          image: item.image,
-          price: item.price,
-          quantity: item.quantity,
-          color: item.color,
-          size: item.size,
-          customerName: o.billingDetails?.name || null,
-          customerPhone: o.billingDetails?.phone || null,
-          customerEmail: o.userEmail || o.billingDetails?.email || null,
-          status: o.status,
-          paymentStatus: o.paymentStatus,
-          createdAt: o.createdAt,
+      const rows = [];
+      orders.forEach((o) => {
+        (o.items || []).forEach((item, idx) => {
+          if (!item.isPreorder) return;
+          rows.push({
+            orderId: o._id,
+            itemIndex: idx,
+            productId: item.productId,
+            productTitle: item.title,
+            image: item.image,
+            price: item.price,
+            quantity: item.quantity,
+            color: item.color,
+            size: item.size,
+            customerName: o.billingDetails?.name || null,
+            customerPhone: o.billingDetails?.phone || null,
+            customerEmail: o.userEmail || o.billingDetails?.email || null,
+            status: o.status,
+            paymentStatus: o.paymentStatus,
+            createdAt: o.createdAt,
+          });
         });
       });
-    });
 
-    res.json({ ok: true, rows });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
+      res.json({ ok: true, rows });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 //view own orders
 router.get("/my", async (req, res) => {
@@ -1554,12 +1558,9 @@ router.patch("/:id/cancel", async (req, res) => {
 
     const reason = (req.body?.reason || "").trim();
     if (reason.length < 5) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Please provide a cancellation reason (at least 5 characters).",
-        });
+      return res.status(400).json({
+        error: "Please provide a cancellation reason (at least 5 characters).",
+      });
     }
 
     applyOrderStatusChange(order, "cancelled", {

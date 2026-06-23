@@ -1,4 +1,4 @@
-# SmartBuy BD E-Commerce Platform - API Documentation
+# Pickob E-Commerce Platform - API Documentation
 
 **Version:** 1.0.0
 **Base URL:** `https://your-backend-domain.com` or `http://localhost:5000`
@@ -561,7 +561,7 @@ POST /api/products/upload
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "SmartBuy BD/products/abc123"
+  "public_id": "Pickob/products/abc123"
 }
 ```
 
@@ -1624,7 +1624,7 @@ POST /api/admin/upload
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "SmartBuy BD/banners/abc123"
+  "public_id": "Pickob/banners/abc123"
 }
 ```
 
@@ -1668,8 +1668,8 @@ GET /api/admin/settings
 ```json
 {
   "settings": {
-    "storeName": "SmartBuy BD",
-    "storeEmail": "support@SmartBuy BD.com",
+    "storeName": "Pickob",
+    "storeEmail": "support@Pickob.com",
     "storePhone": "+8801712345678",
     "topBannerText": "...",
     "topBannerEnabled": true,
@@ -1678,7 +1678,7 @@ GET /api/admin/settings
     "adsenseSlot": "987654",
     "stockThreshold": 10,
     "lowStockAlert": true,
-    "orderNotificationEmail": "orders@SmartBuy BD.com",
+    "orderNotificationEmail": "orders@Pickob.com",
     ...
   }
 }
@@ -2388,8 +2388,8 @@ POST /api/admin/banners
   "title": "Summer Sale",
   "desktopImage": "https://...",
   "mobileImage": "https://...",
-  "desktopPublicId": "SmartBuy BD/banners/desktop123",
-  "mobilePublicId": "SmartBuy BD/banners/mobile123",
+  "desktopPublicId": "Pickob/banners/desktop123",
+  "mobilePublicId": "Pickob/banners/mobile123",
   "link": "/shop/summer-sale",
   "isActive": true
 }
@@ -2527,7 +2527,7 @@ GET /api/admin/media
 
 **Query Parameters:**
 
-- `folder`: Filter by folder (e.g., "SmartBuy BD/products")
+- `folder`: Filter by folder (e.g., "Pickob/products")
 - `next_cursor`: Pagination cursor from previous response
 - `q`: Search by public_id
 
@@ -2537,7 +2537,7 @@ GET /api/admin/media
 {
   "resources": [
     {
-      "public_id": "SmartBuy BD/products/prod123",
+      "public_id": "Pickob/products/prod123",
       "secure_url": "https://res.cloudinary.com/.../image.webp",
       "format": "webp",
       "width": 1600,
@@ -2564,8 +2564,8 @@ GET /api/admin/media/folders
 ```json
 {
   "folders": [
-    { "name": "SmartBuy BD/products", "path": "SmartBuy BD/products" },
-    { "name": "SmartBuy BD/banners", "path": "SmartBuy BD/banners" }
+    { "name": "Pickob/products", "path": "Pickob/products" },
+    { "name": "Pickob/banners", "path": "Pickob/banners" }
   ]
 }
 ```
@@ -2582,10 +2582,7 @@ DELETE /api/admin/media
 
 ```json
 {
-  "public_ids": [
-    "SmartBuy BD/products/prod123",
-    "SmartBuy BD/banners/banner456"
-  ]
+  "public_ids": ["Pickob/products/prod123", "Pickob/banners/banner456"]
 }
 ```
 
@@ -2594,8 +2591,8 @@ DELETE /api/admin/media
 ```json
 {
   "deleted": {
-    "SmartBuy BD/products/prod123": "deleted",
-    "SmartBuy BD/banners/banner456": "deleted"
+    "Pickob/products/prod123": "deleted",
+    "Pickob/banners/banner456": "deleted"
   }
 }
 ```
@@ -3125,7 +3122,7 @@ PORT=5000
 NODE_ENV=production
 
 # Database
-MONGODB_URI=mongodb://localhost:27017/SmartBuy BD
+MONGODB_URI=mongodb://localhost:27017/Pickob
 
 # JWT Secret
 JWT_SECRET=your_super_secret_key_here
@@ -3137,7 +3134,7 @@ ADMIN_SECRET=your_admin_secret_key
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
-CLOUDINARY_FOLDER=SmartBuy BD/products
+CLOUDINARY_FOLDER=Pickob/products
 
 # Image Optimization
 IMG_MAX_WIDTH=1600
@@ -3219,7 +3216,7 @@ All dates use **ISO 8601** format:
 ### Test Admin Account
 
 ```
-Email: admin@SmartBuy BD.com
+Email: admin@Pickob.com
 Password: admin123
 Secret: [ADMIN_SECRET from .env]
 ```
@@ -3238,7 +3235,7 @@ CVV: 123
 
 For API issues or questions:
 
-- **Email:** support@SmartBuy BD.com
+- **Email:** support@Pickob.com
 - **GitHub Issues:** [Project Repository]
 - **Documentation:** This file
 
@@ -3246,4 +3243,4 @@ For API issues or questions:
 
 **Last Updated:** March 28, 2026
 **API Version:** 1.0.0
-**Maintained by:** SmartBuy BD Team
+**Maintained by:** Pickob Team

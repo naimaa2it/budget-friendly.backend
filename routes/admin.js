@@ -1,67 +1,78 @@
-import express from 'express';
-import bcrypt from 'bcrypt';
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
-import { clearProductsCache, clearProductCache } from '../lib/redis.js';
-import mongoose from 'mongoose';
-import multer from 'multer';
-import { v2 as cloudinary } from 'cloudinary';
-import Admin from '../models/Admin.js';
-import User from '../models/User.js';
-import CheckoutSession from '../models/CheckoutSession.js';
-import CustomerTag from '../models/CustomerTag.js';
-import Barcode from '../models/Barcode.js';
-import Product from '../models/Product.js';
-import Variation from '../models/Variation.js';
-import BlogPost from '../models/BlogPost.js';
-import BlogCategory from '../models/BlogCategory.js';
-import Order from '../models/Order.js';
-import Courier from '../models/Courier.js';
-import TimelinePreset from '../models/TimelinePreset.js';
-import { formatOrderIdSuffix } from '../lib/orderLookup.js';
-import { requirePermission, sanitizePermissions } from '../lib/permissions.js';
-import sharp from 'sharp';
-import categoryRoutes from './category.js';
-import { defaultTrackingUrl } from '../lib/couriers/constants.js';
-import { getCourierSyncConfig, isCourierSyncConfigured } from '../lib/couriers/syncConfig.js';
+import express from "express";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
+import jwt from "jsonwebtoken";
+import { clearProductsCache, clearProductCache } from "../lib/redis.js";
+import mongoose from "mongoose";
+import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
+import Admin from "../models/Admin.js";
+import User from "../models/User.js";
+import CheckoutSession from "../models/CheckoutSession.js";
+import CustomerTag from "../models/CustomerTag.js";
+import Barcode from "../models/Barcode.js";
+import Product from "../models/Product.js";
+import Variation from "../models/Variation.js";
+import BlogPost from "../models/BlogPost.js";
+import BlogCategory from "../models/BlogCategory.js";
+import Order from "../models/Order.js";
+import Courier from "../models/Courier.js";
+import TimelinePreset from "../models/TimelinePreset.js";
+import { formatOrderIdSuffix } from "../lib/orderLookup.js";
+import { requirePermission, sanitizePermissions } from "../lib/permissions.js";
+import sharp from "sharp";
+import categoryRoutes from "./category.js";
+import { defaultTrackingUrl } from "../lib/couriers/constants.js";
+import {
+  getCourierSyncConfig,
+  isCourierSyncConfigured,
+} from "../lib/couriers/syncConfig.js";
 import {
   getCourierIntegration,
   saveCourierCredentials,
   maskCredentialsForSlug,
   listBookableCouriers,
   isIntegrationSlug,
-} from '../lib/courierCredentials.js';
-import { testCourierConnection } from '../lib/couriers/testConnection.js';
-import { bookParcelWithCourier } from '../lib/couriers/bookParcel.js';
-import { fetchRedxAreas } from '../lib/couriers/createRedxOrder.js';
+} from "../lib/courierCredentials.js";
+import { testCourierConnection } from "../lib/couriers/testConnection.js";
+import { bookParcelWithCourier } from "../lib/couriers/bookParcel.js";
+import { fetchRedxAreas } from "../lib/couriers/createRedxOrder.js";
 import {
   ensureDefaultCouriers,
   ensureDefaultTimelinePresets,
   buildTrackingUrl,
   isValidCourierSlug,
-} from '../lib/courierDefaults.js';
-import { applyOrderStatusChange, appendStatusHistory } from '../lib/orderStatus.js';
-import { computeCustomerAnalytics, summarizeOrdersForList } from '../lib/customerAnalytics.js';
-import { fetchLifetimeCourierStats } from '../lib/courierFraudCheck.js';
+} from "../lib/courierDefaults.js";
+import {
+  applyOrderStatusChange,
+  appendStatusHistory,
+} from "../lib/orderStatus.js";
+import {
+  computeCustomerAnalytics,
+  summarizeOrdersForList,
+} from "../lib/customerAnalytics.js";
+import { fetchLifetimeCourierStats } from "../lib/courierFraudCheck.js";
 import {
   creditOrderRewardPoints,
   POINTS_PER_TK,
   pointsToTk,
   enrichOrderItemsWithRewardPoints,
   calcItemsRewardPoints,
-} from '../lib/rewards.js';
+} from "../lib/rewards.js";
 import {
   appendAdminTrackingEvent,
   appendManualTrackingEvent,
   syncOrderShipment,
-} from '../lib/shipmentTracking.js';
-import { sendOrderCancelledEmail } from '../lib/mailer.js';
+} from "../lib/shipmentTracking.js";
+import { sendOrderCancelledEmail } from "../lib/mailer.js";
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
 
 const normalizeVariationOptionValue = (option) =>
-  String((option && typeof option === 'object' ? option.value : option) ?? '').trim();
+  String(
+    (option && typeof option === "object" ? option.value : option) ?? "",
+  ).trim();
 const normalizeBarcodeCode = (value) =>
   String(value || "")
     .trim()
@@ -72,12 +83,21 @@ const generateBarcodeCode = () => {
   return base.slice(0, 12);
 };
 
-const syncProductBarcode = async ({ productId, productTitle, barcode, createdBy }) => {
+const syncProductBarcode = async ({
+  productId,
+  productTitle,
+  barcode,
+  createdBy,
+}) => {
   const code = normalizeBarcodeCode(barcode);
   if (!code) return null;
 
   const existing = await Barcode.findOne({ code });
-  if (existing && existing.product && existing.product.toString() !== String(productId)) {
+  if (
+    existing &&
+    existing.product &&
+    existing.product.toString() !== String(productId)
+  ) {
     const err = new Error("Barcode already exists");
     err.status = 409;
     throw err;
@@ -102,10 +122,7 @@ const syncProductBarcode = async ({ productId, productTitle, barcode, createdBy 
     { product: productId, code: { $ne: code } },
     { $set: { product: null, productTitle: "" } },
   );
-  await Product.updateOne(
-    { _id: productId },
-    { $set: { barcode: code } },
-  );
+  await Product.updateOne({ _id: productId }, { $set: { barcode: code } });
 
   return record;
 };
@@ -115,13 +132,15 @@ const detachBarcodeFromProduct = async (productId, keepCode = null) => {
   if (keepCode) {
     filter.code = { $ne: keepCode };
   }
-  await Barcode.updateMany(filter, { $set: { product: null, productTitle: "" } });
+  await Barcode.updateMany(filter, {
+    $set: { product: null, productTitle: "" },
+  });
   await Product.updateOne({ _id: productId }, { $unset: { barcode: "" } });
 };
 
 const createToken = (admin) => {
-  const payload = { id: admin._id, role: admin.role, type: 'admin' };
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const payload = { id: admin._id, role: admin.role, type: "admin" };
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
 // --- Cloudinary + upload setup ---
@@ -131,209 +150,289 @@ const ensureCloudinaryConfigured = () => {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET
+      api_secret: process.env.CLOUDINARY_API_SECRET,
     });
     cloudinaryConfigured = true;
   }
 };
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // Middleware to require admin JWT cookie
 const requireAdmin = async (req, res, next) => {
   try {
     const token = req.cookies?.token;
-    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    if (!token) return res.status(401).json({ error: "Not authenticated" });
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (payload.type !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (payload.type !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
     const admin = await Admin.findById(payload.id);
-    if (!admin) return res.status(403).json({ error: 'Admin not found' });
-    if (!admin.isActive) return res.status(403).json({ error: 'Account disabled' });
+    if (!admin) return res.status(403).json({ error: "Admin not found" });
+    if (!admin.isActive)
+      return res.status(403).json({ error: "Account disabled" });
     req.admin = admin;
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: "Invalid token" });
   }
 };
 
 // Admin / Moderator registration endpoint has been superseded by manual seeding.
 // Keeping route for compatibility, but reject all requests to prevent self-registration.
-router.post('/register', async (req, res) => {
-  return res.status(403).json({ error: 'Admin registration is disabled. Please contact an existing administrator.' });
+router.post("/register", async (req, res) => {
+  return res
+    .status(403)
+    .json({
+      error:
+        "Admin registration is disabled. Please contact an existing administrator.",
+    });
 });
 
 // Check if email already exists as admin (same email can be user + admin)
 // still available even though registration is off
-router.post('/check-email', async (req, res) => {
+router.post("/check-email", async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+    if (!email) return res.status(400).json({ error: "Email is required" });
 
     // Only check if already exists as admin (allow same email for user)
     const existingAdmin = await Admin.findOne({ email: email.toLowerCase() });
     if (existingAdmin) {
-      return res.status(400).json({ 
-        exists: true, 
-        error: 'This email is already registered as an admin.'
+      return res.status(400).json({
+        exists: true,
+        error: "This email is already registered as an admin.",
       });
     }
 
     res.json({ exists: false, ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Image/Video upload to Cloudinary (admin-only) — optimized server-side with sharp
-router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => {
-  try {
-    ensureCloudinaryConfigured(); // configure on first use
-    
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+router.post(
+  "/upload",
+  requireAdmin,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      ensureCloudinaryConfigured(); // configure on first use
 
-    // fail fast if Cloudinary is not configured correctly
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-      return res.status(500).json({ error: 'Server upload not configured (Cloudinary credentials missing).' });
-    }
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    // Get folder from request body or query (default to products)
-    const folder = req.body.folder || req.query.folder || `${process.env.CLOUDINARY_FOLDER || 'SmartBuyBD'}/media`;
-    
-    // Detect if file is a video based on mimetype
-    const isVideo = req.file.mimetype.startsWith('video/');
-    const resourceType = isVideo ? 'video' : 'image';
-
-    // For images: optimize with sharp (resize, rotate, convert to webp)
-    if (resourceType === 'image') {
-      const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
-      const quality = Number(process.env.IMG_QUALITY) || 75;
-
-      let optimizedBuffer;
-      try {
-        optimizedBuffer = await sharp(req.file.buffer)
-          .rotate()
-          .resize({ width: maxWidth, withoutEnlargement: true })
-          .webp({ quality })
-          .toBuffer();
-      } catch (sharpErr) {
-        return res.status(400).json({ error: 'Invalid image file or unsupported format.' });
+      // fail fast if Cloudinary is not configured correctly
+      if (
+        !process.env.CLOUDINARY_CLOUD_NAME ||
+        !process.env.CLOUDINARY_API_KEY ||
+        !process.env.CLOUDINARY_API_SECRET
+      ) {
+        return res
+          .status(500)
+          .json({
+            error:
+              "Server upload not configured (Cloudinary credentials missing).",
+          });
       }
 
-      const streamUpload = (buffer) =>
-        new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream({
-            folder,
-            resource_type: 'image'
-          }, (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          });
-          stream.end(buffer);
-        });
+      // Get folder from request body or query (default to products)
+      const folder =
+        req.body.folder ||
+        req.query.folder ||
+        `${process.env.CLOUDINARY_FOLDER || "PickobBD"}/media`;
 
-      const result = await streamUpload(optimizedBuffer);
-      res.json({ ok: true, asset: {
-        public_id: result.public_id,
-        url: result.secure_url || result.url,
-        width: result.width,
-        height: result.height,
-        format: result.format,
-        resourceType: 'image'
-      }});
-    } else {
-      // For videos: upload directly without processing
-      const streamUpload = (buffer) =>
-        new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream({
-            folder,
-            resource_type: 'video'
-          }, (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          });
-          stream.end(buffer);
-        });
+      // Detect if file is a video based on mimetype
+      const isVideo = req.file.mimetype.startsWith("video/");
+      const resourceType = isVideo ? "video" : "image";
 
-      const result = await streamUpload(req.file.buffer);
-      res.json({ ok: true, asset: {
-        public_id: result.public_id,
-        url: result.secure_url || result.url,
-        width: result.width,
-        height: result.height,
-        format: result.format,
-        duration: result.duration,
-        resourceType: 'video'
-      }});
+      // For images: optimize with sharp (resize, rotate, convert to webp)
+      if (resourceType === "image") {
+        const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
+        const quality = Number(process.env.IMG_QUALITY) || 75;
+
+        let optimizedBuffer;
+        try {
+          optimizedBuffer = await sharp(req.file.buffer)
+            .rotate()
+            .resize({ width: maxWidth, withoutEnlargement: true })
+            .webp({ quality })
+            .toBuffer();
+        } catch (sharpErr) {
+          return res
+            .status(400)
+            .json({ error: "Invalid image file or unsupported format." });
+        }
+
+        const streamUpload = (buffer) =>
+          new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+              {
+                folder,
+                resource_type: "image",
+              },
+              (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+              },
+            );
+            stream.end(buffer);
+          });
+
+        const result = await streamUpload(optimizedBuffer);
+        res.json({
+          ok: true,
+          asset: {
+            public_id: result.public_id,
+            url: result.secure_url || result.url,
+            width: result.width,
+            height: result.height,
+            format: result.format,
+            resourceType: "image",
+          },
+        });
+      } else {
+        // For videos: upload directly without processing
+        const streamUpload = (buffer) =>
+          new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+              {
+                folder,
+                resource_type: "video",
+              },
+              (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+              },
+            );
+            stream.end(buffer);
+          });
+
+        const result = await streamUpload(req.file.buffer);
+        res.json({
+          ok: true,
+          asset: {
+            public_id: result.public_id,
+            url: result.secure_url || result.url,
+            width: result.width,
+            height: result.height,
+            format: result.format,
+            duration: result.duration,
+            resourceType: "video",
+          },
+        });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message || "Upload failed" });
     }
-  } catch (err) {
-    res.status(500).json({ error: err.message || 'Upload failed' });
-  }
-});
+  },
+);
 
 // Category routes moved to `routes/category.js`
-router.use('/categories', categoryRoutes);
+router.use("/categories", categoryRoutes);
 
 // Public: top-banner + adsense config (no auth — used by frontend)
-router.get('/top-banner', async (req, res) => {
+router.get("/top-banner", async (req, res) => {
   try {
-    const SettingModel = (await import('../models/Setting.js')).default;
+    const SettingModel = (await import("../models/Setting.js")).default;
     const s = await SettingModel.findOne().lean();
     res.json({
       enabled: s?.topBannerEnabled || false,
-      html: s?.topBannerEnabled ? (s.topBannerHtml || '') : '',
-      config: s?.topBannerEnabled ? (s.topBannerConfig || {}) : {},
+      html: s?.topBannerEnabled ? s.topBannerHtml || "" : "",
+      config: s?.topBannerEnabled ? s.topBannerConfig || {} : {},
       adsenseEnabled: s?.adsenseEnabled || false,
-      adsensePublisherId: s?.adsensePublisherId || '',
-      adsenseSlot: s?.adsenseSlot || '',
+      adsensePublisherId: s?.adsensePublisherId || "",
+      adsenseSlot: s?.adsenseSlot || "",
       websiteLogo: s?.websiteLogo || {},
-      storeName: s?.storeName || '',
-      footerInfo: s?.footerInfo || { phone: '', email: '', address: '' },
-      contactInfo: s?.contactInfo || { phone: '', email: '', address: '' },
+      storeName: s?.storeName || "",
+      footerInfo: s?.footerInfo || { phone: "", email: "", address: "" },
+      contactInfo: s?.contactInfo || { phone: "", email: "", address: "" },
       megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : [],
       socialLinks: s?.socialLinks || {},
-      policyContent: s?.policyContent || { shipping: [], return: [], faq: [], privacy: [], terms: [] },
+      policyContent: s?.policyContent || {
+        shipping: [],
+        return: [],
+        faq: [],
+        privacy: [],
+        terms: [],
+      },
     });
   } catch (err) {
-    res.json({ enabled: false, html: '', config: {}, adsenseEnabled: false, adsensePublisherId: '', websiteLogo: {}, storeName: '', footerInfo: { phone: '', email: '', address: '' }, contactInfo: { phone: '', email: '', address: '' }, megaMenuTags: [], socialLinks: {}, policyContent: { shipping: [], return: [], faq: [], privacy: [], terms: [] } });
+    res.json({
+      enabled: false,
+      html: "",
+      config: {},
+      adsenseEnabled: false,
+      adsensePublisherId: "",
+      websiteLogo: {},
+      storeName: "",
+      footerInfo: { phone: "", email: "", address: "" },
+      contactInfo: { phone: "", email: "", address: "" },
+      megaMenuTags: [],
+      socialLinks: {},
+      policyContent: {
+        shipping: [],
+        return: [],
+        faq: [],
+        privacy: [],
+        terms: [],
+      },
+    });
   }
 });
 
 // Public: tracking pixel configs (no auth — loaded by storefront layout)
-router.get('/tracking-config', async (req, res) => {
+router.get("/tracking-config", async (req, res) => {
   try {
-    const SettingModel = (await import('../models/Setting.js')).default;
+    const SettingModel = (await import("../models/Setting.js")).default;
     const s = await SettingModel.findOne().lean();
     res.json({
-      facebookPixel: s?.facebookPixel?.active && s?.facebookPixel?.installed
-        ? { pixelId: s.facebookPixel.pixelId, browserSideTracking: s.facebookPixel.browserSideTracking }
-        : null,
-      googleTagManager: s?.googleTagManager?.active && s?.googleTagManager?.installed
-        ? { containerId: s.googleTagManager.containerId }
-        : null,
-      googleAnalytics4: s?.googleAnalytics4?.active && s?.googleAnalytics4?.installed
-        ? { measurementId: s.googleAnalytics4.measurementId }
-        : null,
-      tiktokPixel: s?.tiktokPixel?.active && s?.tiktokPixel?.installed
-        ? { pixelId: s.tiktokPixel.pixelId }
-        : null,
-      googleAdsense: s?.googleAdsense?.active && s?.googleAdsense?.installed
-        ? {
-            publisherId: s.googleAdsense.publisherId,
-            adSlotId: s.googleAdsense.adSlotId || '',
-            autoAds: s.googleAdsense.autoAds,
-            pageSettings: s.googleAdsense.pageSettings || {},
-          }
-        : null,
+      facebookPixel:
+        s?.facebookPixel?.active && s?.facebookPixel?.installed
+          ? {
+              pixelId: s.facebookPixel.pixelId,
+              browserSideTracking: s.facebookPixel.browserSideTracking,
+            }
+          : null,
+      googleTagManager:
+        s?.googleTagManager?.active && s?.googleTagManager?.installed
+          ? { containerId: s.googleTagManager.containerId }
+          : null,
+      googleAnalytics4:
+        s?.googleAnalytics4?.active && s?.googleAnalytics4?.installed
+          ? { measurementId: s.googleAnalytics4.measurementId }
+          : null,
+      tiktokPixel:
+        s?.tiktokPixel?.active && s?.tiktokPixel?.installed
+          ? { pixelId: s.tiktokPixel.pixelId }
+          : null,
+      googleAdsense:
+        s?.googleAdsense?.active && s?.googleAdsense?.installed
+          ? {
+              publisherId: s.googleAdsense.publisherId,
+              adSlotId: s.googleAdsense.adSlotId || "",
+              autoAds: s.googleAdsense.autoAds,
+              pageSettings: s.googleAdsense.pageSettings || {},
+            }
+          : null,
     });
   } catch (err) {
-    res.json({ facebookPixel: null, googleTagManager: null, googleAnalytics4: null, tiktokPixel: null, googleAdsense: null });
+    res.json({
+      facebookPixel: null,
+      googleTagManager: null,
+      googleAnalytics4: null,
+      tiktokPixel: null,
+      googleAdsense: null,
+    });
   }
 });
 
 // Settings (admin area)
-router.get('/settings', requireAdmin, async (req, res) => {
+router.get("/settings", requireAdmin, async (req, res) => {
   try {
     // allow moderators to view settings; only admins may update (enforced on PUT)
-    const Setting = (await import('../models/Setting.js')).default;
+    const Setting = (await import("../models/Setting.js")).default;
     let settings = await Setting.findOne();
     if (!settings) {
       settings = new Setting();
@@ -341,72 +440,107 @@ router.get('/settings', requireAdmin, async (req, res) => {
     }
     res.json({ settings });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.put('/settings', requireAdmin, async (req, res) => {
+router.put("/settings", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
     const payload = req.body || {};
-    const Setting = (await import('../models/Setting.js')).default;
-    const settings = await Setting.findOneAndUpdate({}, { $set: payload }, { upsert: true, new: true });
+    const Setting = (await import("../models/Setting.js")).default;
+    const settings = await Setting.findOneAndUpdate(
+      {},
+      { $set: payload },
+      { upsert: true, new: true },
+    );
     res.json({ ok: true, settings });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Badge options — moderators with catalog permission can manage
-router.put('/settings/badges', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const { productBadgeOptions } = req.body || {};
-    if (!Array.isArray(productBadgeOptions)) return res.status(400).json({ error: 'productBadgeOptions must be an array' });
-    const Setting = (await import('../models/Setting.js')).default;
-    const settings = await Setting.findOneAndUpdate({}, { $set: { productBadgeOptions } }, { upsert: true, new: true });
-    res.json({ ok: true, settings });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/settings/badges",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const { productBadgeOptions } = req.body || {};
+      if (!Array.isArray(productBadgeOptions))
+        return res
+          .status(400)
+          .json({ error: "productBadgeOptions must be an array" });
+      const Setting = (await import("../models/Setting.js")).default;
+      const settings = await Setting.findOneAndUpdate(
+        {},
+        { $set: { productBadgeOptions } },
+        { upsert: true, new: true },
+      );
+      res.json({ ok: true, settings });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ─── Profit Margin ───────────────────────────────────────────────────────────
 
-router.get('/profit-margin', requireAdmin, async (req, res) => {
+router.get("/profit-margin", requireAdmin, async (req, res) => {
   try {
-    const { q, filter = 'all', sort = 'margin_asc', page = 1, limit = 50 } = req.query;
+    const {
+      q,
+      filter = "all",
+      sort = "margin_asc",
+      page = 1,
+      limit = 50,
+    } = req.query;
     const skip = (Math.max(1, Number(page)) - 1) * Number(limit);
 
-    const dbFilter = { status: { $ne: 'archived' } };
+    const dbFilter = { status: { $ne: "archived" } };
     if (q) {
-      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       dbFilter.$or = [{ title: re }, { sku: re }];
     }
 
     const products = await Product.find(dbFilter)
-      .select('title sku images variants price buyingPrice category status')
+      .select("title sku images variants price buyingPrice category status")
       .lean();
 
     // Aggregate sold units + revenue per product from non-cancelled/returned orders
     const soldAgg = await Order.aggregate([
-      { $match: { status: { $nin: ['cancelled', 'returned'] } } },
-      { $unwind: '$items' },
+      { $match: { status: { $nin: ["cancelled", "returned"] } } },
+      { $unwind: "$items" },
       {
         $group: {
-          _id: '$items.productId',
-          unitsSold: { $sum: '$items.quantity' },
-          soldRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+          _id: "$items.productId",
+          unitsSold: { $sum: "$items.quantity" },
+          soldRevenue: {
+            $sum: { $multiply: ["$items.price", "$items.quantity"] },
+          },
         },
       },
     ]);
     const soldMap = {};
-    soldAgg.forEach((s) => { if (s._id) soldMap[s._id] = s; });
+    soldAgg.forEach((s) => {
+      if (s._id) soldMap[s._id] = s;
+    });
 
     const calcMargin = (sellingPrice, buyingPrice) => {
       const sp = Number(sellingPrice) || 0;
       const bp = Number(buyingPrice) || 0;
       if (!sp) return null;
-      if (!bp) return { sp, bp: 0, profit: null, marginPct: null, markupPct: null, hasData: false };
+      if (!bp)
+        return {
+          sp,
+          bp: 0,
+          profit: null,
+          marginPct: null,
+          markupPct: null,
+          hasData: false,
+        };
       const profit = sp - bp;
       const marginPct = (profit / sp) * 100;
       const markupPct = bp > 0 ? (profit / bp) * 100 : null;
@@ -421,14 +555,26 @@ router.get('/profit-margin', requireAdmin, async (req, res) => {
       if (hasVariants) {
         variantMargins = p.variants.map((v, i) => ({
           index: i,
-          name: [v.color?.name, v.size].filter(Boolean).join(' / ') || v.name || `Variant ${i + 1}`,
+          name:
+            [v.color?.name, v.size].filter(Boolean).join(" / ") ||
+            v.name ||
+            `Variant ${i + 1}`,
           ...calcMargin(v.price || p.price, v.buyingPrice ?? p.buyingPrice),
         }));
         const validVariants = variantMargins.filter((v) => v.hasData);
         if (validVariants.length) {
-          const avgMarginPct = validVariants.reduce((s, v) => s + v.marginPct, 0) / validVariants.length;
-          const totalProfit = validVariants.reduce((s, v) => s + (v.profit || 0), 0);
-          aggregateMargin = { marginPct: avgMarginPct, profit: totalProfit, hasData: true };
+          const avgMarginPct =
+            validVariants.reduce((s, v) => s + v.marginPct, 0) /
+            validVariants.length;
+          const totalProfit = validVariants.reduce(
+            (s, v) => s + (v.profit || 0),
+            0,
+          );
+          aggregateMargin = {
+            marginPct: avgMarginPct,
+            profit: totalProfit,
+            hasData: true,
+          };
         } else {
           const anyHasSp = variantMargins.some((v) => v.sp > 0);
           aggregateMargin = { hasData: false, noBuyingPrice: anyHasSp };
@@ -438,75 +584,119 @@ router.get('/profit-margin', requireAdmin, async (req, res) => {
       }
 
       const marginPct = aggregateMargin?.marginPct ?? null;
-      const profitStatus =
-        !aggregateMargin?.hasData ? 'no_data' :
-        marginPct < 0 ? 'loss' :
-        marginPct === 0 ? 'breakeven' :
-        marginPct < 15 ? 'low' :
-        marginPct < 30 ? 'medium' : 'high';
+      const profitStatus = !aggregateMargin?.hasData
+        ? "no_data"
+        : marginPct < 0
+          ? "loss"
+          : marginPct === 0
+            ? "breakeven"
+            : marginPct < 15
+              ? "low"
+              : marginPct < 30
+                ? "medium"
+                : "high";
 
       // Per-product sold financials (COGS estimated from current buying price)
       const sold = soldMap[p._id.toString()] || {};
-      const effBP = hasVariants && p.variants?.length
-        ? p.variants.reduce((s, v) => s + Number(v.buyingPrice ?? p.buyingPrice ?? 0), 0) / p.variants.length
-        : Number(p.buyingPrice ?? 0);
+      const effBP =
+        hasVariants && p.variants?.length
+          ? p.variants.reduce(
+              (s, v) => s + Number(v.buyingPrice ?? p.buyingPrice ?? 0),
+              0,
+            ) / p.variants.length
+          : Number(p.buyingPrice ?? 0);
       const unitsSold = sold.unitsSold || 0;
       const soldRevenue = Math.round(sold.soldRevenue || 0);
       const soldCOGS = Math.round(effBP * unitsSold);
       const soldProfit = soldRevenue - soldCOGS;
 
-      return { ...p, hasVariants, variantMargins, aggregateMargin, marginPct, profitStatus, unitsSold, soldRevenue, soldCOGS, soldProfit };
+      return {
+        ...p,
+        hasVariants,
+        variantMargins,
+        aggregateMargin,
+        marginPct,
+        profitStatus,
+        unitsSold,
+        soldRevenue,
+        soldCOGS,
+        soldProfit,
+      };
     });
 
     let filtered = rows;
-    if (filter === 'no_buying_price') filtered = rows.filter((r) => !r.aggregateMargin?.hasData);
-    else if (filter === 'loss') filtered = rows.filter((r) => r.profitStatus === 'loss');
-    else if (filter === 'low') filtered = rows.filter((r) => r.profitStatus === 'low');
-    else if (filter === 'healthy') filtered = rows.filter((r) => ['medium', 'high'].includes(r.profitStatus));
+    if (filter === "no_buying_price")
+      filtered = rows.filter((r) => !r.aggregateMargin?.hasData);
+    else if (filter === "loss")
+      filtered = rows.filter((r) => r.profitStatus === "loss");
+    else if (filter === "low")
+      filtered = rows.filter((r) => r.profitStatus === "low");
+    else if (filter === "healthy")
+      filtered = rows.filter((r) =>
+        ["medium", "high"].includes(r.profitStatus),
+      );
 
     filtered.sort((a, b) => {
       const am = a.marginPct ?? -Infinity;
       const bm = b.marginPct ?? -Infinity;
-      if (sort === 'margin_asc') return am - bm;
-      if (sort === 'margin_desc') return bm - am;
-      if (sort === 'profit_desc') return (b.aggregateMargin?.profit ?? -Infinity) - (a.aggregateMargin?.profit ?? -Infinity);
-      if (sort === 'name_asc') return a.title.localeCompare(b.title);
+      if (sort === "margin_asc") return am - bm;
+      if (sort === "margin_desc") return bm - am;
+      if (sort === "profit_desc")
+        return (
+          (b.aggregateMargin?.profit ?? -Infinity) -
+          (a.aggregateMargin?.profit ?? -Infinity)
+        );
+      if (sort === "name_asc") return a.title.localeCompare(b.title);
       return 0;
     });
 
-    const totalSoldRevenue = Math.round(rows.reduce((s, r) => s + (r.soldRevenue || 0), 0));
-    const totalSoldCOGS = Math.round(rows.reduce((s, r) => s + (r.soldCOGS || 0), 0));
+    const totalSoldRevenue = Math.round(
+      rows.reduce((s, r) => s + (r.soldRevenue || 0), 0),
+    );
+    const totalSoldCOGS = Math.round(
+      rows.reduce((s, r) => s + (r.soldCOGS || 0), 0),
+    );
     const totalSoldProfit = totalSoldRevenue - totalSoldCOGS;
 
     const summary = {
       total: rows.length,
-      no_data: rows.filter((r) => r.profitStatus === 'no_data').length,
-      loss: rows.filter((r) => r.profitStatus === 'loss').length,
-      low: rows.filter((r) => r.profitStatus === 'low').length,
-      medium: rows.filter((r) => r.profitStatus === 'medium').length,
-      high: rows.filter((r) => r.profitStatus === 'high').length,
+      no_data: rows.filter((r) => r.profitStatus === "no_data").length,
+      loss: rows.filter((r) => r.profitStatus === "loss").length,
+      low: rows.filter((r) => r.profitStatus === "low").length,
+      medium: rows.filter((r) => r.profitStatus === "medium").length,
+      high: rows.filter((r) => r.profitStatus === "high").length,
       avgMarginPct: (() => {
         const valid = rows.filter((r) => r.marginPct != null);
-        return valid.length ? valid.reduce((s, r) => s + r.marginPct, 0) / valid.length : null;
+        return valid.length
+          ? valid.reduce((s, r) => s + r.marginPct, 0) / valid.length
+          : null;
       })(),
       totalSoldRevenue,
       totalSoldCOGS,
       totalSoldProfit,
-      netMarginPct: totalSoldRevenue > 0 ? Math.round((totalSoldProfit / totalSoldRevenue) * 1000) / 10 : null,
+      netMarginPct:
+        totalSoldRevenue > 0
+          ? Math.round((totalSoldProfit / totalSoldRevenue) * 1000) / 10
+          : null,
     };
 
     const total = filtered.length;
-    res.json({ items: filtered.slice(skip, skip + Number(limit)), total, pages: Math.ceil(total / Number(limit)), summary });
+    res.json({
+      items: filtered.slice(skip, skip + Number(limit)),
+      total,
+      pages: Math.ceil(total / Number(limit)),
+      summary,
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // ─── Profit Margin Analytics (monthly/yearly charts) ─────────────────────────
 
-router.get('/profit-margin/analytics', requireAdmin, async (req, res) => {
+router.get("/profit-margin/analytics", requireAdmin, async (req, res) => {
   try {
-    const excludedStatuses = ['cancelled', 'returned'];
+    const excludedStatuses = ["cancelled", "returned"];
 
     // Last 24 months
     const fromDate = new Date();
@@ -515,24 +705,39 @@ router.get('/profit-margin/analytics', requireAdmin, async (req, res) => {
     fromDate.setHours(0, 0, 0, 0);
 
     const itemAgg = await Order.aggregate([
-      { $match: { status: { $nin: excludedStatuses }, createdAt: { $gte: fromDate } } },
-      { $unwind: '$items' },
+      {
+        $match: {
+          status: { $nin: excludedStatuses },
+          createdAt: { $gte: fromDate },
+        },
+      },
+      { $unwind: "$items" },
       {
         $group: {
-          _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, productId: '$items.productId' },
-          revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
-          units: { $sum: '$items.quantity' },
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+            productId: "$items.productId",
+          },
+          revenue: { $sum: { $multiply: ["$items.price", "$items.quantity"] } },
+          units: { $sum: "$items.quantity" },
         },
       },
     ]);
 
     if (!itemAgg.length) {
-      return res.json({ monthly: [], yearly: [], totals: { revenue: 0, cogs: 0, profit: 0, marginPct: null, units: 0 } });
+      return res.json({
+        monthly: [],
+        yearly: [],
+        totals: { revenue: 0, cogs: 0, profit: 0, marginPct: null, units: 0 },
+      });
     }
 
-    const productIds = [...new Set(itemAgg.map((r) => r._id.productId).filter(Boolean))];
+    const productIds = [
+      ...new Set(itemAgg.map((r) => r._id.productId).filter(Boolean)),
+    ];
     const bpProducts = await Product.find({ _id: { $in: productIds } })
-      .select('_id buyingPrice variants')
+      .select("_id buyingPrice variants")
       .lean();
 
     const bpMap = {};
@@ -542,14 +747,23 @@ router.get('/profit-margin/analytics', requireAdmin, async (req, res) => {
         bpMap[pid] = Number(p.buyingPrice);
       } else if (p.variants?.length) {
         const valid = p.variants.filter((v) => v.buyingPrice);
-        if (valid.length) bpMap[pid] = valid.reduce((s, v) => s + Number(v.buyingPrice), 0) / valid.length;
+        if (valid.length)
+          bpMap[pid] =
+            valid.reduce((s, v) => s + Number(v.buyingPrice), 0) / valid.length;
       }
     });
 
     const periodMap = {};
     itemAgg.forEach((row) => {
-      const key = `${row._id.year}-${String(row._id.month).padStart(2, '0')}`;
-      if (!periodMap[key]) periodMap[key] = { year: row._id.year, month: row._id.month, revenue: 0, cogs: 0, units: 0 };
+      const key = `${row._id.year}-${String(row._id.month).padStart(2, "0")}`;
+      if (!periodMap[key])
+        periodMap[key] = {
+          year: row._id.year,
+          month: row._id.month,
+          revenue: 0,
+          cogs: 0,
+          units: 0,
+        };
       const bp = bpMap[row._id.productId] || 0;
       periodMap[key].revenue += row.revenue;
       periodMap[key].cogs += bp * row.units;
@@ -562,13 +776,19 @@ router.get('/profit-margin/analytics', requireAdmin, async (req, res) => {
         const profit = d.revenue - d.cogs;
         const hasCogs = d.cogs > 0;
         return {
-          label: new Date(d.year, d.month - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          label: new Date(d.year, d.month - 1).toLocaleDateString("en-US", {
+            month: "short",
+            year: "2-digit",
+          }),
           year: d.year,
           month: d.month,
           revenue: Math.round(d.revenue),
           cogs: Math.round(d.cogs),
           profit: Math.round(profit),
-          marginPct: hasCogs && d.revenue > 0 ? Math.round((profit / d.revenue) * 1000) / 10 : null,
+          marginPct:
+            hasCogs && d.revenue > 0
+              ? Math.round((profit / d.revenue) * 1000) / 10
+              : null,
           units: d.units,
         };
       });
@@ -576,7 +796,8 @@ router.get('/profit-margin/analytics', requireAdmin, async (req, res) => {
     const yearlyMap = {};
     monthly.forEach((m) => {
       const y = String(m.year);
-      if (!yearlyMap[y]) yearlyMap[y] = { revenue: 0, cogs: 0, profit: 0, units: 0 };
+      if (!yearlyMap[y])
+        yearlyMap[y] = { revenue: 0, cogs: 0, profit: 0, units: 0 };
       yearlyMap[y].revenue += m.revenue;
       yearlyMap[y].cogs += m.cogs;
       yearlyMap[y].profit += m.profit;
@@ -589,58 +810,87 @@ router.get('/profit-margin/analytics', requireAdmin, async (req, res) => {
         label: year,
         year: parseInt(year),
         ...d,
-        marginPct: d.cogs > 0 && d.revenue > 0 ? Math.round((d.profit / d.revenue) * 1000) / 10 : null,
+        marginPct:
+          d.cogs > 0 && d.revenue > 0
+            ? Math.round((d.profit / d.revenue) * 1000) / 10
+            : null,
       }));
 
     const totals = monthly.reduce(
-      (acc, m) => ({ revenue: acc.revenue + m.revenue, cogs: acc.cogs + m.cogs, profit: acc.profit + m.profit, units: acc.units + m.units }),
+      (acc, m) => ({
+        revenue: acc.revenue + m.revenue,
+        cogs: acc.cogs + m.cogs,
+        profit: acc.profit + m.profit,
+        units: acc.units + m.units,
+      }),
       { revenue: 0, cogs: 0, profit: 0, units: 0 },
     );
-    totals.marginPct = totals.revenue > 0 ? Math.round((totals.profit / totals.revenue) * 1000) / 10 : null;
+    totals.marginPct =
+      totals.revenue > 0
+        ? Math.round((totals.profit / totals.revenue) * 1000) / 10
+        : null;
 
     res.json({ monthly, yearly, totals });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // ─── Inventory Management ────────────────────────────────────────────────────
 
-router.get('/inventory', requireAdmin, async (req, res) => {
+router.get("/inventory", requireAdmin, async (req, res) => {
   try {
-    const { q, stockFilter, sort = 'stock_asc', page = 1, limit = 50 } = req.query;
+    const {
+      q,
+      stockFilter,
+      sort = "stock_asc",
+      page = 1,
+      limit = 50,
+    } = req.query;
     const skip = (Math.max(1, Number(page)) - 1) * Number(limit);
 
-    const filter = { status: { $ne: 'archived' } };
+    const filter = { status: { $ne: "archived" } };
     if (q) {
-      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       filter.$or = [{ title: re }, { sku: re }];
     }
 
     const allProducts = await Product.find(filter)
-      .select('title sku images variants inventory availability allowOverselling lowStockThreshold trackInventory updatedAt category status')
+      .select(
+        "title sku images variants inventory availability allowOverselling lowStockThreshold trackInventory updatedAt category status",
+      )
       .lean();
 
     const rows = allProducts.map((p) => {
       const hasVariants = p.variants && p.variants.length > 0;
       const totalStock = hasVariants
         ? p.variants.reduce((s, v) => s + (Number(v.inventory) || 0), 0)
-        : (Number(p.inventory) || 0);
+        : Number(p.inventory) || 0;
       const threshold = p.lowStockThreshold ?? 5;
-      const stockStatus = totalStock <= 0 ? 'out_of_stock' : totalStock <= threshold ? 'low_stock' : 'in_stock';
+      const stockStatus =
+        totalStock <= 0
+          ? "out_of_stock"
+          : totalStock <= threshold
+            ? "low_stock"
+            : "in_stock";
       return { ...p, totalStock, hasVariants, stockStatus };
     });
 
     let filtered = rows;
-    if (stockFilter === 'out_of_stock') filtered = rows.filter((r) => r.totalStock <= 0);
-    else if (stockFilter === 'low_stock') filtered = rows.filter((r) => r.totalStock > 0 && r.stockStatus === 'low_stock');
-    else if (stockFilter === 'in_stock') filtered = rows.filter((r) => r.totalStock > 0);
+    if (stockFilter === "out_of_stock")
+      filtered = rows.filter((r) => r.totalStock <= 0);
+    else if (stockFilter === "low_stock")
+      filtered = rows.filter(
+        (r) => r.totalStock > 0 && r.stockStatus === "low_stock",
+      );
+    else if (stockFilter === "in_stock")
+      filtered = rows.filter((r) => r.totalStock > 0);
 
     filtered.sort((a, b) => {
-      if (sort === 'stock_asc') return a.totalStock - b.totalStock;
-      if (sort === 'stock_desc') return b.totalStock - a.totalStock;
-      if (sort === 'name_asc') return a.title.localeCompare(b.title);
-      if (sort === 'name_desc') return b.title.localeCompare(a.title);
+      if (sort === "stock_asc") return a.totalStock - b.totalStock;
+      if (sort === "stock_desc") return b.totalStock - a.totalStock;
+      if (sort === "name_asc") return a.title.localeCompare(b.title);
+      if (sort === "name_desc") return b.title.localeCompare(a.title);
       return 0;
     });
 
@@ -650,51 +900,77 @@ router.get('/inventory', requireAdmin, async (req, res) => {
     const summary = {
       total: rows.length,
       out_of_stock: rows.filter((r) => r.totalStock <= 0).length,
-      low_stock: rows.filter((r) => r.totalStock > 0 && r.stockStatus === 'low_stock').length,
-      in_stock: rows.filter((r) => r.totalStock > 0 && r.stockStatus === 'in_stock').length,
+      low_stock: rows.filter(
+        (r) => r.totalStock > 0 && r.stockStatus === "low_stock",
+      ).length,
+      in_stock: rows.filter(
+        (r) => r.totalStock > 0 && r.stockStatus === "in_stock",
+      ).length,
     };
 
-    res.json({ items, total, pages: Math.ceil(total / Number(limit)), summary });
+    res.json({
+      items,
+      total,
+      pages: Math.ceil(total / Number(limit)),
+      summary,
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.patch('/inventory/bulk', requireAdmin, async (req, res) => {
+router.patch("/inventory/bulk", requireAdmin, async (req, res) => {
   try {
     const { updates } = req.body;
-    if (!Array.isArray(updates)) return res.status(400).json({ error: 'updates must be array' });
-    const results = await Promise.all(updates.map(async ({ id, inventory, variantIndex }) => {
-      const p = await Product.findById(id);
-      if (!p) return { id, ok: false };
-      if (variantIndex != null && p.variants[variantIndex]) {
-        p.variants[variantIndex].inventory = Math.max(0, Number(inventory));
-      } else {
-        p.inventory = Math.max(0, Number(inventory));
-      }
-      await p.save();
-      return { id, ok: true };
-    }));
+    if (!Array.isArray(updates))
+      return res.status(400).json({ error: "updates must be array" });
+    const results = await Promise.all(
+      updates.map(async ({ id, inventory, variantIndex }) => {
+        const p = await Product.findById(id);
+        if (!p) return { id, ok: false };
+        if (variantIndex != null && p.variants[variantIndex]) {
+          p.variants[variantIndex].inventory = Math.max(0, Number(inventory));
+        } else {
+          p.inventory = Math.max(0, Number(inventory));
+        }
+        await p.save();
+        return { id, ok: true };
+      }),
+    );
     res.json({ ok: true, results });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.patch('/inventory/:id', requireAdmin, async (req, res) => {
+router.patch("/inventory/:id", requireAdmin, async (req, res) => {
   try {
-    const { variantIndex, inventory, allowOverselling, lowStockThreshold, trackInventory, availability } = req.body;
+    const {
+      variantIndex,
+      inventory,
+      allowOverselling,
+      lowStockThreshold,
+      trackInventory,
+      availability,
+    } = req.body;
     const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!product) return res.status(404).json({ error: "Product not found" });
 
     if (variantIndex != null && product.variants[variantIndex]) {
-      if (inventory != null) product.variants[variantIndex].inventory = Math.max(0, Number(inventory));
+      if (inventory != null)
+        product.variants[variantIndex].inventory = Math.max(
+          0,
+          Number(inventory),
+        );
     } else {
       if (inventory != null) product.inventory = Math.max(0, Number(inventory));
     }
-    if (allowOverselling != null) product.allowOverselling = Boolean(allowOverselling);
-    if (lowStockThreshold != null) product.lowStockThreshold = Math.max(0, Number(lowStockThreshold));
-    if (trackInventory != null) product.trackInventory = Boolean(trackInventory);
+    if (allowOverselling != null)
+      product.allowOverselling = Boolean(allowOverselling);
+    if (lowStockThreshold != null)
+      product.lowStockThreshold = Math.max(0, Number(lowStockThreshold));
+    if (trackInventory != null)
+      product.trackInventory = Boolean(trackInventory);
     if (availability) product.availability = availability;
 
     await product.save();
@@ -702,161 +978,221 @@ router.patch('/inventory/:id', requireAdmin, async (req, res) => {
     const totalStock = hasVariants
       ? product.variants.reduce((s, v) => s + (Number(v.inventory) || 0), 0)
       : Number(product.inventory) || 0;
-    res.json({ ok: true, totalStock, product: { _id: product._id, inventory: product.inventory, variants: product.variants, allowOverselling: product.allowOverselling, lowStockThreshold: product.lowStockThreshold, trackInventory: product.trackInventory, availability: product.availability } });
+    res.json({
+      ok: true,
+      totalStock,
+      product: {
+        _id: product._id,
+        inventory: product.inventory,
+        variants: product.variants,
+        allowOverselling: product.allowOverselling,
+        lowStockThreshold: product.lowStockThreshold,
+        trackInventory: product.trackInventory,
+        availability: product.availability,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Admin product management (protected)
-router.get('/products', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const { page = 1, limit = 20, q, categoryId, status } = req.query;
-    const skip = (Math.max(1, page) - 1) * limit;
-    const filter = {};
+router.get(
+  "/products",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20, q, categoryId, status } = req.query;
+      const skip = (Math.max(1, page) - 1) * limit;
+      const filter = {};
 
-    if (status === 'draft') {
-      filter.status = 'draft';
-      filter.createdBy = req.admin._id;
-    } else if (status) {
-      filter.status = status;
-    } else {
-      // Default: show published/archived + current admin drafts (no other admin drafts)
-      filter.$or = [
-        { status: { $ne: 'draft' } },
-        { createdBy: req.admin._id }
-      ];
+      if (status === "draft") {
+        filter.status = "draft";
+        filter.createdBy = req.admin._id;
+      } else if (status) {
+        filter.status = status;
+      } else {
+        // Default: show published/archived + current admin drafts (no other admin drafts)
+        filter.$or = [
+          { status: { $ne: "draft" } },
+          { createdBy: req.admin._id },
+        ];
+      }
+
+      if (categoryId) {
+        // accept one id or comma-separated list
+        const ids = String(categoryId)
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean);
+        if (ids.length === 1) filter.categoryId = ids[0];
+        else if (ids.length > 1) filter.categoryId = { $in: ids };
+      }
+      if (q)
+        filter.$or = [
+          { title: new RegExp(q, "i") },
+          { description: new RegExp(q, "i") },
+        ];
+
+      const [items, total] = await Promise.all([
+        Product.find(filter)
+          .sort({ updatedAt: -1 })
+          .skip(Number(skip))
+          .limit(Number(limit)),
+        Product.countDocuments(filter),
+      ]);
+      res.json({ items, total, page: Number(page), limit: Number(limit) });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-
-    if (categoryId) {
-      // accept one id or comma-separated list
-      const ids = String(categoryId).split(',').map(id => id.trim()).filter(Boolean);
-      if (ids.length === 1) filter.categoryId = ids[0];
-      else if (ids.length > 1) filter.categoryId = { $in: ids };
-    }
-    if (q) filter.$or = [ { title: new RegExp(q, 'i') }, { description: new RegExp(q, 'i') } ];
-
-    const [items, total] = await Promise.all([
-      Product.find(filter).sort({ updatedAt: -1 }).skip(Number(skip)).limit(Number(limit)),
-      Product.countDocuments(filter)
-    ]);
-    res.json({ items, total, page: Number(page), limit: Number(limit) });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // Product variation catalog, used by dashboard product forms.
-router.get('/variations', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const page = Math.max(1, Number(req.query.page) || 1);
-    const perPage = Math.min(50, Math.max(1, Number(req.query.per_page || req.query.limit) || 50));
-    const skip = (page - 1) * perPage;
-    const [items, total] = await Promise.all([
-      Variation.find({}).sort({ name: 1 }).skip(skip).limit(perPage).lean(),
-      Variation.countDocuments({}),
-    ]);
-    const data = items.map((item) => ({
-      id: item._id,
-      _id: item._id,
-      name: item.name,
-      options: (item.options || []).map((option) => ({
-        id: option._id,
-        _id: option._id,
-        value: option.value,
-      })),
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-    }));
-    res.json({
-      success: true,
-      message: 'Variations retrieved successfully',
-      result: {
-        data,
-        meta: {
-          current_page: page,
-          from: total ? skip + 1 : null,
-          last_page: Math.max(1, Math.ceil(total / perPage)),
-          per_page: perPage,
-          to: skip + data.length,
-          total,
+router.get(
+  "/variations",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const perPage = Math.min(
+        50,
+        Math.max(1, Number(req.query.per_page || req.query.limit) || 50),
+      );
+      const skip = (page - 1) * perPage;
+      const [items, total] = await Promise.all([
+        Variation.find({}).sort({ name: 1 }).skip(skip).limit(perPage).lean(),
+        Variation.countDocuments({}),
+      ]);
+      const data = items.map((item) => ({
+        id: item._id,
+        _id: item._id,
+        name: item.name,
+        options: (item.options || []).map((option) => ({
+          id: option._id,
+          _id: option._id,
+          value: option.value,
+        })),
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+      }));
+      res.json({
+        success: true,
+        message: "Variations retrieved successfully",
+        result: {
+          data,
+          meta: {
+            current_page: page,
+            from: total ? skip + 1 : null,
+            last_page: Math.max(1, Math.ceil(total / perPage)),
+            per_page: perPage,
+            to: skip + data.length,
+            total,
+          },
         },
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.post('/variations', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const name = String(req.body?.name || '').trim();
-    if (!name) return res.status(400).json({ error: 'Variation name is required' });
-    const optionValues = Array.isArray(req.body?.options)
-      ? req.body.options.map(normalizeVariationOptionValue).filter(Boolean)
-      : [];
-    const seen = new Set();
-    const options = optionValues
-      .filter((value) => {
-        const key = value.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .map((value) => ({ value }));
-    const variation = await Variation.create({ name, options, createdBy: req.admin._id });
-    res.json({ ok: true, variation });
-  } catch (err) {
-    if (err?.code === 11000) return res.status(409).json({ error: 'Variation already exists' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/variations",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const name = String(req.body?.name || "").trim();
+      if (!name)
+        return res.status(400).json({ error: "Variation name is required" });
+      const optionValues = Array.isArray(req.body?.options)
+        ? req.body.options.map(normalizeVariationOptionValue).filter(Boolean)
+        : [];
+      const seen = new Set();
+      const options = optionValues
+        .filter((value) => {
+          const key = value.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((value) => ({ value }));
+      const variation = await Variation.create({
+        name,
+        options,
+        createdBy: req.admin._id,
+      });
+      res.json({ ok: true, variation });
+    } catch (err) {
+      if (err?.code === 11000)
+        return res.status(409).json({ error: "Variation already exists" });
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.put('/variations/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const name = String(req.body?.name || '').trim();
-    if (!name) return res.status(400).json({ error: 'Variation name is required' });
-    const optionValues = Array.isArray(req.body?.options)
-      ? req.body.options.map(normalizeVariationOptionValue).filter(Boolean)
-      : [];
-    const seen = new Set();
-    const options = optionValues
-      .filter((value) => {
-        const key = value.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .map((value) => ({ value }));
-    const variation = await Variation.findByIdAndUpdate(
-      req.params.id,
-      { $set: { name, options } },
-      { new: true, runValidators: true },
-    );
-    if (!variation) return res.status(404).json({ error: 'Variation not found' });
-    res.json({ ok: true, variation });
-  } catch (err) {
-    if (err?.code === 11000) return res.status(409).json({ error: 'Variation already exists' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/variations/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const name = String(req.body?.name || "").trim();
+      if (!name)
+        return res.status(400).json({ error: "Variation name is required" });
+      const optionValues = Array.isArray(req.body?.options)
+        ? req.body.options.map(normalizeVariationOptionValue).filter(Boolean)
+        : [];
+      const seen = new Set();
+      const options = optionValues
+        .filter((value) => {
+          const key = value.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((value) => ({ value }));
+      const variation = await Variation.findByIdAndUpdate(
+        req.params.id,
+        { $set: { name, options } },
+        { new: true, runValidators: true },
+      );
+      if (!variation)
+        return res.status(404).json({ error: "Variation not found" });
+      res.json({ ok: true, variation });
+    } catch (err) {
+      if (err?.code === 11000)
+        return res.status(409).json({ error: "Variation already exists" });
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.delete('/variations/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const deleted = await Variation.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'Variation not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/variations/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const deleted = await Variation.findByIdAndDelete(req.params.id);
+      if (!deleted)
+        return res.status(404).json({ error: "Variation not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 const normalizeFaqs = (faqs) => {
   if (!Array.isArray(faqs)) return faqs;
   return faqs
     .filter((f) => f?.question?.trim())
     .map((f) => {
-      const body = (f.answer || '').trim();
+      const body = (f.answer || "").trim();
       const communityAnswers = (f.answers || []).filter((a) => !a.isOfficial);
       const existingOfficial = (f.answers || []).find((a) => a.isOfficial);
       if (!body) {
@@ -867,7 +1203,14 @@ const normalizeFaqs = (faqs) => {
       }
       const officialAnswer = existingOfficial
         ? { ...existingOfficial, body, createdAt: new Date() }
-        : { body, isOfficial: true, authorName: 'Seller', helpful: 0, helpfulBy: [], createdAt: new Date() };
+        : {
+            body,
+            isOfficial: true,
+            authorName: "Seller",
+            helpful: 0,
+            helpfulBy: [],
+            createdAt: new Date(),
+          };
       return {
         question: f.question.trim(),
         answers: [officialAnswer, ...communityAnswers],
@@ -875,900 +1218,1251 @@ const normalizeFaqs = (faqs) => {
     });
 };
 
-router.post('/products', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    let payload = req.body || {};
-    if (payload.faqs) payload.faqs = normalizeFaqs(payload.faqs);
-    const nextBarcode = normalizeBarcodeCode(payload.barcode);
+router.post(
+  "/products",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      let payload = req.body || {};
+      if (payload.faqs) payload.faqs = normalizeFaqs(payload.faqs);
+      const nextBarcode = normalizeBarcodeCode(payload.barcode);
 
-    // ensure drafts and new products are attributed to the current admin
-    if (!payload.createdBy) {
-      payload.createdBy = req.admin._id;
-    }
-
-    // perform a bit of defensive cleanup/validation so the database error is
-    // easier for the client to understand.  This mirrors some of the logic
-    // already in the front end but ensures the server doesn't crash if a bad
-    // payload slips through.
-
-    // parse customization options if they accidentally arrive as a JSON
-    // string (happened previously when the schema mis‑interpreted the type)
-    if (payload.customization && typeof payload.customization.options === 'string') {
-      try {
-        payload.customization.options = JSON.parse(payload.customization.options);
-      } catch {
-        // leave it alone; the validator below will catch it
+      // ensure drafts and new products are attributed to the current admin
+      if (!payload.createdBy) {
+        payload.createdBy = req.admin._id;
       }
-    }
 
-    // make sure each variant has a numeric price; respond with 400 if not.
-    if (Array.isArray(payload.variants)) {
-      for (const v of payload.variants) {
-        if (v.price == null) {
-          return res.status(400).json({ error: 'Each variant must include a price' });
+      // perform a bit of defensive cleanup/validation so the database error is
+      // easier for the client to understand.  This mirrors some of the logic
+      // already in the front end but ensures the server doesn't crash if a bad
+      // payload slips through.
+
+      // parse customization options if they accidentally arrive as a JSON
+      // string (happened previously when the schema mis‑interpreted the type)
+      if (
+        payload.customization &&
+        typeof payload.customization.options === "string"
+      ) {
+        try {
+          payload.customization.options = JSON.parse(
+            payload.customization.options,
+          );
+        } catch {
+          // leave it alone; the validator below will catch it
         }
-        // cast numeric strings to numbers (express.json already does this for
-        // top‑level fields, but nested ones may come through as strings)
-        v.price = Number(v.price);
-        if (v.inventory != null) v.inventory = Number(v.inventory);
       }
-    }
 
-    if (nextBarcode) {
-      const [duplicateBarcode, duplicateProduct] = await Promise.all([
-        Barcode.findOne({ code: nextBarcode }),
-        Product.findOne({ barcode: nextBarcode }).select('_id title'),
-      ]);
-      if ((duplicateBarcode && duplicateBarcode.product) || duplicateProduct) {
-        return res.status(409).json({ error: 'Barcode already exists' });
+      // make sure each variant has a numeric price; respond with 400 if not.
+      if (Array.isArray(payload.variants)) {
+        for (const v of payload.variants) {
+          if (v.price == null) {
+            return res
+              .status(400)
+              .json({ error: "Each variant must include a price" });
+          }
+          // cast numeric strings to numbers (express.json already does this for
+          // top‑level fields, but nested ones may come through as strings)
+          v.price = Number(v.price);
+          if (v.inventory != null) v.inventory = Number(v.inventory);
+        }
       }
-      payload.barcode = nextBarcode;
-    } else {
-      delete payload.barcode;
-    }
 
-    // If categoryId provided, resolve and store category name on product for backward compatibility
-    if (payload.categoryId) {
-      try {
-        const Category = (await import('../models/Category.js')).default;
-        const cat = await Category.findById(payload.categoryId);
-        if (cat) payload.category = cat.name;
-      } catch (err) {
-        // ignore resolution errors
+      if (nextBarcode) {
+        const [duplicateBarcode, duplicateProduct] = await Promise.all([
+          Barcode.findOne({ code: nextBarcode }),
+          Product.findOne({ barcode: nextBarcode }).select("_id title"),
+        ]);
+        if (
+          (duplicateBarcode && duplicateBarcode.product) ||
+          duplicateProduct
+        ) {
+          return res.status(409).json({ error: "Barcode already exists" });
+        }
+        payload.barcode = nextBarcode;
+      } else {
+        delete payload.barcode;
       }
-    }
 
-    const p = new Product(payload);
-    await p.save();
-    clearProductsCache();
-    if (nextBarcode) {
-      try {
+      // If categoryId provided, resolve and store category name on product for backward compatibility
+      if (payload.categoryId) {
+        try {
+          const Category = (await import("../models/Category.js")).default;
+          const cat = await Category.findById(payload.categoryId);
+          if (cat) payload.category = cat.name;
+        } catch (err) {
+          // ignore resolution errors
+        }
+      }
+
+      const p = new Product(payload);
+      await p.save();
+      clearProductsCache();
+      if (nextBarcode) {
+        try {
+          await syncProductBarcode({
+            productId: p._id,
+            productTitle: p.title,
+            barcode: nextBarcode,
+            createdBy: req.admin._id,
+          });
+        } catch (barcodeErr) {
+          await Product.deleteOne({ _id: p._id });
+          return res
+            .status(barcodeErr.status || 409)
+            .json({ error: barcodeErr.message || "Barcode already exists" });
+        }
+      }
+      res.json({ ok: true, product: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.get(
+  "/products/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const p = await Product.findById(req.params.id).populate(
+        "frequentlyBoughtTogether",
+        "title price compareAtPrice images slug availability _id",
+      );
+      if (!p) return res.status(404).json({ error: "Not found" });
+      if (
+        p.status === "draft" &&
+        p.createdBy &&
+        p.createdBy.toString() !== req.admin._id.toString()
+      ) {
+        return res.status(403).json({ error: "Access denied to this draft" });
+      }
+      res.json({ product: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.put(
+  "/products/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const updates = req.body || {};
+      if (updates.faqs) updates.faqs = normalizeFaqs(updates.faqs);
+      const nextBarcode = normalizeBarcodeCode(updates.barcode);
+
+      // parse stringified customization options if needed
+      if (
+        updates.customization &&
+        typeof updates.customization.options === "string"
+      ) {
+        try {
+          updates.customization.options = JSON.parse(
+            updates.customization.options,
+          );
+        } catch {
+          // let validation catch it
+        }
+      }
+
+      // variant sanity check (same as POST)
+      if (Array.isArray(updates.variants)) {
+        for (const v of updates.variants) {
+          if (v.price == null) {
+            return res
+              .status(400)
+              .json({ error: "Each variant must include a price" });
+          }
+          v.price = Number(v.price);
+          if (v.inventory != null) v.inventory = Number(v.inventory);
+        }
+      }
+
+      // Load existing product first so barcode ownership can be validated before updating.
+      const existing = await Product.findById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+
+      if (nextBarcode) {
+        const [duplicateBarcode, duplicateProduct] = await Promise.all([
+          Barcode.findOne({ code: nextBarcode }),
+          Product.findOne({
+            barcode: nextBarcode,
+            _id: { $ne: existing._id },
+          }).select("_id title"),
+        ]);
+        const barcodeOwnedByOtherProduct =
+          duplicateBarcode &&
+          duplicateBarcode.product &&
+          String(duplicateBarcode.product) !== String(existing._id);
+        if (barcodeOwnedByOtherProduct || duplicateProduct) {
+          return res.status(409).json({ error: "Barcode already exists" });
+        }
+        updates.barcode = nextBarcode;
+      } else {
+        updates.barcode = undefined;
+      }
+
+      // If categoryId present, resolve name
+      if (updates.categoryId) {
+        try {
+          const Category = (await import("../models/Category.js")).default;
+          const cat = await Category.findById(updates.categoryId);
+          if (cat) updates.category = cat.name;
+        } catch (err) {
+          // ignore
+        }
+      }
+
+      if (
+        existing.status === "draft" &&
+        existing.createdBy &&
+        existing.createdBy.toString() !== req.admin._id.toString()
+      ) {
+        return res
+          .status(403)
+          .json({ error: "Cannot edit another administrator's draft" });
+      }
+
+      // Determine images removed by comparing public_id lists
+      if (Array.isArray(existing.images) && Array.isArray(updates.images)) {
+        const oldIds = existing.images
+          .map((i) => i && i.public_id)
+          .filter(Boolean);
+        const newIds = updates.images
+          .map((i) => i && i.public_id)
+          .filter(Boolean);
+        const removed = oldIds.filter((id) => !newIds.includes(id));
+
+        if (removed.length > 0) {
+          try {
+            ensureCloudinaryConfigured();
+            for (const publicId of removed) {
+              try {
+                await cloudinary.uploader.destroy(publicId, {
+                  resource_type: "image",
+                });
+              } catch {
+                // ignore Cloudinary errors
+              }
+            }
+          } catch {
+            // ignore Cloudinary errors
+          }
+        }
+      }
+
+      // Apply updates and return updated product
+      const p = await Product.findByIdAndUpdate(req.params.id, updates, {
+        new: true,
+        runValidators: true,
+      });
+      if (!p) return res.status(404).json({ error: "Not found" });
+      clearProductsCache();
+      clearProductCache(req.params.id);
+      if (nextBarcode) {
         await syncProductBarcode({
           productId: p._id,
           productTitle: p.title,
           barcode: nextBarcode,
           createdBy: req.admin._id,
         });
-      } catch (barcodeErr) {
-        await Product.deleteOne({ _id: p._id });
-        return res.status(barcodeErr.status || 409).json({ error: barcodeErr.message || 'Barcode already exists' });
-      }
-    }
-    res.json({ ok: true, product: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.get('/products/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const p = await Product.findById(req.params.id)
-      .populate('frequentlyBoughtTogether', 'title price compareAtPrice images slug availability _id');
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    if (p.status === 'draft' && p.createdBy && p.createdBy.toString() !== req.admin._id.toString()) {
-      return res.status(403).json({ error: 'Access denied to this draft' });
-    }
-    res.json({ product: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.put('/products/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const updates = req.body || {};
-    if (updates.faqs) updates.faqs = normalizeFaqs(updates.faqs);
-    const nextBarcode = normalizeBarcodeCode(updates.barcode);
-
-    // parse stringified customization options if needed
-    if (updates.customization && typeof updates.customization.options === 'string') {
-      try {
-        updates.customization.options = JSON.parse(updates.customization.options);
-      } catch {
-        // let validation catch it
-      }
-    }
-
-    // variant sanity check (same as POST)
-    if (Array.isArray(updates.variants)) {
-      for (const v of updates.variants) {
-        if (v.price == null) {
-          return res.status(400).json({ error: 'Each variant must include a price' });
+        const oldBarcode = normalizeBarcodeCode(existing.barcode);
+        if (oldBarcode && oldBarcode !== nextBarcode) {
+          await Barcode.updateOne(
+            { code: oldBarcode, product: p._id },
+            { $set: { product: null, productTitle: "" } },
+          );
         }
-        v.price = Number(v.price);
-        if (v.inventory != null) v.inventory = Number(v.inventory);
+      } else {
+        await detachBarcodeFromProduct(p._id);
       }
+      res.json({ ok: true, product: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
+  },
+);
 
-    // Load existing product first so barcode ownership can be validated before updating.
-    const existing = await Product.findById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
+router.delete(
+  "/products/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const force = req.query.force === "true" || req.query.force === "1";
 
-    if (nextBarcode) {
-      const [duplicateBarcode, duplicateProduct] = await Promise.all([
-        Barcode.findOne({ code: nextBarcode }),
-        Product.findOne({ barcode: nextBarcode, _id: { $ne: existing._id } }).select('_id title'),
-      ]);
-      const barcodeOwnedByOtherProduct =
-        duplicateBarcode &&
-        duplicateBarcode.product &&
-        String(duplicateBarcode.product) !== String(existing._id);
-      if (barcodeOwnedByOtherProduct || duplicateProduct) {
-        return res.status(409).json({ error: 'Barcode already exists' });
-      }
-      updates.barcode = nextBarcode;
-    } else {
-      updates.barcode = undefined;
-    }
+      if (force) {
+        // permanent delete — remove Cloudinary images first
+        const p = await Product.findById(req.params.id);
+        if (!p) return res.status(404).json({ error: "Not found" });
 
-    // If categoryId present, resolve name
-    if (updates.categoryId) {
-      try {
-        const Category = (await import('../models/Category.js')).default;
-        const cat = await Category.findById(updates.categoryId);
-        if (cat) updates.category = cat.name;
-      } catch (err) {
-        // ignore
-      }
-    }
-
-    if (existing.status === 'draft' && existing.createdBy && existing.createdBy.toString() !== req.admin._id.toString()) {
-      return res.status(403).json({ error: 'Cannot edit another administrator\'s draft' });
-    }
-
-    // Determine images removed by comparing public_id lists
-    if (Array.isArray(existing.images) && Array.isArray(updates.images)) {
-      const oldIds = existing.images.map(i => i && i.public_id).filter(Boolean);
-      const newIds = updates.images.map(i => i && i.public_id).filter(Boolean);
-      const removed = oldIds.filter(id => !newIds.includes(id));
-
-      if (removed.length > 0) {
-        try {
-          ensureCloudinaryConfigured();
-          for (const publicId of removed) {
-            try {
-              await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-            } catch {
-              // ignore Cloudinary errors
-            }
-          }
-        } catch {
-          // ignore Cloudinary errors
-        }
-      }
-    }
-
-    // Apply updates and return updated product
-    const p = await Product.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    clearProductsCache();
-    clearProductCache(req.params.id);
-    if (nextBarcode) {
-      await syncProductBarcode({
-        productId: p._id,
-        productTitle: p.title,
-        barcode: nextBarcode,
-        createdBy: req.admin._id,
-      });
-      const oldBarcode = normalizeBarcodeCode(existing.barcode);
-      if (oldBarcode && oldBarcode !== nextBarcode) {
-        await Barcode.updateOne(
-          { code: oldBarcode, product: p._id },
-          { $set: { product: null, productTitle: "" } },
-        );
-      }
-    } else {
-      await detachBarcodeFromProduct(p._id);
-    }
-    res.json({ ok: true, product: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.delete('/products/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const force = req.query.force === 'true' || req.query.force === '1';
-
-    if (force) {
-      // permanent delete — remove Cloudinary images first
-      const p = await Product.findById(req.params.id);
-      if (!p) return res.status(404).json({ error: 'Not found' });
-
-      if (Array.isArray(p.images) && p.images.length > 0) {
-        try {
-          ensureCloudinaryConfigured();
-          for (const img of p.images) {
-            if (img && img.public_id) {
-              try {
-                await cloudinary.uploader.destroy(img.public_id, { resource_type: 'image' });
-              } catch {
-                // ignore Cloudinary errors
+        if (Array.isArray(p.images) && p.images.length > 0) {
+          try {
+            ensureCloudinaryConfigured();
+            for (const img of p.images) {
+              if (img && img.public_id) {
+                try {
+                  await cloudinary.uploader.destroy(img.public_id, {
+                    resource_type: "image",
+                  });
+                } catch {
+                  // ignore Cloudinary errors
+                }
               }
             }
+          } catch {
+            // ignore Cloudinary errors
           }
-        } catch {
-          // ignore Cloudinary errors
         }
+
+        await detachBarcodeFromProduct(p._id);
+        await Product.deleteOne({ _id: p._id });
+        return res.json({ ok: true });
       }
 
+      // soft-delete: set status=archived
+      const p = await Product.findByIdAndUpdate(
+        req.params.id,
+        { status: "archived" },
+        { new: true },
+      );
+      if (!p) return res.status(404).json({ error: "Not found" });
       await detachBarcodeFromProduct(p._id);
-      await Product.deleteOne({ _id: p._id });
-      return res.json({ ok: true });
+      res.json({ ok: true, product: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-
-    // soft-delete: set status=archived
-    const p = await Product.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    await detachBarcodeFromProduct(p._id);
-    res.json({ ok: true, product: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // POST /api/admin/products/:id/duplicate — clone a product as a new draft
 // (images/Cloudinary assets are referenced, not re-uploaded; barcode/slug/sku
 // are cleared so the clone never collides with the source product)
-router.post('/products/:id/duplicate', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const source = await Product.findById(req.params.id).lean();
-    if (!source) return res.status(404).json({ error: 'Not found' });
+router.post(
+  "/products/:id/duplicate",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const source = await Product.findById(req.params.id).lean();
+      if (!source) return res.status(404).json({ error: "Not found" });
 
-    const clone = { ...source };
-    delete clone._id;
-    delete clone.__v;
-    delete clone.createdAt;
-    delete clone.updatedAt;
-    delete clone.slug;
-    delete clone.barcode;
-    delete clone.sku;
-    delete clone.reviews;
+      const clone = { ...source };
+      delete clone._id;
+      delete clone.__v;
+      delete clone.createdAt;
+      delete clone.updatedAt;
+      delete clone.slug;
+      delete clone.barcode;
+      delete clone.sku;
+      delete clone.reviews;
 
-    clone.title = `${source.title} (Copy)`;
-    clone.status = 'draft';
-    clone.createdBy = req.admin._id;
-    clone.reviewCount = 0;
-    clone.averageRating = 0;
-    clone.monthlySold = 0;
-    clone.inventory = 0;
-    if (Array.isArray(clone.variants)) {
-      clone.variants = clone.variants.map(({ _id, ...rest }) => ({ ...rest, inventory: 0 }));
+      clone.title = `${source.title} (Copy)`;
+      clone.status = "draft";
+      clone.createdBy = req.admin._id;
+      clone.reviewCount = 0;
+      clone.averageRating = 0;
+      clone.monthlySold = 0;
+      clone.inventory = 0;
+      if (Array.isArray(clone.variants)) {
+        clone.variants = clone.variants.map(({ _id, ...rest }) => ({
+          ...rest,
+          inventory: 0,
+        }));
+      }
+
+      const p = new Product(clone);
+      await p.save();
+      clearProductsCache();
+      res.json({ ok: true, product: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-
-    const p = new Product(clone);
-    await p.save();
-    clearProductsCache();
-    res.json({ ok: true, product: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // --- Blog (admin) ---
 
 // List / search blog posts (admin)
-router.get('/blog', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const { page = 1, limit = 20, q, status } = req.query;
-    const skip = (Math.max(1, page) - 1) * limit;
-    const filter = {};
-    if (status) filter.status = status;
-    if (q) filter.$or = [ { title: new RegExp(q, 'i') }, { excerpt: new RegExp(q, 'i') }, { content: new RegExp(q, 'i') } ];
+router.get(
+  "/blog",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20, q, status } = req.query;
+      const skip = (Math.max(1, page) - 1) * limit;
+      const filter = {};
+      if (status) filter.status = status;
+      if (q)
+        filter.$or = [
+          { title: new RegExp(q, "i") },
+          { excerpt: new RegExp(q, "i") },
+          { content: new RegExp(q, "i") },
+        ];
 
-    const [items, total] = await Promise.all([
-      BlogPost.find(filter).populate('categories').sort({ updatedAt: -1 }).skip(Number(skip)).limit(Number(limit)),
-      BlogPost.countDocuments(filter)
-    ]);
-    res.json({ items, total, page: Number(page), limit: Number(limit) });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      const [items, total] = await Promise.all([
+        BlogPost.find(filter)
+          .populate("categories")
+          .sort({ updatedAt: -1 })
+          .skip(Number(skip))
+          .limit(Number(limit)),
+        BlogPost.countDocuments(filter),
+      ]);
+      res.json({ items, total, page: Number(page), limit: Number(limit) });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Create post
-router.post('/blog', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const payload = req.body || {};
-    const p = new BlogPost(payload);
-    await p.save();
-    res.json({ ok: true, post: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/blog",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const payload = req.body || {};
+      const p = new BlogPost(payload);
+      await p.save();
+      res.json({ ok: true, post: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Get all unique tags from blog posts (must be BEFORE /blog/:id route)
-router.get('/blog/tags', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const tags = await BlogPost.distinct('tags');
-    res.json({ tags: tags.filter(t => t).sort() });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/blog/tags",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const tags = await BlogPost.distinct("tags");
+      res.json({ tags: tags.filter((t) => t).sort() });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Get single post (admin)
-router.get('/blog/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const p = await BlogPost.findById(req.params.id).populate('categories');
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    res.json({ post: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/blog/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const p = await BlogPost.findById(req.params.id).populate("categories");
+      if (!p) return res.status(404).json({ error: "Not found" });
+      res.json({ post: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Update post
-router.put('/blog/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const updates = req.body || {};
-    if (updates.status === 'published') updates.publishedAt = updates.publishedAt || Date.now();
-    const p = await BlogPost.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, post: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/blog/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const updates = req.body || {};
+      if (updates.status === "published")
+        updates.publishedAt = updates.publishedAt || Date.now();
+      const p = await BlogPost.findByIdAndUpdate(req.params.id, updates, {
+        new: true,
+      });
+      if (!p) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, post: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Delete / archive post
-router.delete('/blog/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const p = await BlogPost.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, post: p });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/blog/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const p = await BlogPost.findByIdAndUpdate(
+        req.params.id,
+        { status: "archived" },
+        { new: true },
+      );
+      if (!p) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, post: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // --- Blog Categories (admin) ---
 
 // List all blog categories
-router.get('/blog-categories', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const categories = await BlogCategory.find().sort({ name: 1 });
-    res.json({ categories });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/blog-categories",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const categories = await BlogCategory.find().sort({ name: 1 });
+      res.json({ categories });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Create blog category
-router.post('/blog-categories', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-    
-    const category = new BlogCategory({ name, description });
-    await category.save();
-    res.json({ ok: true, category });
-  } catch (err) {
-    if (err.code === 11000) {
-      return res.status(400).json({ error: 'Category name already exists' });
+router.post(
+  "/blog-categories",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name) return res.status(400).json({ error: "Name is required" });
+
+      const category = new BlogCategory({ name, description });
+      await category.save();
+      res.json({ ok: true, category });
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(400).json({ error: "Category name already exists" });
+      }
+      res.status(500).json({ error: "Server error" });
     }
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // Update blog category
-router.put('/blog-categories/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    const updates = {};
-    if (name) updates.name = name;
-    if (description !== undefined) updates.description = description;
-    
-    const category = await BlogCategory.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!category) return res.status(404).json({ error: 'Category not found' });
-    res.json({ ok: true, category });
-  } catch (err) {
-    if (err.code === 11000) {
-      return res.status(400).json({ error: 'Category name already exists' });
+router.put(
+  "/blog-categories/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      const updates = {};
+      if (name) updates.name = name;
+      if (description !== undefined) updates.description = description;
+
+      const category = await BlogCategory.findByIdAndUpdate(
+        req.params.id,
+        updates,
+        { new: true },
+      );
+      if (!category)
+        return res.status(404).json({ error: "Category not found" });
+      res.json({ ok: true, category });
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(400).json({ error: "Category name already exists" });
+      }
+      res.status(500).json({ error: "Server error" });
     }
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // Delete blog category
-router.delete('/blog-categories/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const category = await BlogCategory.findByIdAndDelete(req.params.id);
-    if (!category) return res.status(404).json({ error: 'Category not found' });
-    
-    // Remove category from all blog posts
-    await BlogPost.updateMany(
-      { categories: req.params.id },
-      { $pull: { categories: req.params.id } }
-    );
-    
-    res.json({ ok: true, category });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/blog-categories/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const category = await BlogCategory.findByIdAndDelete(req.params.id);
+      if (!category)
+        return res.status(404).json({ error: "Category not found" });
+
+      // Remove category from all blog posts
+      await BlogPost.updateMany(
+        { categories: req.params.id },
+        { $pull: { categories: req.params.id } },
+      );
+
+      res.json({ ok: true, category });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Admin login
-router.post('/login', async (req, res) => {
+router.post("/login", async (req, res) => {
   try {
     const { email, password, adminSecret } = req.body;
-    if (!email || !password || !adminSecret) return res.status(400).json({ error: 'Missing fields' });
-    
+    if (!email || !password || !adminSecret)
+      return res.status(400).json({ error: "Missing fields" });
+
     // Validate admin secret
     if (adminSecret !== process.env.ADMIN_SECRET) {
-      return res.status(403).json({ error: 'Invalid admin secret' });
+      return res.status(403).json({ error: "Invalid admin secret" });
     }
 
     const admin = await Admin.findOne({ email: email.toLowerCase() });
     if (!admin || !admin.hashedPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
 
     // Check if account is active
     if (!admin.isActive) {
-      return res.status(403).json({ error: 'Account is disabled. Contact super admin.' });
+      return res
+        .status(403)
+        .json({ error: "Account is disabled. Contact super admin." });
     }
 
     // Check if account is locked
     if (admin.isCurrentlyLocked) {
       const minutesLeft = Math.ceil((admin.lockUntil - Date.now()) / 60000);
-      return res.status(423).json({ error: `Account is temporarily locked. Try again in ${minutesLeft} minutes.` });
+      return res
+        .status(423)
+        .json({
+          error: `Account is temporarily locked. Try again in ${minutesLeft} minutes.`,
+        });
     }
 
     // Verify password
     const ok = await bcrypt.compare(password, admin.hashedPassword);
     if (!ok) {
       await admin.incLoginAttempts();
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
 
     // Successful login - reset attempts and update last login info
     await admin.resetLoginAttempts();
     admin.lastLoginAt = Date.now();
-    admin.lastLoginIP = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    admin.lastLoginIP =
+      req.ip || req.headers["x-forwarded-for"] || req.connection.remoteAddress;
     await admin.save();
 
     const token = createToken(admin);
     // SameSite=none + Secure required for cross-origin cookie (Vercel frontend ↔ Render backend)
-    res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true });
-    
-    res.json({ user: { email: admin.email, name: admin.name, role: admin.role, image: null } });
+    res.cookie("token", token, {
+      httpOnly: true,
+      sameSite: "none",
+      secure: true,
+    });
+
+    res.json({
+      user: {
+        email: admin.email,
+        name: admin.name,
+        role: admin.role,
+        image: null,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // --- Admin accounts management (admin-only) ---
 
 // List all admins/moderators
-router.get('/admins', requireAdmin, async (req, res) => {
+router.get("/admins", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const items = await Admin.find().select('-hashedPassword -resetToken -resetExpires -loginAttempts');
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
+    const items = await Admin.find().select(
+      "-hashedPassword -resetToken -resetExpires -loginAttempts",
+    );
     res.json({ items });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Get single admin
-router.get('/admins/:id', requireAdmin, async (req, res) => {
+router.get("/admins/:id", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const a = await Admin.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires -loginAttempts');
-    if (!a) return res.status(404).json({ error: 'Not found' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
+    const a = await Admin.findById(req.params.id).select(
+      "-hashedPassword -resetToken -resetExpires -loginAttempts",
+    );
+    if (!a) return res.status(404).json({ error: "Not found" });
     res.json({ admin: a });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Create new admin (admin-only)
-router.post('/admins', requireAdmin, async (req, res) => {
+router.post("/admins", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
     const { name, email, password, role, permissions } = req.body || {};
-    if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' });
+    if (!name || !email || !password)
+      return res.status(400).json({ error: "Missing fields" });
     const existing = await Admin.findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(400).json({ error: 'Admin with this email already exists' });
+    if (existing)
+      return res
+        .status(400)
+        .json({ error: "Admin with this email already exists" });
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
-    const resolvedRole = role === 'moderator' ? 'moderator' : 'admin';
+    const resolvedRole = role === "moderator" ? "moderator" : "admin";
     const admin = new Admin({
       name,
       email: email.toLowerCase(),
       hashedPassword: hashed,
       role: resolvedRole,
       isActive: true,
-      permissions: resolvedRole === 'moderator' ? sanitizePermissions(permissions) : [],
+      permissions:
+        resolvedRole === "moderator" ? sanitizePermissions(permissions) : [],
     });
     await admin.save();
-    res.json({ ok: true, admin: { email: admin.email, name: admin.name, role: admin.role, permissions: admin.permissions, _id: admin._id } });
+    res.json({
+      ok: true,
+      admin: {
+        email: admin.email,
+        name: admin.name,
+        role: admin.role,
+        permissions: admin.permissions,
+        _id: admin._id,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Update admin (admin-only)
-router.put('/admins/:id', requireAdmin, async (req, res) => {
+router.put("/admins/:id", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const { name, email, newPassword, role, isActive, permissions } = req.body || {};
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
+    const { name, email, newPassword, role, isActive, permissions } =
+      req.body || {};
     const a = await Admin.findById(req.params.id);
-    if (!a) return res.status(404).json({ error: 'Not found' });
+    if (!a) return res.status(404).json({ error: "Not found" });
 
     if (email && email.toLowerCase() !== a.email) {
       const exists = await Admin.findOne({ email: email.toLowerCase() });
-      if (exists) return res.status(400).json({ error: 'Another admin already uses that email' });
+      if (exists)
+        return res
+          .status(400)
+          .json({ error: "Another admin already uses that email" });
       a.email = email.toLowerCase();
     }
     if (name) a.name = name;
-    if (typeof isActive === 'boolean') a.isActive = isActive;
-    if (role) a.role = role === 'moderator' ? 'moderator' : 'admin';
-    if (newPassword) a.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    if (typeof permissions !== 'undefined') {
-      a.permissions = a.role === 'moderator' ? sanitizePermissions(permissions) : [];
-    } else if (a.role === 'admin') {
+    if (typeof isActive === "boolean") a.isActive = isActive;
+    if (role) a.role = role === "moderator" ? "moderator" : "admin";
+    if (newPassword)
+      a.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    if (typeof permissions !== "undefined") {
+      a.permissions =
+        a.role === "moderator" ? sanitizePermissions(permissions) : [];
+    } else if (a.role === "admin") {
       a.permissions = [];
     }
 
     await a.save();
-    res.json({ ok: true, admin: { _id: a._id, name: a.name, email: a.email, role: a.role, isActive: a.isActive, permissions: a.permissions } });
+    res.json({
+      ok: true,
+      admin: {
+        _id: a._id,
+        name: a.name,
+        email: a.email,
+        role: a.role,
+        isActive: a.isActive,
+        permissions: a.permissions,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Deactivate admin (admin-only)
-router.put('/admins/:id/deactivate', requireAdmin, async (req, res) => {
+router.put("/admins/:id/deactivate", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    if (req.admin._id.toString() === req.params.id) return res.status(400).json({ error: 'Cannot deactivate yourself' });
-    const a = await Admin.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
-    if (!a) return res.status(404).json({ error: 'Not found' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
+    if (req.admin._id.toString() === req.params.id)
+      return res.status(400).json({ error: "Cannot deactivate yourself" });
+    const a = await Admin.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true },
+    );
+    if (!a) return res.status(404).json({ error: "Not found" });
     res.json({ ok: true, admin: { _id: a._id, isActive: a.isActive } });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Delete admin (admin-only)
-router.delete('/admins/:id', requireAdmin, async (req, res) => {
+router.delete("/admins/:id", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    if (req.admin._id.toString() === req.params.id) return res.status(400).json({ error: 'Cannot delete yourself' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
+    if (req.admin._id.toString() === req.params.id)
+      return res.status(400).json({ error: "Cannot delete yourself" });
     const a = await Admin.findById(req.params.id);
-    if (!a) return res.status(404).json({ error: 'Not found' });
+    if (!a) return res.status(404).json({ error: "Not found" });
     await Admin.deleteOne({ _id: a._id });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // --- Customer tag management -----------------------------------------
-router.get('/customer-tags', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const items = await CustomerTag.find({}).sort({ name: 1 });
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.post('/customer-tags', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const { name, color, description } = req.body || {};
-    if (!name || !String(name).trim()) {
-      return res.status(400).json({ error: 'Tag name is required' });
+router.get(
+  "/customer-tags",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const items = await CustomerTag.find({}).sort({ name: 1 });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    const tag = await CustomerTag.create({
-      name: String(name).trim(),
-      color: color || '#3B82F6',
-      description: description || '',
-    });
-    res.status(201).json({ tag });
-  } catch (err) {
-    res.status(500).json({ error: err.code === 11000 ? 'Tag already exists' : 'Server error' });
-  }
-});
+  },
+);
 
-router.put('/customer-tags/:id', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const { name, color, description } = req.body || {};
-    const tag = await CustomerTag.findById(req.params.id);
-    if (!tag) return res.status(404).json({ error: 'Not found' });
-    if (typeof name !== 'undefined') tag.name = String(name).trim();
-    if (typeof color !== 'undefined') tag.color = color || '#3B82F6';
-    if (typeof description !== 'undefined') tag.description = description || '';
-    await tag.save();
-    res.json({ ok: true, tag });
-  } catch (err) {
-    res.status(500).json({ error: err.code === 11000 ? 'Tag already exists' : 'Server error' });
-  }
-});
+router.post(
+  "/customer-tags",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const { name, color, description } = req.body || {};
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ error: "Tag name is required" });
+      }
+      const tag = await CustomerTag.create({
+        name: String(name).trim(),
+        color: color || "#3B82F6",
+        description: description || "",
+      });
+      res.status(201).json({ tag });
+    } catch (err) {
+      res
+        .status(500)
+        .json({
+          error: err.code === 11000 ? "Tag already exists" : "Server error",
+        });
+    }
+  },
+);
 
-router.delete('/customer-tags/:id', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const tag = await CustomerTag.findById(req.params.id);
-    if (!tag) return res.status(404).json({ error: 'Not found' });
-    await CustomerTag.deleteOne({ _id: tag._id });
-    await User.updateMany({ tags: tag._id }, { $pull: { tags: tag._id } });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/customer-tags/:id",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const { name, color, description } = req.body || {};
+      const tag = await CustomerTag.findById(req.params.id);
+      if (!tag) return res.status(404).json({ error: "Not found" });
+      if (typeof name !== "undefined") tag.name = String(name).trim();
+      if (typeof color !== "undefined") tag.color = color || "#3B82F6";
+      if (typeof description !== "undefined")
+        tag.description = description || "";
+      await tag.save();
+      res.json({ ok: true, tag });
+    } catch (err) {
+      res
+        .status(500)
+        .json({
+          error: err.code === 11000 ? "Tag already exists" : "Server error",
+        });
+    }
+  },
+);
+
+router.delete(
+  "/customer-tags/:id",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const tag = await CustomerTag.findById(req.params.id);
+      if (!tag) return res.status(404).json({ error: "Not found" });
+      await CustomerTag.deleteOne({ _id: tag._id });
+      await User.updateMany({ tags: tag._id }, { $pull: { tags: tag._id } });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // --- Barcode management ----------------------------------------------
-router.get('/barcodes', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const { q = '', code = '', limit = 100, page = 1 } = req.query;
-    const filter = {};
-    const exactCode = normalizeBarcodeCode(code);
-    const searchTerm = String(q || "").trim();
-    if (exactCode) {
-      filter.code = exactCode;
-    } else if (searchTerm) {
-      filter.$or = [
-        { code: new RegExp(searchTerm, 'i') },
-        { label: new RegExp(searchTerm, 'i') },
-        { productTitle: new RegExp(searchTerm, 'i') },
-      ];
-    }
-    const skip = (Math.max(1, Number(page)) - 1) * Math.min(500, Number(limit) || 100);
-    const pageSize = Math.min(500, Math.max(1, Number(limit) || 100));
-    const [items, total] = await Promise.all([
-      Barcode.find(filter).populate('product', 'title images barcode sku status').sort({ updatedAt: -1 }).skip(skip).limit(pageSize),
-      Barcode.countDocuments(filter),
-    ]);
-    const normalizedItems = items.map((item) => {
-      const linkedBarcode = normalizeBarcodeCode(item.product?.barcode);
-      if (!item.product || linkedBarcode !== item.code) {
-        return { ...item.toObject(), product: null, productTitle: "" };
+router.get(
+  "/barcodes",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const { q = "", code = "", limit = 100, page = 1 } = req.query;
+      const filter = {};
+      const exactCode = normalizeBarcodeCode(code);
+      const searchTerm = String(q || "").trim();
+      if (exactCode) {
+        filter.code = exactCode;
+      } else if (searchTerm) {
+        filter.$or = [
+          { code: new RegExp(searchTerm, "i") },
+          { label: new RegExp(searchTerm, "i") },
+          { productTitle: new RegExp(searchTerm, "i") },
+        ];
       }
-      return item.toObject();
-    });
-    res.json({ items: normalizedItems, total, page: Number(page), limit: pageSize });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.post('/barcodes', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const code = normalizeBarcodeCode(req.body?.code || generateBarcodeCode());
-    const label = String(req.body?.label || "").trim();
-    const notes = String(req.body?.notes || "").trim();
-    const productId = req.body?.product || null;
-
-    const [exists, existingProduct] = await Promise.all([
-      Barcode.findOne({ code }),
-      productId ? Product.findById(productId).select('_id title barcode') : Promise.resolve(null),
-    ]);
-    if (exists) return res.status(409).json({ error: 'Barcode already exists' });
-    if (productId && !existingProduct) return res.status(404).json({ error: 'Linked product not found' });
-    if (productId && existingProduct?.barcode && normalizeBarcodeCode(existingProduct.barcode) !== code) {
-      return res.status(409).json({ error: 'Product already has a barcode' });
-    }
-
-    const item = await Barcode.create({
-      code,
-      label,
-      notes,
-      product: productId || null,
-      productTitle: req.body?.productTitle || "",
-      createdBy: req.admin._id,
-      isActive: true,
-    });
-    if (productId) {
-      await Barcode.updateMany(
-        { product: productId, code: { $ne: code } },
-        { $set: { product: null, productTitle: "" } },
-      );
-      await Product.updateOne({ _id: productId }, { $set: { barcode: code } });
-    }
-    res.status(201).json({ ok: true, item });
-  } catch (err) {
-    res.status(500).json({ error: err.code === 11000 ? 'Barcode already exists' : 'Server error' });
-  }
-});
-
-router.put('/barcodes/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const item = await Barcode.findById(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
-
-    const nextCode = req.body?.code !== undefined ? normalizeBarcodeCode(req.body.code) : item.code;
-    if (!nextCode) return res.status(400).json({ error: 'Barcode code is required' });
-    const previousCode = item.code;
-    const previousProductId = item.product ? String(item.product) : null;
-
-    if (nextCode !== item.code) {
-      const duplicate = await Barcode.findOne({ code: nextCode });
-      if (duplicate && duplicate._id.toString() !== item._id.toString()) {
-        return res.status(409).json({ error: 'Barcode already exists' });
-      }
-      item.code = nextCode;
-    }
-
-    if (req.body?.label !== undefined) item.label = String(req.body.label).trim();
-    if (req.body?.notes !== undefined) item.notes = String(req.body.notes).trim();
-    if (req.body?.product !== undefined) {
-      const nextProductId = req.body.product || null;
-      if (nextProductId && String(nextProductId) !== previousProductId) {
-        const nextProduct = await Product.findById(nextProductId).select('_id title barcode');
-        if (!nextProduct) return res.status(404).json({ error: 'Linked product not found' });
-        if (nextProduct.barcode && normalizeBarcodeCode(nextProduct.barcode) !== nextCode) {
-          return res.status(409).json({ error: 'Product already has a barcode' });
+      const skip =
+        (Math.max(1, Number(page)) - 1) * Math.min(500, Number(limit) || 100);
+      const pageSize = Math.min(500, Math.max(1, Number(limit) || 100));
+      const [items, total] = await Promise.all([
+        Barcode.find(filter)
+          .populate("product", "title images barcode sku status")
+          .sort({ updatedAt: -1 })
+          .skip(skip)
+          .limit(pageSize),
+        Barcode.countDocuments(filter),
+      ]);
+      const normalizedItems = items.map((item) => {
+        const linkedBarcode = normalizeBarcodeCode(item.product?.barcode);
+        if (!item.product || linkedBarcode !== item.code) {
+          return { ...item.toObject(), product: null, productTitle: "" };
         }
-      }
-      item.product = nextProductId;
+        return item.toObject();
+      });
+      res.json({
+        items: normalizedItems,
+        total,
+        page: Number(page),
+        limit: pageSize,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    if (req.body?.productTitle !== undefined) item.productTitle = String(req.body.productTitle || '').trim();
-    if (req.body?.isActive !== undefined) item.isActive = !!req.body.isActive;
+  },
+);
 
-    await item.save();
-    if (previousProductId && previousProductId !== String(item.product || "")) {
-      await Product.updateOne({ _id: previousProductId, barcode: previousCode }, { $unset: { barcode: "" } });
-    }
-    if (item.product) {
-      await Barcode.updateMany(
-        { product: item.product, code: { $ne: item.code } },
-        { $set: { product: null, productTitle: "" } },
+router.post(
+  "/barcodes",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const code = normalizeBarcodeCode(
+        req.body?.code || generateBarcodeCode(),
       );
-      await Product.updateOne({ _id: item.product }, { $set: { barcode: item.code } });
-    }
-    await item.populate('product', 'title images barcode sku status');
-    res.json({ ok: true, item });
-  } catch (err) {
-    res.status(500).json({ error: err.code === 11000 ? 'Barcode already exists' : 'Server error' });
-  }
-});
+      const label = String(req.body?.label || "").trim();
+      const notes = String(req.body?.notes || "").trim();
+      const productId = req.body?.product || null;
 
-router.delete('/barcodes/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const item = await Barcode.findById(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    if (item.product) {
-      await Product.updateOne({ _id: item.product, barcode: item.code }, { $unset: { barcode: "" } });
+      const [exists, existingProduct] = await Promise.all([
+        Barcode.findOne({ code }),
+        productId
+          ? Product.findById(productId).select("_id title barcode")
+          : Promise.resolve(null),
+      ]);
+      if (exists)
+        return res.status(409).json({ error: "Barcode already exists" });
+      if (productId && !existingProduct)
+        return res.status(404).json({ error: "Linked product not found" });
+      if (
+        productId &&
+        existingProduct?.barcode &&
+        normalizeBarcodeCode(existingProduct.barcode) !== code
+      ) {
+        return res.status(409).json({ error: "Product already has a barcode" });
+      }
+
+      const item = await Barcode.create({
+        code,
+        label,
+        notes,
+        product: productId || null,
+        productTitle: req.body?.productTitle || "",
+        createdBy: req.admin._id,
+        isActive: true,
+      });
+      if (productId) {
+        await Barcode.updateMany(
+          { product: productId, code: { $ne: code } },
+          { $set: { product: null, productTitle: "" } },
+        );
+        await Product.updateOne(
+          { _id: productId },
+          { $set: { barcode: code } },
+        );
+      }
+      res.status(201).json({ ok: true, item });
+    } catch (err) {
+      res
+        .status(500)
+        .json({
+          error: err.code === 11000 ? "Barcode already exists" : "Server error",
+        });
     }
-    await Barcode.deleteOne({ _id: item._id });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
+
+router.put(
+  "/barcodes/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const item = await Barcode.findById(req.params.id);
+      if (!item) return res.status(404).json({ error: "Not found" });
+
+      const nextCode =
+        req.body?.code !== undefined
+          ? normalizeBarcodeCode(req.body.code)
+          : item.code;
+      if (!nextCode)
+        return res.status(400).json({ error: "Barcode code is required" });
+      const previousCode = item.code;
+      const previousProductId = item.product ? String(item.product) : null;
+
+      if (nextCode !== item.code) {
+        const duplicate = await Barcode.findOne({ code: nextCode });
+        if (duplicate && duplicate._id.toString() !== item._id.toString()) {
+          return res.status(409).json({ error: "Barcode already exists" });
+        }
+        item.code = nextCode;
+      }
+
+      if (req.body?.label !== undefined)
+        item.label = String(req.body.label).trim();
+      if (req.body?.notes !== undefined)
+        item.notes = String(req.body.notes).trim();
+      if (req.body?.product !== undefined) {
+        const nextProductId = req.body.product || null;
+        if (nextProductId && String(nextProductId) !== previousProductId) {
+          const nextProduct =
+            await Product.findById(nextProductId).select("_id title barcode");
+          if (!nextProduct)
+            return res.status(404).json({ error: "Linked product not found" });
+          if (
+            nextProduct.barcode &&
+            normalizeBarcodeCode(nextProduct.barcode) !== nextCode
+          ) {
+            return res
+              .status(409)
+              .json({ error: "Product already has a barcode" });
+          }
+        }
+        item.product = nextProductId;
+      }
+      if (req.body?.productTitle !== undefined)
+        item.productTitle = String(req.body.productTitle || "").trim();
+      if (req.body?.isActive !== undefined) item.isActive = !!req.body.isActive;
+
+      await item.save();
+      if (
+        previousProductId &&
+        previousProductId !== String(item.product || "")
+      ) {
+        await Product.updateOne(
+          { _id: previousProductId, barcode: previousCode },
+          { $unset: { barcode: "" } },
+        );
+      }
+      if (item.product) {
+        await Barcode.updateMany(
+          { product: item.product, code: { $ne: item.code } },
+          { $set: { product: null, productTitle: "" } },
+        );
+        await Product.updateOne(
+          { _id: item.product },
+          { $set: { barcode: item.code } },
+        );
+      }
+      await item.populate("product", "title images barcode sku status");
+      res.json({ ok: true, item });
+    } catch (err) {
+      res
+        .status(500)
+        .json({
+          error: err.code === 11000 ? "Barcode already exists" : "Server error",
+        });
+    }
+  },
+);
+
+router.delete(
+  "/barcodes/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const item = await Barcode.findById(req.params.id);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      if (item.product) {
+        await Product.updateOne(
+          { _id: item.product, barcode: item.code },
+          { $unset: { barcode: "" } },
+        );
+      }
+      await Barcode.deleteOne({ _id: item._id });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // --- User management -------------------------------------------------
-router.get('/users', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const { q = '', limit = 200, includeStats } = req.query;
-    const filter = {};
-    if (q) {
-      filter.$or = [
-        { email: new RegExp(q, 'i') },
-        { name: new RegExp(q, 'i') },
-        { mobile: new RegExp(q, 'i') },
-      ];
-    }
-    const users = await User.find(filter)
-      .select('-hashedPassword -resetToken -resetExpires')
-      .populate('tags')
-      .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .lean();
+router.get(
+  "/users",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const { q = "", limit = 200, includeStats } = req.query;
+      const filter = {};
+      if (q) {
+        filter.$or = [
+          { email: new RegExp(q, "i") },
+          { name: new RegExp(q, "i") },
+          { mobile: new RegExp(q, "i") },
+        ];
+      }
+      const users = await User.find(filter)
+        .select("-hashedPassword -resetToken -resetExpires")
+        .populate("tags")
+        .sort({ createdAt: -1 })
+        .limit(Number(limit))
+        .lean();
 
-    let items = users;
-    if (includeStats === '1' || includeStats === 'true') {
-      items = await Promise.all(
-        users.map(async (user) => {
-          const orders = await Order.find(buildCustomerOrderFilter(user))
-            .select('status shipment.courier')
-            .lean();
-          return {
-            ...user,
-            orderSummary: summarizeOrdersForList(orders),
-          };
-        }),
-      );
-    }
+      let items = users;
+      if (includeStats === "1" || includeStats === "true") {
+        items = await Promise.all(
+          users.map(async (user) => {
+            const orders = await Order.find(buildCustomerOrderFilter(user))
+              .select("status shipment.courier")
+              .lean();
+            return {
+              ...user,
+              orderSummary: summarizeOrdersForList(orders),
+            };
+          }),
+        );
+      }
 
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Get single user
-router.get('/users/:id', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const u = await User.findById(req.params.id).select('-hashedPassword -resetToken -resetExpires').populate('tags');
-    if (!u) return res.status(404).json({ error: 'Not found' });
-    res.json({ user: u });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/users/:id",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const u = await User.findById(req.params.id)
+        .select("-hashedPassword -resetToken -resetExpires")
+        .populate("tags");
+      if (!u) return res.status(404).json({ error: "Not found" });
+      res.json({ user: u });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.put('/users/:id', requireAdmin, async (req, res) => {
+router.put("/users/:id", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
     const { name, mobile, isVerified, tags } = req.body || {};
     const u = await User.findById(req.params.id);
-    if (!u) return res.status(404).json({ error: 'Not found' });
+    if (!u) return res.status(404).json({ error: "Not found" });
 
     // Build order filter using old identifiers BEFORE updating the user
     const orderFilter = buildCustomerOrderFilter(u);
 
-    if (typeof name !== 'undefined') u.name = name;
-    if (typeof mobile !== 'undefined') u.mobile = String(mobile || '').trim();
-    if (typeof isVerified !== 'undefined') u.isVerified = !!isVerified;
+    if (typeof name !== "undefined") u.name = name;
+    if (typeof mobile !== "undefined") u.mobile = String(mobile || "").trim();
+    if (typeof isVerified !== "undefined") u.isVerified = !!isVerified;
     if (Array.isArray(tags)) u.tags = tags.filter(Boolean);
     await u.save();
-    await u.populate('tags');
+    await u.populate("tags");
 
     // Sync name/mobile changes to all related orders' billingDetails
     const billingPatch = {};
-    if (typeof name !== 'undefined' && String(name || '').trim()) billingPatch['billingDetails.name'] = String(name).trim();
-    if (typeof mobile !== 'undefined' && String(mobile || '').trim()) billingPatch['billingDetails.phone'] = String(mobile).trim();
+    if (typeof name !== "undefined" && String(name || "").trim())
+      billingPatch["billingDetails.name"] = String(name).trim();
+    if (typeof mobile !== "undefined" && String(mobile || "").trim())
+      billingPatch["billingDetails.phone"] = String(mobile).trim();
     if (Object.keys(billingPatch).length) {
       await Order.updateMany(orderFilter, { $set: billingPatch });
     }
 
-    res.json({ ok: true, user: { _id: u._id, email: u.email, name: u.name, mobile: u.mobile, provider: u.provider, isVerified: u.isVerified, createdAt: u.createdAt, tags: u.tags } });
+    res.json({
+      ok: true,
+      user: {
+        _id: u._id,
+        email: u.email,
+        name: u.name,
+        mobile: u.mobile,
+        provider: u.provider,
+        isVerified: u.isVerified,
+        createdAt: u.createdAt,
+        tags: u.tags,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.delete('/users/:id', requireAdmin, async (req, res) => {
+router.delete("/users/:id", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
     const u = await User.findById(req.params.id);
-    if (!u) return res.status(404).json({ error: 'Not found' });
-    if (u.role === 'admin') return res.status(400).json({ error: 'Cannot delete admin user' });
+    if (!u) return res.status(404).json({ error: "Not found" });
+    if (u.role === "admin")
+      return res.status(400).json({ error: "Cannot delete admin user" });
     await User.deleteOne({ _id: u._id });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 function normalizePhone(phone) {
-  return String(phone || '').replace(/\D/g, '');
+  return String(phone || "").replace(/\D/g, "");
 }
 
 async function resolveCustomerUserId(order) {
   if (order.userId) return String(order.userId);
   const email = order.billingDetails?.email || order.userEmail;
   if (email) {
-    const u = await User.findOne({ email: String(email).toLowerCase() }).select('_id').lean();
+    const u = await User.findOne({ email: String(email).toLowerCase() })
+      .select("_id")
+      .lean();
     if (u) return String(u._id);
   }
   const phone = order.billingDetails?.phone;
   if (phone) {
-    const u = await User.findOne({ mobile: phone }).select('_id').lean();
+    const u = await User.findOne({ mobile: phone }).select("_id").lean();
     if (u) return String(u._id);
   }
   return null;
@@ -1778,115 +2472,138 @@ function buildCustomerOrderFilter(user) {
   const or = [{ userId: String(user._id) }];
   if (user.email) {
     or.push({ userEmail: user.email });
-    or.push({ 'billingDetails.email': user.email });
+    or.push({ "billingDetails.email": user.email });
   }
   if (user.mobile) {
-    const last10 = String(user.mobile).replace(/\D/g, '').slice(-10);
+    const last10 = String(user.mobile).replace(/\D/g, "").slice(-10);
     if (last10.length >= 8) {
-      or.push({ 'billingDetails.phone': new RegExp(last10 + '$') });
+      or.push({ "billingDetails.phone": new RegExp(last10 + "$") });
     } else {
-      or.push({ 'billingDetails.phone': user.mobile });
+      or.push({ "billingDetails.phone": user.mobile });
     }
   }
   return { $or: or };
 }
 
 // GET /api/admin/phones/:phone/lifetime-stats — cross-platform courier fraud check by mobile
-router.get('/phones/:phone/lifetime-stats', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
-    const lifetime = await fetchLifetimeCourierStats(req.params.phone, {
-      skipCache: refresh,
-    });
-    res.json(lifetime);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/phones/:phone/lifetime-stats",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const refresh = req.query.refresh === "1" || req.query.refresh === "true";
+      const lifetime = await fetchLifetimeCourierStats(req.params.phone, {
+        skipCache: refresh,
+      });
+      res.json(lifetime);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // GET /api/admin/users/:id/profile — customer analytics and order history
-router.get('/users/:id/profile', requireAdmin, requirePermission('customers'), async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id)
-      .select('-hashedPassword -resetToken -resetExpires')
-      .populate('tags')
-      .lean();
-    if (!user) return res.status(404).json({ error: 'Not found' });
+router.get(
+  "/users/:id/profile",
+  requireAdmin,
+  requirePermission("customers"),
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.params.id)
+        .select("-hashedPassword -resetToken -resetExpires")
+        .populate("tags")
+        .lean();
+      if (!user) return res.status(404).json({ error: "Not found" });
 
-    const orders = await Order.find(buildCustomerOrderFilter(user))
-      .sort({ createdAt: -1 })
-      .lean();
+      const orders = await Order.find(buildCustomerOrderFilter(user))
+        .sort({ createdAt: -1 })
+        .lean();
 
-    const analytics = computeCustomerAnalytics(orders);
-    const includeLifetime =
-      req.query.lifetime === '1' || req.query.lifetime === 'true';
+      const analytics = computeCustomerAnalytics(orders);
+      const includeLifetime =
+        req.query.lifetime === "1" || req.query.lifetime === "true";
 
-    let lifetime = null;
-    if (includeLifetime && user.mobile) {
-      const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
-      lifetime = await fetchLifetimeCourierStats(user.mobile, { skipCache: refresh });
-    }
+      let lifetime = null;
+      if (includeLifetime && user.mobile) {
+        const refresh =
+          req.query.refresh === "1" || req.query.refresh === "true";
+        lifetime = await fetchLifetimeCourierStats(user.mobile, {
+          skipCache: refresh,
+        });
+      }
 
-    res.json({
-      user,
-      "SmartBuy BD": {
+      res.json({
+        user,
+        Pickob: {
+          stats: analytics.stats,
+          percentages: analytics.percentages,
+          courierBreakdown: analytics.courierBreakdown,
+          risk: analytics.risk,
+        },
         stats: analytics.stats,
         percentages: analytics.percentages,
         courierBreakdown: analytics.courierBreakdown,
         risk: analytics.risk,
-      },
-      stats: analytics.stats,
-      percentages: analytics.percentages,
-      courierBreakdown: analytics.courierBreakdown,
-      risk: analytics.risk,
-      lifetime,
-      orders: orders.map((order) => ({
-        ...order,
-        orderId: formatOrderIdSuffix(order._id),
-      })),
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+        lifetime,
+        orders: orders.map((order) => ({
+          ...order,
+          orderId: formatOrderIdSuffix(order._id),
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Admin forgot password - returns token (in prod send an email)
-router.post('/forgot', async (req, res) => {
+router.post("/forgot", async (req, res) => {
   try {
     const { email, adminSecret } = req.body;
     if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
-      return res.status(403).json({ error: 'Invalid admin secret' });
+      return res.status(403).json({ error: "Invalid admin secret" });
     }
 
     const admin = await Admin.findOne({ email: email.toLowerCase() });
     if (!admin) {
       // Don't reveal if admin exists or not
-      return res.json({ ok: true, message: 'If account exists, reset token has been generated' });
+      return res.json({
+        ok: true,
+        message: "If account exists, reset token has been generated",
+      });
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
+    const token = crypto.randomBytes(32).toString("hex");
     admin.resetToken = token;
     admin.resetExpires = Date.now() + 1000 * 60 * 30; // 30 minutes
     await admin.save();
 
     // TODO: send email with link containing token
-    res.json({ ok: true, token, message: 'Reset token generated' });
+    res.json({ ok: true, token, message: "Reset token generated" });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.post('/reset', async (req, res) => {
+router.post("/reset", async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    if (!token || !newPassword) return res.status(400).json({ error: 'Missing fields' });
-    
+    if (!token || !newPassword)
+      return res.status(400).json({ error: "Missing fields" });
+
     if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      return res
+        .status(400)
+        .json({ error: "Password must be at least 6 characters" });
     }
 
-    const user = await User.findOne({ resetToken: token, resetExpires: { $gt: Date.now() } });
-    if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
+    const user = await User.findOne({
+      resetToken: token,
+      resetExpires: { $gt: Date.now() },
+    });
+    if (!user)
+      return res.status(400).json({ error: "Invalid or expired reset token" });
 
     user.hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
     user.resetToken = undefined;
@@ -1896,646 +2613,958 @@ router.post('/reset', async (req, res) => {
     user.lockUntil = undefined;
     await user.save();
 
-    res.json({ ok: true, message: 'Password reset successful' });
+    res.json({ ok: true, message: "Password reset successful" });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // ─── Occasion Sections (admin CRUD) ───────────────────────────────────────────
 
 // GET  /api/admin/occasions  — list all sections sorted by order
-router.get('/occasions', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const OccasionSection = (await import('../models/OccasionSection.js')).default;
-    const items = await OccasionSection.find().sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/occasions",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const OccasionSection = (await import("../models/OccasionSection.js"))
+        .default;
+      const items = await OccasionSection.find().sort({
+        order: 1,
+        createdAt: 1,
+      });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // POST /api/admin/occasions  — create a new section
-router.post('/occasions', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const OccasionSection = (await import('../models/OccasionSection.js')).default;
-    const payload = req.body || {};
-    const last = await OccasionSection.findOne().sort({ order: -1 });
-    payload.order = last ? last.order + 1 : 0;
-    const section = new OccasionSection(payload);
-    await section.save();
-    res.json({ ok: true, section });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/occasions",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const OccasionSection = (await import("../models/OccasionSection.js"))
+        .default;
+      const payload = req.body || {};
+      const last = await OccasionSection.findOne().sort({ order: -1 });
+      payload.order = last ? last.order + 1 : 0;
+      const section = new OccasionSection(payload);
+      await section.save();
+      res.json({ ok: true, section });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // GET /api/admin/occasions/:id  — single section
-router.get('/occasions/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const OccasionSection = (await import('../models/OccasionSection.js')).default;
-    const section = await OccasionSection.findById(req.params.id);
-    if (!section) return res.status(404).json({ error: 'Not found' });
-    res.json({ section });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/occasions/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const OccasionSection = (await import("../models/OccasionSection.js"))
+        .default;
+      const section = await OccasionSection.findById(req.params.id);
+      if (!section) return res.status(404).json({ error: "Not found" });
+      res.json({ section });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT /api/admin/occasions/:id  — update section (title, cards, isActive, order, etc.)
-router.put('/occasions/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const OccasionSection = (await import('../models/OccasionSection.js')).default;
-    const updates = { ...req.body, updatedAt: Date.now() };
-    const section = await OccasionSection.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
-    if (!section) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, section });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/occasions/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const OccasionSection = (await import("../models/OccasionSection.js"))
+        .default;
+      const updates = { ...req.body, updatedAt: Date.now() };
+      const section = await OccasionSection.findByIdAndUpdate(
+        req.params.id,
+        updates,
+        { new: true, runValidators: true },
+      );
+      if (!section) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, section });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // DELETE /api/admin/occasions/:id  — permanently delete a section
-router.delete('/occasions/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const OccasionSection = (await import('../models/OccasionSection.js')).default;
-    const section = await OccasionSection.findByIdAndDelete(req.params.id);
-    if (!section) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/occasions/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const OccasionSection = (await import("../models/OccasionSection.js"))
+        .default;
+      const section = await OccasionSection.findByIdAndDelete(req.params.id);
+      if (!section) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT /api/admin/occasions/reorder  — update order for multiple sections at once
 // body: [ { _id, order }, … ]
-router.put('/occasions-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const OccasionSection = (await import('../models/OccasionSection.js')).default;
-    const items = req.body || [];
-    await Promise.all(items.map(({ _id, order }) =>
-      OccasionSection.findByIdAndUpdate(_id, { order })
-    ));
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/occasions-reorder",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const OccasionSection = (await import("../models/OccasionSection.js"))
+        .default;
+      const items = req.body || [];
+      await Promise.all(
+        items.map(({ _id, order }) =>
+          OccasionSection.findByIdAndUpdate(_id, { order }),
+        ),
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ─── Featured Sections (admin CRUD) ───────────────────────────────────────────
 
 // GET  /api/admin/featured  — list all featured sections sorted by order
-router.get('/featured', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
-    const items = await FeaturedSection.find().sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/featured",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const FeaturedSection = (await import("../models/FeaturedSection.js"))
+        .default;
+      const items = await FeaturedSection.find().sort({
+        order: 1,
+        createdAt: 1,
+      });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // POST /api/admin/featured  — create a new featured section
-router.post('/featured', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
-    const payload = req.body || {};
-    const last = await FeaturedSection.findOne().sort({ order: -1 });
-    payload.order = last ? last.order + 1 : 0;
-    const section = new FeaturedSection(payload);
-    await section.save();
-    res.json({ ok: true, section });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/featured",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const FeaturedSection = (await import("../models/FeaturedSection.js"))
+        .default;
+      const payload = req.body || {};
+      const last = await FeaturedSection.findOne().sort({ order: -1 });
+      payload.order = last ? last.order + 1 : 0;
+      const section = new FeaturedSection(payload);
+      await section.save();
+      res.json({ ok: true, section });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // GET /api/admin/featured/:id  — single featured section
-router.get('/featured/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
-    const section = await FeaturedSection.findById(req.params.id);
-    if (!section) return res.status(404).json({ error: 'Not found' });
-    res.json({ section });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/featured/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const FeaturedSection = (await import("../models/FeaturedSection.js"))
+        .default;
+      const section = await FeaturedSection.findById(req.params.id);
+      if (!section) return res.status(404).json({ error: "Not found" });
+      res.json({ section });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT /api/admin/featured/:id  — update a featured section
-router.put('/featured/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
-    const updates = { ...req.body, updatedAt: Date.now() };
-    const section = await FeaturedSection.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
-    if (!section) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, section });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/featured/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const FeaturedSection = (await import("../models/FeaturedSection.js"))
+        .default;
+      const updates = { ...req.body, updatedAt: Date.now() };
+      const section = await FeaturedSection.findByIdAndUpdate(
+        req.params.id,
+        updates,
+        { new: true, runValidators: true },
+      );
+      if (!section) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, section });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // DELETE /api/admin/featured/:id  — permanently delete a featured section
-router.delete('/featured/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
-    const section = await FeaturedSection.findByIdAndDelete(req.params.id);
-    if (!section) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/featured/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const FeaturedSection = (await import("../models/FeaturedSection.js"))
+        .default;
+      const section = await FeaturedSection.findByIdAndDelete(req.params.id);
+      if (!section) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT /api/admin/featured-reorder  — update order for multiple sections at once
 // body: [ { _id, order }, … ]
-router.put('/featured-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const FeaturedSection = (await import('../models/FeaturedSection.js')).default;
-    const items = req.body || [];
-    await Promise.all(items.map(({ _id, order }) =>
-      FeaturedSection.findByIdAndUpdate(_id, { order })
-    ));
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/featured-reorder",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const FeaturedSection = (await import("../models/FeaturedSection.js"))
+        .default;
+      const items = req.body || [];
+      await Promise.all(
+        items.map(({ _id, order }) =>
+          FeaturedSection.findByIdAndUpdate(_id, { order }),
+        ),
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ─── Promo Strip Items (admin CRUD) ─────────────────────────────────────────
 
 // GET /api/admin/promo-strip — list all promo strip items sorted by order
-router.get('/promo-strip', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
-    const items = await PromoStripItem.find().sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/promo-strip",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoStripItem = (await import("../models/PromoStripItem.js"))
+        .default;
+      const items = await PromoStripItem.find().sort({
+        order: 1,
+        createdAt: 1,
+      });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // POST /api/admin/promo-strip — create a new promo strip item
-router.post('/promo-strip', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
-    const payload = req.body || {};
-    const last = await PromoStripItem.findOne().sort({ order: -1 });
-    payload.order = last ? last.order + 1 : 0;
-    const item = new PromoStripItem(payload);
-    await item.save();
-    res.json({ ok: true, item });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/promo-strip",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoStripItem = (await import("../models/PromoStripItem.js"))
+        .default;
+      const payload = req.body || {};
+      const last = await PromoStripItem.findOne().sort({ order: -1 });
+      payload.order = last ? last.order + 1 : 0;
+      const item = new PromoStripItem(payload);
+      await item.save();
+      res.json({ ok: true, item });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // GET /api/admin/promo-strip/:id — single promo strip item
-router.get('/promo-strip/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
-    const item = await PromoStripItem.findById(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    res.json({ item });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/promo-strip/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoStripItem = (await import("../models/PromoStripItem.js"))
+        .default;
+      const item = await PromoStripItem.findById(req.params.id);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      res.json({ item });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT /api/admin/promo-strip/:id — update promo strip item
-router.put('/promo-strip/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
-    const updates = { ...req.body, updatedAt: Date.now() };
-    const item = await PromoStripItem.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, item });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/promo-strip/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoStripItem = (await import("../models/PromoStripItem.js"))
+        .default;
+      const updates = { ...req.body, updatedAt: Date.now() };
+      const item = await PromoStripItem.findByIdAndUpdate(
+        req.params.id,
+        updates,
+        { new: true, runValidators: true },
+      );
+      if (!item) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, item });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // DELETE /api/admin/promo-strip/:id — delete promo strip item
-router.delete('/promo-strip/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
-    const item = await PromoStripItem.findByIdAndDelete(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/promo-strip/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoStripItem = (await import("../models/PromoStripItem.js"))
+        .default;
+      const item = await PromoStripItem.findByIdAndDelete(req.params.id);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT /api/admin/promo-strip-reorder — batch update order
 // body: [ { _id, order }, … ]
-router.put('/promo-strip-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoStripItem = (await import('../models/PromoStripItem.js')).default;
-    const items = req.body || [];
-    await Promise.all(items.map(({ _id, order }) =>
-      PromoStripItem.findByIdAndUpdate(_id, { order })
-    ));
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/promo-strip-reorder",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoStripItem = (await import("../models/PromoStripItem.js"))
+        .default;
+      const items = req.body || [];
+      await Promise.all(
+        items.map(({ _id, order }) =>
+          PromoStripItem.findByIdAndUpdate(_id, { order }),
+        ),
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ─── Banners (admin CRUD) ─────────────────────────────────────────────────────
 
-router.get('/banners', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Banner = (await import('../models/Banner.js')).default;
-    const items = await Banner.find().sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.post('/banners', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Banner = (await import('../models/Banner.js')).default;
-    const payload = req.body || {};
-    const last = await Banner.findOne().sort({ order: -1 });
-    payload.order = last ? last.order + 1 : 0;
-    const banner = new Banner(payload);
-    await banner.save();
-    res.json({ ok: true, banner });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.get('/banners/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Banner = (await import('../models/Banner.js')).default;
-    const banner = await Banner.findById(req.params.id);
-    if (!banner) return res.status(404).json({ error: 'Not found' });
-    res.json({ banner });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.put('/banners/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Banner = (await import('../models/Banner.js')).default;
-    const updates = { ...req.body, updatedAt: Date.now() };
-    const banner = await Banner.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!banner) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, banner });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.delete('/banners/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Banner = (await import('../models/Banner.js')).default;
-    const banner = await Banner.findByIdAndDelete(req.params.id);
-    if (!banner) return res.status(404).json({ error: 'Not found' });
-    // optionally remove from Cloudinary
-    if (banner.image?.public_id) {
-      try {
-        ensureCloudinaryConfigured();
-        await cloudinary.uploader.destroy(banner.image.public_id, { resource_type: 'image' });
-      } catch { /* ignore Cloudinary errors */ }
+router.get(
+  "/banners",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Banner = (await import("../models/Banner.js")).default;
+      const items = await Banner.find().sort({ order: 1, createdAt: 1 });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
-router.put('/banners-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Banner = (await import('../models/Banner.js')).default;
-    const items = req.body || [];
-    await Promise.all(items.map(({ _id, order }) =>
-      Banner.findByIdAndUpdate(_id, { order })
-    ));
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/banners",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Banner = (await import("../models/Banner.js")).default;
+      const payload = req.body || {};
+      const last = await Banner.findOne().sort({ order: -1 });
+      payload.order = last ? last.order + 1 : 0;
+      const banner = new Banner(payload);
+      await banner.save();
+      res.json({ ok: true, banner });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.get(
+  "/banners/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Banner = (await import("../models/Banner.js")).default;
+      const banner = await Banner.findById(req.params.id);
+      if (!banner) return res.status(404).json({ error: "Not found" });
+      res.json({ banner });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.put(
+  "/banners/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Banner = (await import("../models/Banner.js")).default;
+      const updates = { ...req.body, updatedAt: Date.now() };
+      const banner = await Banner.findByIdAndUpdate(req.params.id, updates, {
+        new: true,
+      });
+      if (!banner) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, banner });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.delete(
+  "/banners/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Banner = (await import("../models/Banner.js")).default;
+      const banner = await Banner.findByIdAndDelete(req.params.id);
+      if (!banner) return res.status(404).json({ error: "Not found" });
+      // optionally remove from Cloudinary
+      if (banner.image?.public_id) {
+        try {
+          ensureCloudinaryConfigured();
+          await cloudinary.uploader.destroy(banner.image.public_id, {
+            resource_type: "image",
+          });
+        } catch {
+          /* ignore Cloudinary errors */
+        }
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.put(
+  "/banners-reorder",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Banner = (await import("../models/Banner.js")).default;
+      const items = req.body || [];
+      await Promise.all(
+        items.map(({ _id, order }) => Banner.findByIdAndUpdate(_id, { order })),
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ─── Promo Panels (admin CRUD – for Popular Picks left panel) ────────────────
 
-router.get('/promo-panels', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const items = await PromoPanel.find()
-      .sort({ order: 1, createdAt: 1 })
-      .populate('productIds', 'title price compareAtPrice images availability inventory averageRating reviewCount badges variants _id slug');
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.post('/promo-panels', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const payload = req.body || {};
-    const last = await PromoPanel.findOne().sort({ order: -1 });
-    payload.order = last ? last.order + 1 : 0;
-    const panel = new PromoPanel(payload);
-    await panel.save();
-    res.json({ ok: true, panel });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.get('/promo-panels/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const panel = await PromoPanel.findById(req.params.id)
-      .populate('productIds', 'title price compareAtPrice images availability inventory averageRating reviewCount badges variants _id slug');
-    if (!panel) return res.status(404).json({ error: 'Not found' });
-    res.json({ panel });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.put('/promo-panels/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const updates = { ...req.body, updatedAt: Date.now() };
-    const panel = await PromoPanel.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!panel) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, panel });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.delete('/promo-panels/:id', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const panel = await PromoPanel.findByIdAndDelete(req.params.id);
-    if (!panel) return res.status(404).json({ error: 'Not found' });
-    if (panel.image?.public_id) {
-      try {
-        ensureCloudinaryConfigured();
-        await cloudinary.uploader.destroy(panel.image.public_id, { resource_type: 'image' });
-      } catch { /* ignore Cloudinary errors */ }
+router.get(
+  "/promo-panels",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoPanel = (await import("../models/PromoPanel.js")).default;
+      const items = await PromoPanel.find()
+        .sort({ order: 1, createdAt: 1 })
+        .populate(
+          "productIds",
+          "title price compareAtPrice images availability inventory averageRating reviewCount badges variants _id slug",
+        );
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
-router.put('/promo-panels-reorder', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const PromoPanel = (await import('../models/PromoPanel.js')).default;
-    const items = req.body || [];
-    await Promise.all(items.map(({ _id, order }) =>
-      PromoPanel.findByIdAndUpdate(_id, { order })
-    ));
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/promo-panels",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoPanel = (await import("../models/PromoPanel.js")).default;
+      const payload = req.body || {};
+      const last = await PromoPanel.findOne().sort({ order: -1 });
+      payload.order = last ? last.order + 1 : 0;
+      const panel = new PromoPanel(payload);
+      await panel.save();
+      res.json({ ok: true, panel });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.get(
+  "/promo-panels/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoPanel = (await import("../models/PromoPanel.js")).default;
+      const panel = await PromoPanel.findById(req.params.id).populate(
+        "productIds",
+        "title price compareAtPrice images availability inventory averageRating reviewCount badges variants _id slug",
+      );
+      if (!panel) return res.status(404).json({ error: "Not found" });
+      res.json({ panel });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.put(
+  "/promo-panels/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoPanel = (await import("../models/PromoPanel.js")).default;
+      const updates = { ...req.body, updatedAt: Date.now() };
+      const panel = await PromoPanel.findByIdAndUpdate(req.params.id, updates, {
+        new: true,
+      });
+      if (!panel) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, panel });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.delete(
+  "/promo-panels/:id",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoPanel = (await import("../models/PromoPanel.js")).default;
+      const panel = await PromoPanel.findByIdAndDelete(req.params.id);
+      if (!panel) return res.status(404).json({ error: "Not found" });
+      if (panel.image?.public_id) {
+        try {
+          ensureCloudinaryConfigured();
+          await cloudinary.uploader.destroy(panel.image.public_id, {
+            resource_type: "image",
+          });
+        } catch {
+          /* ignore Cloudinary errors */
+        }
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.put(
+  "/promo-panels-reorder",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const PromoPanel = (await import("../models/PromoPanel.js")).default;
+      const items = req.body || [];
+      await Promise.all(
+        items.map(({ _id, order }) =>
+          PromoPanel.findByIdAndUpdate(_id, { order }),
+        ),
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ─── Popup (admin CRUD – singleton) ──────────────────────────────────────────
 
 // GET current popup settings
-router.get('/popup', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Popup = (await import('../models/Popup.js')).default;
-    const popup = await Popup.findOne();
-    res.json({ popup: popup || null });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/popup",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Popup = (await import("../models/Popup.js")).default;
+      const popup = await Popup.findOne();
+      res.json({ popup: popup || null });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT (upsert) popup settings
-router.put('/popup', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Popup = (await import('../models/Popup.js')).default;
-    const { image, link, isActive } = req.body;
-    let popup = await Popup.findOne();
-    if (popup) {
-      if (image !== undefined) popup.image = image;
-      if (link !== undefined) popup.link = link;
-      if (isActive !== undefined) popup.isActive = isActive;
-      await popup.save();
-    } else {
-      popup = await new Popup({ image, link, isActive }).save();
+router.put(
+  "/popup",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Popup = (await import("../models/Popup.js")).default;
+      const { image, link, isActive } = req.body;
+      let popup = await Popup.findOne();
+      if (popup) {
+        if (image !== undefined) popup.image = image;
+        if (link !== undefined) popup.link = link;
+        if (isActive !== undefined) popup.isActive = isActive;
+        await popup.save();
+      } else {
+        popup = await new Popup({ image, link, isActive }).save();
+      }
+      res.json({ ok: true, popup });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    res.json({ ok: true, popup });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // DELETE popup image (reset to empty)
-router.delete('/popup', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    const Popup = (await import('../models/Popup.js')).default;
-    const popup = await Popup.findOne();
-    if (popup?.image?.public_id) {
-      try {
-        ensureCloudinaryConfigured();
-        await cloudinary.uploader.destroy(popup.image.public_id, { resource_type: 'image' });
-      } catch { /* ignore Cloudinary errors */ }
+router.delete(
+  "/popup",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      const Popup = (await import("../models/Popup.js")).default;
+      const popup = await Popup.findOne();
+      if (popup?.image?.public_id) {
+        try {
+          ensureCloudinaryConfigured();
+          await cloudinary.uploader.destroy(popup.image.public_id, {
+            resource_type: "image",
+          });
+        } catch {
+          /* ignore Cloudinary errors */
+        }
+      }
+      await Popup.deleteMany();
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    await Popup.deleteMany();
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // ─── Media Library (Cloudinary) ────────────────────────────────────────────────
 
 // GET /api/admin/media?folder=&next_cursor=&q=
 // Lists images and videos stored in Cloudinary (up to 60 per page)
-router.get('/media', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    ensureCloudinaryConfigured();
-    const { folder = '', next_cursor, q } = req.query;
+router.get(
+  "/media",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      ensureCloudinaryConfigured();
+      const { folder = "", next_cursor, q } = req.query;
 
-    const buildOpts = (resource_type) => {
-      const opts = { type: 'upload', resource_type, max_results: 30 };
-      if (folder) opts.prefix = folder;
-      if (next_cursor) opts.next_cursor = next_cursor;
-      return opts;
-    };
+      const buildOpts = (resource_type) => {
+        const opts = { type: "upload", resource_type, max_results: 30 };
+        if (folder) opts.prefix = folder;
+        if (next_cursor) opts.next_cursor = next_cursor;
+        return opts;
+      };
 
-    const [imgResult, vidResult] = await Promise.all([
-      cloudinary.api.resources(buildOpts('image')).catch(() => ({ resources: [] })),
-      cloudinary.api.resources(buildOpts('video')).catch(() => ({ resources: [] })),
-    ]);
+      const [imgResult, vidResult] = await Promise.all([
+        cloudinary.api
+          .resources(buildOpts("image"))
+          .catch(() => ({ resources: [] })),
+        cloudinary.api
+          .resources(buildOpts("video"))
+          .catch(() => ({ resources: [] })),
+      ]);
 
-    let resources = [
-      ...(imgResult.resources || []).map(r => ({ ...r, resource_type: 'image' })),
-      ...(vidResult.resources || []).map(r => ({ ...r, resource_type: 'video' })),
-    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      let resources = [
+        ...(imgResult.resources || []).map((r) => ({
+          ...r,
+          resource_type: "image",
+        })),
+        ...(vidResult.resources || []).map((r) => ({
+          ...r,
+          resource_type: "video",
+        })),
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    if (q) {
-      const lower = q.toLowerCase();
-      resources = resources.filter(r => r.public_id.toLowerCase().includes(lower));
+      if (q) {
+        const lower = q.toLowerCase();
+        resources = resources.filter((r) =>
+          r.public_id.toLowerCase().includes(lower),
+        );
+      }
+
+      res.json({
+        items: resources.map((r) => ({
+          public_id: r.public_id,
+          url: r.secure_url || r.url,
+          resource_type: r.resource_type,
+          width: r.width,
+          height: r.height,
+          bytes: r.bytes,
+          format: r.format,
+          created_at: r.created_at,
+          folder: r.folder || r.public_id.split("/").slice(0, -1).join("/"),
+        })),
+        next_cursor: imgResult.next_cursor || vidResult.next_cursor || null,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message || "Cloudinary error" });
     }
-
-    res.json({
-      items: resources.map(r => ({
-        public_id: r.public_id,
-        url: r.secure_url || r.url,
-        resource_type: r.resource_type,
-        width: r.width,
-        height: r.height,
-        bytes: r.bytes,
-        format: r.format,
-        created_at: r.created_at,
-        folder: r.folder || r.public_id.split('/').slice(0, -1).join('/'),
-      })),
-      next_cursor: imgResult.next_cursor || vidResult.next_cursor || null,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message || 'Cloudinary error' });
-  }
-});
+  },
+);
 
 // GET /api/admin/media/folders  — list all folder prefixes found across uploaded assets
-router.get('/media/folders', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    ensureCloudinaryConfigured();
-    const result = await cloudinary.api.root_folders();
-    const folders = (result.folders || []).map(f => f.path);
-    res.json({ folders });
-  } catch (err) {
-    // non-fatal — return empty list
-    res.json({ folders: [] });
-  }
-});
+router.get(
+  "/media/folders",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      ensureCloudinaryConfigured();
+      const result = await cloudinary.api.root_folders();
+      const folders = (result.folders || []).map((f) => f.path);
+      res.json({ folders });
+    } catch (err) {
+      // non-fatal — return empty list
+      res.json({ folders: [] });
+    }
+  },
+);
 
 // DELETE /api/admin/media  — delete one or more images/videos from Cloudinary
 // body: { public_ids: ['folder/name', ...], resource_type?: 'image'|'video' }
-router.delete('/media', requireAdmin, requirePermission('content'), async (req, res) => {
-  try {
-    ensureCloudinaryConfigured();
-    const { public_ids, resource_type } = req.body || {};
-    if (!Array.isArray(public_ids) || public_ids.length === 0) {
-      return res.status(400).json({ error: 'public_ids array required' });
+router.delete(
+  "/media",
+  requireAdmin,
+  requirePermission("content"),
+  async (req, res) => {
+    try {
+      ensureCloudinaryConfigured();
+      const { public_ids, resource_type } = req.body || {};
+      if (!Array.isArray(public_ids) || public_ids.length === 0) {
+        return res.status(400).json({ error: "public_ids array required" });
+      }
+      const type = resource_type === "video" ? "video" : "image";
+      const result = await cloudinary.api.delete_resources(public_ids, {
+        resource_type: type,
+      });
+      res.json({ ok: true, deleted: result.deleted });
+    } catch (err) {
+      res.status(500).json({ error: err.message || "Delete failed" });
     }
-    const type = resource_type === 'video' ? 'video' : 'image';
-    const result = await cloudinary.api.delete_resources(public_ids, { resource_type: type });
-    res.json({ ok: true, deleted: result.deleted });
-  } catch (err) {
-    res.status(500).json({ error: err.message || 'Delete failed' });
-  }
-});
+  },
+);
 
 // ─── Discounts / Offers (admin CRUD) ─────────────────────────────────────────
 
-router.get('/discounts', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Discount = (await import('../models/Discount.js')).default;
-    const items = await Discount.find().sort({ order: 1, createdAt: 1 });
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/discounts",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Discount = (await import("../models/Discount.js")).default;
+      const items = await Discount.find().sort({ order: 1, createdAt: 1 });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.post('/discounts', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Discount = (await import('../models/Discount.js')).default;
-    const payload = req.body || {};
-    const last = await Discount.findOne().sort({ order: -1 });
-    payload.order = last ? last.order + 1 : 0;
-    const item = new Discount(payload);
-    await item.save();
-    res.json({ ok: true, item });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post(
+  "/discounts",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Discount = (await import("../models/Discount.js")).default;
+      const payload = req.body || {};
+      const last = await Discount.findOne().sort({ order: -1 });
+      payload.order = last ? last.order + 1 : 0;
+      const item = new Discount(payload);
+      await item.save();
+      res.json({ ok: true, item });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.put('/discounts-reorder', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Discount = (await import('../models/Discount.js')).default;
-    const items = req.body || [];
-    await Promise.all(items.map(({ _id, order }) => Discount.findByIdAndUpdate(_id, { order })));
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/discounts-reorder",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Discount = (await import("../models/Discount.js")).default;
+      const items = req.body || [];
+      await Promise.all(
+        items.map(({ _id, order }) =>
+          Discount.findByIdAndUpdate(_id, { order }),
+        ),
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.put('/discounts/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Discount = (await import('../models/Discount.js')).default;
-    const updates = { ...req.body, updatedAt: Date.now() };
-    const item = await Discount.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, item });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/discounts/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Discount = (await import("../models/Discount.js")).default;
+      const updates = { ...req.body, updatedAt: Date.now() };
+      const item = await Discount.findByIdAndUpdate(req.params.id, updates, {
+        new: true,
+      });
+      if (!item) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, item });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.delete('/discounts/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Discount = (await import('../models/Discount.js')).default;
-    const item = await Discount.findByIdAndDelete(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/discounts/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Discount = (await import("../models/Discount.js")).default;
+      const item = await Discount.findByIdAndDelete(req.params.id);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // Waitlist routes
-router.get('/waitlist', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Waitlist = (await import('../models/Waitlist.js')).default;
-    const { productId, notified } = req.query;
-    const filter = {};
-    if (productId) filter.productId = productId;
-    if (notified !== undefined) filter.notified = notified === 'true';
-    const entries = await Waitlist.find(filter).sort({ createdAt: -1 });
-    res.json({ entries });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.get(
+  "/waitlist",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Waitlist = (await import("../models/Waitlist.js")).default;
+      const { productId, notified } = req.query;
+      const filter = {};
+      if (productId) filter.productId = productId;
+      if (notified !== undefined) filter.notified = notified === "true";
+      const entries = await Waitlist.find(filter).sort({ createdAt: -1 });
+      res.json({ entries });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.put('/waitlist/:id/notified', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Waitlist = (await import('../models/Waitlist.js')).default;
-    const entry = await Waitlist.findByIdAndUpdate(req.params.id, { notified: true }, { new: true });
-    if (!entry) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, entry });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.put(
+  "/waitlist/:id/notified",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Waitlist = (await import("../models/Waitlist.js")).default;
+      const entry = await Waitlist.findByIdAndUpdate(
+        req.params.id,
+        { notified: true },
+        { new: true },
+      );
+      if (!entry) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, entry });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
-router.delete('/waitlist/:id', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const Waitlist = (await import('../models/Waitlist.js')).default;
-    const entry = await Waitlist.findByIdAndDelete(req.params.id);
-    if (!entry) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/waitlist/:id",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const Waitlist = (await import("../models/Waitlist.js")).default;
+      const entry = await Waitlist.findByIdAndDelete(req.params.id);
+      if (!entry) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ─── Admin Orders ─────────────────────────────────────────────────────────────
 
 // GET /api/admin/dashboard-overview
-router.get('/dashboard-overview', requireAdmin, async (req, res) => {
+router.get("/dashboard-overview", requireAdmin, async (req, res) => {
   try {
     const now = new Date();
 
@@ -2562,14 +3591,19 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       const [count, salesAgg, profitAgg, pending] = await Promise.all([
         Order.countDocuments(match),
         Order.aggregate([
-          { $match: { ...match, status: { $nin: ['cancelled', 'failed'] } } },
-          { $group: { _id: null, total: { $sum: '$total' } } },
+          { $match: { ...match, status: { $nin: ["cancelled", "failed"] } } },
+          { $group: { _id: null, total: { $sum: "$total" } } },
         ]),
         Order.aggregate([
-          { $match: { ...match, status: { $nin: ['cancelled', 'failed'] } } },
-          { $group: { _id: null, total: { $sum: { $subtract: ['$subtotal', '$discount'] } } } },
+          { $match: { ...match, status: { $nin: ["cancelled", "failed"] } } },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: { $subtract: ["$subtotal", "$discount"] } },
+            },
+          },
         ]),
-        Order.countDocuments({ ...match, status: 'pending' }),
+        Order.countDocuments({ ...match, status: "pending" }),
       ]);
 
       return {
@@ -2607,72 +3641,103 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       returningCustomersCount,
     ] = await Promise.all([
       Order.countDocuments(),
-      Order.countDocuments({ status: 'pending' }),
-      Order.countDocuments({ status: 'processing' }),
+      Order.countDocuments({ status: "pending" }),
+      Order.countDocuments({ status: "processing" }),
+      Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
       Order.aggregate([
-        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $match: { status: { $nin: ["cancelled", "failed"] } } },
+        { $group: { _id: null, total: { $sum: "$total" } } },
       ]),
       Order.aggregate([
-        { $match: { status: { $nin: ['cancelled', 'failed'] } } },
-        { $group: { _id: null, total: { $sum: '$total' } } },
-      ]),
-      Order.aggregate([
-        { $match: { status: { $nin: ['cancelled', 'failed'] } } },
-        { $group: { _id: null, total: { $sum: { $subtract: ['$subtotal', '$discount'] } } } },
+        { $match: { status: { $nin: ["cancelled", "failed"] } } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $subtract: ["$subtotal", "$discount"] } },
+          },
+        },
       ]),
       Order.find({}).sort({ createdAt: -1 }).limit(8).lean(),
-      Order.countDocuments({ paymentMethod: { $in: ['online', 'bkash'] }, paymentStatus: 'unpaid' }),
+      Order.countDocuments({
+        paymentMethod: { $in: ["online", "bkash"] },
+        paymentStatus: "unpaid",
+      }),
       summarizeRange(todayStart, tomorrowStart),
       summarizeRange(yesterdayStart, todayStart),
       summarizeRange(last7Start, tomorrowStart),
       summarizeRange(last30Start, tomorrowStart),
       Order.aggregate([
-        { $match: { createdAt: { $gte: last30Start, $lt: tomorrowStart }, status: { $nin: ['cancelled', 'failed'] } } },
-        { $unwind: '$items' },
+        {
+          $match: {
+            createdAt: { $gte: last30Start, $lt: tomorrowStart },
+            status: { $nin: ["cancelled", "failed"] },
+          },
+        },
+        { $unwind: "$items" },
         {
           $group: {
-            _id: '$items.productId',
-            title: { $first: '$items.title' },
-            unitsSold: { $sum: '$items.quantity' },
-            revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+            _id: "$items.productId",
+            title: { $first: "$items.title" },
+            unitsSold: { $sum: "$items.quantity" },
+            revenue: {
+              $sum: { $multiply: ["$items.price", "$items.quantity"] },
+            },
           },
         },
         { $sort: { unitsSold: -1, revenue: -1 } },
         { $limit: 8 },
       ]),
       Order.aggregate([
-        { $match: { createdAt: { $gte: todayStart, $lt: tomorrowStart }, status: { $nin: ['cancelled', 'failed'] } } },
+        {
+          $match: {
+            createdAt: { $gte: todayStart, $lt: tomorrowStart },
+            status: { $nin: ["cancelled", "failed"] },
+          },
+        },
         {
           $group: {
-            _id: { $hour: '$createdAt' },
-            revenue: { $sum: '$total' },
+            _id: { $hour: "$createdAt" },
+            revenue: { $sum: "$total" },
             orders: { $sum: 1 },
           },
         },
         { $sort: { _id: 1 } },
       ]),
-      Product.find({ status: { $ne: 'archived' } })
-        .select('title inventory variants updatedAt')
+      Product.find({ status: { $ne: "archived" } })
+        .select("title inventory variants updatedAt")
         .lean(),
       // Monthly revenue for the last 12 months
       Order.aggregate([
-        { $match: { createdAt: { $gte: last12MonthsStart }, status: { $nin: ['cancelled', 'failed'] } } },
+        {
+          $match: {
+            createdAt: { $gte: last12MonthsStart },
+            status: { $nin: ["cancelled", "failed"] },
+          },
+        },
         {
           $group: {
-            _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
-            revenue: { $sum: '$total' },
+            _id: {
+              year: { $year: "$createdAt" },
+              month: { $month: "$createdAt" },
+            },
+            revenue: { $sum: "$total" },
             orders: { $sum: 1 },
           },
         },
-        { $sort: { '_id.year': 1, '_id.month': 1 } },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
       ]),
       // Revenue by payment method (last 30 days)
       Order.aggregate([
-        { $match: { createdAt: { $gte: last30Start }, status: { $nin: ['cancelled', 'failed'] } } },
+        {
+          $match: {
+            createdAt: { $gte: last30Start },
+            status: { $nin: ["cancelled", "failed"] },
+          },
+        },
         {
           $group: {
-            _id: '$paymentMethod',
-            revenue: { $sum: '$total' },
+            _id: "$paymentMethod",
+            revenue: { $sum: "$total" },
             count: { $sum: 1 },
           },
         },
@@ -2682,9 +3747,9 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       User.countDocuments({ createdAt: { $gte: last30Start } }),
       // Returning customers (placed more than 1 order)
       Order.aggregate([
-        { $group: { _id: '$billingDetails.phone', orderCount: { $sum: 1 } } },
+        { $group: { _id: "$billingDetails.phone", orderCount: { $sum: 1 } } },
         { $match: { orderCount: { $gt: 1 } } },
-        { $count: 'total' },
+        { $count: "total" },
       ]),
     ]);
 
@@ -2706,10 +3771,15 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
 
     const lowStockThreshold = 5;
     const stockRows = trackedProducts.map((product) => {
-      const variantTotal = Array.isArray(product.variants) && product.variants.length
-        ? product.variants.reduce((sum, variant) => sum + (Number(variant.inventory) || 0), 0)
-        : null;
-      const totalInventory = variantTotal !== null ? variantTotal : (Number(product.inventory) || 0);
+      const variantTotal =
+        Array.isArray(product.variants) && product.variants.length
+          ? product.variants.reduce(
+              (sum, variant) => sum + (Number(variant.inventory) || 0),
+              0,
+            )
+          : null;
+      const totalInventory =
+        variantTotal !== null ? variantTotal : Number(product.inventory) || 0;
 
       return {
         _id: product._id,
@@ -2725,14 +3795,33 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       .slice(0, 8);
 
     const lowStock = stockRows
-      .filter((row) => row.totalInventory > 0 && row.totalInventory <= lowStockThreshold)
+      .filter(
+        (row) =>
+          row.totalInventory > 0 && row.totalInventory <= lowStockThreshold,
+      )
       .sort((a, b) => a.totalInventory - b.totalInventory)
       .slice(0, 8);
 
     // Build 12-month revenue array with labels
-    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const MONTH_NAMES = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     const monthlyMap = monthlyRevenueAgg.reduce((acc, row) => {
-      acc[`${row._id.year}-${row._id.month}`] = { revenue: row.revenue, orders: row.orders };
+      acc[`${row._id.year}-${row._id.month}`] = {
+        revenue: row.revenue,
+        orders: row.orders,
+      };
       return acc;
     }, {});
     const monthlyRevenue = Array.from({ length: 12 }, (_, i) => {
@@ -2775,7 +3864,7 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       hourlyRevenue,
       monthlyRevenue,
       paymentBreakdown: paymentMethodAgg.map((p) => ({
-        method: p._id || 'unknown',
+        method: p._id || "unknown",
         revenue: p.revenue,
         count: p.count,
       })),
@@ -2785,8 +3874,12 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
       },
       stock: {
         threshold: lowStockThreshold,
-        outOfStockCount: stockRows.filter((row) => row.totalInventory <= 0).length,
-        lowStockCount: stockRows.filter((row) => row.totalInventory > 0 && row.totalInventory <= lowStockThreshold).length,
+        outOfStockCount: stockRows.filter((row) => row.totalInventory <= 0)
+          .length,
+        lowStockCount: stockRows.filter(
+          (row) =>
+            row.totalInventory > 0 && row.totalInventory <= lowStockThreshold,
+        ).length,
         outOfStock,
         lowStock,
       },
@@ -2794,612 +3887,830 @@ router.get('/dashboard-overview', requireAdmin, async (req, res) => {
         pendingOrders,
         processingOrders,
         unpaidOnlineOrders,
-        lowStockCount: stockRows.filter((row) => row.totalInventory > 0 && row.totalInventory <= lowStockThreshold).length,
+        lowStockCount: stockRows.filter(
+          (row) =>
+            row.totalInventory > 0 && row.totalInventory <= lowStockThreshold,
+        ).length,
       },
       generatedAt: now,
     });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // GET /api/admin/notifications/orders?since=<ISO date> — recent orders for the
 // dashboard notification bell. Lightweight by design (no aggregations) so it
 // can be polled frequently.
-router.get('/notifications/orders', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const since = req.query.since
-      ? new Date(req.query.since)
-      : new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const orders = await Order.find(
-      { createdAt: { $gt: since } },
-      'billingDetails userEmail total status paymentMethod createdAt',
-    )
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .lean();
+router.get(
+  "/notifications/orders",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const since = req.query.since
+        ? new Date(req.query.since)
+        : new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const orders = await Order.find(
+        { createdAt: { $gt: since } },
+        "billingDetails userEmail total status paymentMethod createdAt",
+      )
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .lean();
 
-    res.json({
-      ok: true,
-      count: orders.length,
-      serverTime: new Date(),
-      orders: orders.map((o) => ({
-        _id: o._id,
-        orderId: formatOrderIdSuffix(o._id),
-        customerName: o.billingDetails?.name || o.userEmail || 'Guest',
-        total: o.total,
-        status: o.status,
-        paymentMethod: o.paymentMethod,
-        createdAt: o.createdAt,
-      })),
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      res.json({
+        ok: true,
+        count: orders.length,
+        serverTime: new Date(),
+        orders: orders.map((o) => ({
+          _id: o._id,
+          orderId: formatOrderIdSuffix(o._id),
+          customerName: o.billingDetails?.name || o.userEmail || "Guest",
+          total: o.total,
+          status: o.status,
+          paymentMethod: o.paymentMethod,
+          createdAt: o.createdAt,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // GET /api/admin/orders
-router.get('/orders', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { page = 1, limit = 20, status, paymentStatus, paymentMethod, q, needsTracking, hasNote, dateFrom, dateTo, userId } =
-      req.query;
-    const filter = {};
-    if (userId) filter.userId = userId;
-    if (dateFrom || dateTo) {
-      filter.createdAt = {};
-      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
-      if (dateTo) filter.createdAt.$lte = new Date(dateTo);
+router.get(
+  "/orders",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        status,
+        paymentStatus,
+        paymentMethod,
+        q,
+        needsTracking,
+        hasNote,
+        dateFrom,
+        dateTo,
+        userId,
+      } = req.query;
+      const filter = {};
+      if (userId) filter.userId = userId;
+      if (dateFrom || dateTo) {
+        filter.createdAt = {};
+        if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+        if (dateTo) filter.createdAt.$lte = new Date(dateTo);
+      }
+      if (needsTracking === "true" || needsTracking === "1") {
+        filter.status = { $in: ["confirmed", "processing", "shipped"] };
+        filter.$or = [
+          { "shipment.trackingUrl": { $in: [null, ""] } },
+          { "shipment.trackingUrl": { $exists: false } },
+        ];
+      } else if (status === "incomplete") {
+        filter.status = {
+          $in: [
+            "pending",
+            "accepted",
+            "picked",
+            "approved",
+            "confirmed",
+            "processing",
+            "shipped",
+          ],
+        };
+      } else if (status && status !== "all") {
+        filter.status =
+          status === "accepted"
+            ? { $in: ["accepted", "picked", "approved"] }
+            : status;
+      }
+      if (hasNote === "1" || hasNote === "true") {
+        filter["billingDetails.note"] = { $exists: true, $ne: "" };
+      }
+      if (paymentStatus && paymentStatus !== "all")
+        filter.paymentStatus = paymentStatus;
+      if (paymentMethod && paymentMethod !== "all")
+        filter.paymentMethod = paymentMethod;
+      if (q) {
+        filter.$or = [
+          { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
+          { "billingDetails.name": { $regex: q, $options: "i" } },
+          { "billingDetails.phone": { $regex: q, $options: "i" } },
+          { userEmail: { $regex: q, $options: "i" } },
+          { transactionId: { $regex: q, $options: "i" } },
+        ].filter((c) => Object.values(c)[0] !== null);
+      }
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      const [ordersRaw, total] = await Promise.all([
+        Order.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+        Order.countDocuments(filter),
+      ]);
+      const orders = await Promise.all(
+        ordersRaw.map(async (order) => ({
+          ...order,
+          orderId: formatOrderIdSuffix(order._id),
+          customerUserId: await resolveCustomerUserId(order),
+        })),
+      );
+      // Summary counts
+      const [
+        pending,
+        accepted,
+        rejected,
+        confirmed,
+        processing,
+        shipped,
+        delivered,
+        returned,
+        cancelled,
+        failed,
+      ] = await Promise.all([
+        Order.countDocuments({ status: "pending" }),
+        Order.countDocuments({
+          status: { $in: ["accepted", "picked", "approved"] },
+        }),
+        Order.countDocuments({ status: "rejected" }),
+        Order.countDocuments({ status: "confirmed" }),
+        Order.countDocuments({ status: "processing" }),
+        Order.countDocuments({ status: "shipped" }),
+        Order.countDocuments({ status: "delivered" }),
+        Order.countDocuments({ status: "returned" }),
+        Order.countDocuments({ status: "cancelled" }),
+        Order.countDocuments({ status: "failed" }),
+      ]);
+      const revenueAgg = await Order.aggregate([
+        { $match: { status: { $nin: ["cancelled", "failed"] } } },
+        { $group: { _id: null, total: { $sum: "$total" } } },
+      ]);
+      res.json({
+        orders,
+        total,
+        pages: Math.ceil(total / parseInt(limit)),
+        stats: {
+          all: total,
+          pending,
+          accepted,
+          rejected,
+          confirmed,
+          processing,
+          shipped,
+          delivered,
+          returned,
+          cancelled,
+          failed,
+          revenue: revenueAgg[0]?.total || 0,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    if (needsTracking === 'true' || needsTracking === '1') {
-      filter.status = { $in: ['confirmed', 'processing', 'shipped'] };
-      filter.$or = [
-        { 'shipment.trackingUrl': { $in: [null, ''] } },
-        { 'shipment.trackingUrl': { $exists: false } },
-      ];
-    } else if (status === 'incomplete') {
-      filter.status = { $in: ['pending', 'accepted', 'picked', 'approved', 'confirmed', 'processing', 'shipped'] };
-    } else if (status && status !== 'all') {
-      filter.status = status === 'accepted'
-        ? { $in: ['accepted', 'picked', 'approved'] }
-        : status;
-    }
-    if (hasNote === '1' || hasNote === 'true') {
-      filter['billingDetails.note'] = { $exists: true, $ne: '' };
-    }
-    if (paymentStatus && paymentStatus !== 'all') filter.paymentStatus = paymentStatus;
-    if (paymentMethod && paymentMethod !== 'all') filter.paymentMethod = paymentMethod;
-    if (q) {
-      filter.$or = [
-        { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
-        { 'billingDetails.name': { $regex: q, $options: 'i' } },
-        { 'billingDetails.phone': { $regex: q, $options: 'i' } },
-        { userEmail: { $regex: q, $options: 'i' } },
-        { transactionId: { $regex: q, $options: 'i' } },
-      ].filter(c => Object.values(c)[0] !== null);
-    }
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const [ordersRaw, total] = await Promise.all([
-      Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
-      Order.countDocuments(filter),
-    ]);
-    const orders = await Promise.all(
-      ordersRaw.map(async (order) => ({
-        ...order,
-        orderId: formatOrderIdSuffix(order._id),
-        customerUserId: await resolveCustomerUserId(order),
-      })),
-    );
-    // Summary counts
-    const [pending, accepted, rejected, confirmed, processing, shipped, delivered, returned, cancelled, failed] = await Promise.all([
-      Order.countDocuments({ status: 'pending' }),
-      Order.countDocuments({ status: { $in: ['accepted', 'picked', 'approved'] } }),
-      Order.countDocuments({ status: 'rejected' }),
-      Order.countDocuments({ status: 'confirmed' }),
-      Order.countDocuments({ status: 'processing' }),
-      Order.countDocuments({ status: 'shipped' }),
-      Order.countDocuments({ status: 'delivered' }),
-      Order.countDocuments({ status: 'returned' }),
-      Order.countDocuments({ status: 'cancelled' }),
-      Order.countDocuments({ status: 'failed' }),
-    ]);
-    const revenueAgg = await Order.aggregate([
-      { $match: { status: { $nin: ['cancelled', 'failed'] } } },
-      { $group: { _id: null, total: { $sum: '$total' } } },
-    ]);
-    res.json({
-      orders,
-      total,
-      pages: Math.ceil(total / parseInt(limit)),
-      stats: {
-        all: total,
-        pending, accepted, rejected, confirmed, processing, shipped, delivered, returned, cancelled, failed,
-        revenue: revenueAgg[0]?.total || 0,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // GET /api/admin/orders/timeline — recent status-change events across all orders
-router.get('/orders/timeline', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
-    const orders = await Order.find(
-      { 'statusHistory.0': { $exists: true } },
-      { _id: 1, 'billingDetails.name': 1, 'billingDetails.phone': 1, status: 1, total: 1, statusHistory: 1, createdAt: 1 }
-    ).sort({ updatedAt: -1 }).limit(limit).lean();
+router.get(
+  "/orders/timeline",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+      const orders = await Order.find(
+        { "statusHistory.0": { $exists: true } },
+        {
+          _id: 1,
+          "billingDetails.name": 1,
+          "billingDetails.phone": 1,
+          status: 1,
+          total: 1,
+          statusHistory: 1,
+          createdAt: 1,
+        },
+      )
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .lean();
 
-    const events = [];
-    for (const order of orders) {
-      for (const ev of (order.statusHistory || [])) {
-        events.push({
-          orderId: order._id,
-          orderIdShort: String(order._id).slice(-8).toUpperCase(),
-          customerName: order.billingDetails?.name || '—',
-          customerPhone: order.billingDetails?.phone || '',
-          orderTotal: order.total,
-          newStatus: ev.newStatus,
-          previousStatus: ev.previousStatus,
-          changedBy: ev.changedBy,
-          reason: ev.reason,
-          at: ev.at,
-        });
+      const events = [];
+      for (const order of orders) {
+        for (const ev of order.statusHistory || []) {
+          events.push({
+            orderId: order._id,
+            orderIdShort: String(order._id).slice(-8).toUpperCase(),
+            customerName: order.billingDetails?.name || "—",
+            customerPhone: order.billingDetails?.phone || "",
+            orderTotal: order.total,
+            newStatus: ev.newStatus,
+            previousStatus: ev.previousStatus,
+            changedBy: ev.changedBy,
+            reason: ev.reason,
+            at: ev.at,
+          });
+        }
       }
+      events.sort((a, b) => new Date(b.at) - new Date(a.at));
+      res.json({ events: events.slice(0, limit) });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    events.sort((a, b) => new Date(b.at) - new Date(a.at));
-    res.json({ events: events.slice(0, limit) });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // GET /api/admin/orders/returns — list orders with status "returned"
-router.get('/orders/returns', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { page = 1, limit = 20, status, q } = req.query;
+router.get(
+  "/orders/returns",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20, status, q } = req.query;
 
-    // Base: all orders whose delivery status is "returned"
-    const filter = { status: 'returned' };
+      // Base: all orders whose delivery status is "returned"
+      const filter = { status: "returned" };
 
-    // Sub-filter by returnRequest processing status
-    if (status && status !== 'all') {
-      if (status === 'pending') {
-        // pending = no returnRequest yet, OR returnRequest.status is pending
-        filter.$or = [
+      // Sub-filter by returnRequest processing status
+      if (status && status !== "all") {
+        if (status === "pending") {
+          // pending = no returnRequest yet, OR returnRequest.status is pending
+          filter.$or = [
+            { returnRequest: null },
+            { returnRequest: { $exists: false } },
+            { "returnRequest.status": "pending" },
+          ];
+        } else {
+          filter["returnRequest.status"] = status;
+        }
+      }
+
+      if (q) {
+        const qFilter = [
+          { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
+          { "billingDetails.name": { $regex: q, $options: "i" } },
+          { "billingDetails.phone": { $regex: q, $options: "i" } },
+        ].filter((c) => Object.values(c)[0] !== null);
+        if (filter.$or) {
+          filter.$and = [{ $or: filter.$or }, { $or: qFilter }];
+          delete filter.$or;
+        } else {
+          filter.$or = qFilter;
+        }
+      }
+
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      const [ordersRaw, total] = await Promise.all([
+        Order.find(filter)
+          .sort({ updatedAt: -1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+        Order.countDocuments(filter),
+      ]);
+
+      const orders = await Promise.all(
+        ordersRaw.map(async (order) => ({
+          ...order,
+          orderId: formatOrderIdSuffix(order._id),
+          customerUserId: await resolveCustomerUserId(order),
+        })),
+      );
+
+      const [approved, rejected] = await Promise.all([
+        Order.countDocuments({
+          status: "returned",
+          "returnRequest.status": "approved",
+        }),
+        Order.countDocuments({
+          status: "returned",
+          "returnRequest.status": "rejected",
+        }),
+      ]);
+      const pendingCount = await Order.countDocuments({
+        status: "returned",
+        $or: [
           { returnRequest: null },
           { returnRequest: { $exists: false } },
-          { 'returnRequest.status': 'pending' },
-        ];
-      } else {
-        filter['returnRequest.status'] = status;
-      }
+          { "returnRequest.status": "pending" },
+        ],
+      });
+      const refundAgg = await Order.aggregate([
+        { $match: { status: "returned", "returnRequest.status": "approved" } },
+        {
+          $group: { _id: null, total: { $sum: "$returnRequest.refundAmount" } },
+        },
+      ]);
+
+      res.json({
+        orders,
+        total,
+        pages: Math.ceil(total / parseInt(limit)),
+        stats: {
+          pending: pendingCount,
+          approved,
+          rejected,
+          totalRefund: refundAgg[0]?.total || 0,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-
-    if (q) {
-      const qFilter = [
-        { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
-        { 'billingDetails.name': { $regex: q, $options: 'i' } },
-        { 'billingDetails.phone': { $regex: q, $options: 'i' } },
-      ].filter(c => Object.values(c)[0] !== null);
-      if (filter.$or) {
-        filter.$and = [{ $or: filter.$or }, { $or: qFilter }];
-        delete filter.$or;
-      } else {
-        filter.$or = qFilter;
-      }
-    }
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const [ordersRaw, total] = await Promise.all([
-      Order.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
-      Order.countDocuments(filter),
-    ]);
-
-    const orders = await Promise.all(
-      ordersRaw.map(async (order) => ({
-        ...order,
-        orderId: formatOrderIdSuffix(order._id),
-        customerUserId: await resolveCustomerUserId(order),
-      })),
-    );
-
-    const [approved, rejected] = await Promise.all([
-      Order.countDocuments({ status: 'returned', 'returnRequest.status': 'approved' }),
-      Order.countDocuments({ status: 'returned', 'returnRequest.status': 'rejected' }),
-    ]);
-    const pendingCount = await Order.countDocuments({
-      status: 'returned',
-      $or: [{ returnRequest: null }, { returnRequest: { $exists: false } }, { 'returnRequest.status': 'pending' }],
-    });
-    const refundAgg = await Order.aggregate([
-      { $match: { status: 'returned', 'returnRequest.status': 'approved' } },
-      { $group: { _id: null, total: { $sum: '$returnRequest.refundAmount' } } },
-    ]);
-
-    res.json({
-      orders,
-      total,
-      pages: Math.ceil(total / parseInt(limit)),
-      stats: { pending: pendingCount, approved, rejected, totalRefund: refundAgg[0]?.total || 0 },
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // POST /api/admin/orders/:id/return — create a return request
-router.post('/orders/:id/return', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { reason } = req.body;
-    if (!reason?.trim()) return res.status(400).json({ error: 'Reason is required' });
+router.post(
+  "/orders/:id/return",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { reason } = req.body;
+      if (!reason?.trim())
+        return res.status(400).json({ error: "Reason is required" });
 
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.returnRequest) return res.status(409).json({ error: 'A return request already exists for this order' });
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      if (order.returnRequest)
+        return res
+          .status(409)
+          .json({ error: "A return request already exists for this order" });
 
-    order.returnRequest = {
-      reason: reason.trim(),
-      requestedAt: new Date(),
-      status: 'pending',
-      refundAmount: 0,
-      adminNote: '',
-      resolvedAt: null,
-      resolvedBy: '',
-    };
-    await order.save();
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      order.returnRequest = {
+        reason: reason.trim(),
+        requestedAt: new Date(),
+        status: "pending",
+        refundAmount: 0,
+        adminNote: "",
+        resolvedAt: null,
+        resolvedBy: "",
+      };
+      await order.save();
+      res.json(order);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // PUT /api/admin/orders/:id/return — approve or reject a return request
-router.put('/orders/:id/return', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { status, refundAmount, adminNote } = req.body;
-    if (!['pending', 'approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+router.put(
+  "/orders/:id/return",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { status, refundAmount, adminNote } = req.body;
+      if (!["pending", "approved", "rejected"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+
+      // Auto-create returnRequest if order is "returned" but has no request yet
+      if (!order.returnRequest) {
+        if (order.status !== "returned")
+          return res
+            .status(404)
+            .json({ error: "No return request found for this order" });
+        order.returnRequest = {
+          reason: "",
+          requestedAt: new Date(),
+          status: "pending",
+          refundAmount: 0,
+          adminNote: "",
+        };
+      }
+
+      const prevStatus = order.returnRequest.status;
+      order.returnRequest.status = status;
+      if (adminNote !== undefined)
+        order.returnRequest.adminNote = adminNote.trim();
+      if (refundAmount !== undefined)
+        order.returnRequest.refundAmount = Math.max(
+          0,
+          Number(refundAmount) || 0,
+        );
+      if (status !== "pending") {
+        order.returnRequest.resolvedAt = new Date();
+        order.returnRequest.resolvedBy =
+          req.admin?.name || req.admin?.email || "admin";
+      }
+
+      if (prevStatus !== status) {
+        const changedBy = req.admin?.name || req.admin?.email || "admin";
+        const note = adminNote?.trim() || "";
+        appendStatusHistory(order, {
+          previousStatus: `return-${prevStatus}`,
+          newStatus: `return-${status}`,
+          reason: note,
+          changedBy,
+        });
+      }
+
+      await order.save();
+      res.json(order);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-
-    // Auto-create returnRequest if order is "returned" but has no request yet
-    if (!order.returnRequest) {
-      if (order.status !== 'returned') return res.status(404).json({ error: 'No return request found for this order' });
-      order.returnRequest = { reason: '', requestedAt: new Date(), status: 'pending', refundAmount: 0, adminNote: '' };
-    }
-
-    const prevStatus = order.returnRequest.status;
-    order.returnRequest.status = status;
-    if (adminNote !== undefined) order.returnRequest.adminNote = adminNote.trim();
-    if (refundAmount !== undefined) order.returnRequest.refundAmount = Math.max(0, Number(refundAmount) || 0);
-    if (status !== 'pending') {
-      order.returnRequest.resolvedAt = new Date();
-      order.returnRequest.resolvedBy = req.admin?.name || req.admin?.email || 'admin';
-    }
-
-    if (prevStatus !== status) {
-      const changedBy = req.admin?.name || req.admin?.email || 'admin';
-      const note = adminNote?.trim() || '';
-      appendStatusHistory(order, {
-        previousStatus: `return-${prevStatus}`,
-        newStatus: `return-${status}`,
-        reason: note,
-        changedBy,
-      });
-    }
-
-    await order.save();
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // DELETE /api/admin/orders/:id/return — remove a return request
-router.delete('/orders/:id/return', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+router.delete(
+  "/orders/:id/return",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-    order.returnRequest = null;
-    await order.save();
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      order.returnRequest = null;
+      await order.save();
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // GET /api/admin/orders/:id
-router.get('/orders/:id', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    let order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+router.get(
+  "/orders/:id",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      let order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-    if (order.shipment?.trackingId || order.shipment?.trackingUrl) {
-      try {
-        const syncResult = await syncOrderShipment(order, { force: false });
-        if (syncResult.ok && syncResult.order) order = syncResult.order;
-      } catch {
-        // sync skipped
+      if (order.shipment?.trackingId || order.shipment?.trackingUrl) {
+        try {
+          const syncResult = await syncOrderShipment(order, { force: false });
+          if (syncResult.ok && syncResult.order) order = syncResult.order;
+        } catch {
+          // sync skipped
+        }
       }
-    }
 
-    const orderObj = order.toObject();
+      const orderObj = order.toObject();
 
-    // Enrich order items with product barcode code for print slip
-    if (orderObj.items?.length) {
-      const pids = [...new Set(orderObj.items.map((i) => i.productId).filter(Boolean))];
-      if (pids.length) {
-        const bpArr = await Product.find({ _id: { $in: pids } }).select('_id barcode').lean();
-        const bpMap = {};
-        bpArr.forEach((p) => { if (p.barcode) bpMap[p._id.toString()] = p.barcode; });
-        orderObj.items = orderObj.items.map((item) => ({
-          ...item,
-          barcode: bpMap[item.productId] || null,
-        }));
+      // Enrich order items with product barcode code for print slip
+      if (orderObj.items?.length) {
+        const pids = [
+          ...new Set(orderObj.items.map((i) => i.productId).filter(Boolean)),
+        ];
+        if (pids.length) {
+          const bpArr = await Product.find({ _id: { $in: pids } })
+            .select("_id barcode")
+            .lean();
+          const bpMap = {};
+          bpArr.forEach((p) => {
+            if (p.barcode) bpMap[p._id.toString()] = p.barcode;
+          });
+          orderObj.items = orderObj.items.map((item) => ({
+            ...item,
+            barcode: bpMap[item.productId] || null,
+          }));
+        }
       }
+
+      let customerTags = [];
+      if (orderObj.userId) {
+        const user = await User.findById(orderObj.userId)
+          .populate("tags")
+          .lean();
+        customerTags = user?.tags || [];
+      } else if (orderObj.billingDetails?.email || orderObj.userEmail) {
+        const email = orderObj.billingDetails?.email || orderObj.userEmail;
+        const user = await User.findOne({ email }).populate("tags").lean();
+        customerTags = user?.tags || [];
+      }
+
+      await ensureDefaultCouriers();
+      const courierDoc = orderObj.shipment?.courier
+        ? await Courier.findOne({ slug: orderObj.shipment.courier }).lean()
+        : null;
+
+      const customerUserId = await resolveCustomerUserId(orderObj);
+
+      res.json({
+        ...orderObj,
+        orderId: formatOrderIdSuffix(orderObj._id),
+        customerTags,
+        customerUserId,
+        courierName: courierDoc?.name || orderObj.shipment?.courier || null,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-
-    let customerTags = [];
-    if (orderObj.userId) {
-      const user = await User.findById(orderObj.userId).populate('tags').lean();
-      customerTags = user?.tags || [];
-    } else if (orderObj.billingDetails?.email || orderObj.userEmail) {
-      const email = orderObj.billingDetails?.email || orderObj.userEmail;
-      const user = await User.findOne({ email }).populate('tags').lean();
-      customerTags = user?.tags || [];
-    }
-
-    await ensureDefaultCouriers();
-    const courierDoc = orderObj.shipment?.courier
-      ? await Courier.findOne({ slug: orderObj.shipment.courier }).lean()
-      : null;
-
-    const customerUserId = await resolveCustomerUserId(orderObj);
-
-    res.json({
-      ...orderObj,
-      orderId: formatOrderIdSuffix(orderObj._id),
-      customerTags,
-      customerUserId,
-      courierName: courierDoc?.name || orderObj.shipment?.courier || null,
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // PUT /api/admin/orders/:id/status
-router.put('/orders/:id/status', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const VALID = ['pending', 'accepted', 'picked', 'approved', 'rejected', 'confirmed', 'processing', 'shipped', 'delivered', 'returned', 'failed', 'cancelled'];
-    const { status, reason } = req.body;
-    if (!VALID.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-    if (!String(reason || '').trim()) return res.status(400).json({ error: 'Reason is required' });
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    applyOrderStatusChange(order, status, {
-      reason: String(reason || '').trim(),
-      changedBy: String(req.admin?._id || 'admin'),
-    });
-    if (status === 'delivered') {
-      await creditOrderRewardPoints(order);
+router.put(
+  "/orders/:id/status",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const VALID = [
+        "pending",
+        "accepted",
+        "picked",
+        "approved",
+        "rejected",
+        "confirmed",
+        "processing",
+        "shipped",
+        "delivered",
+        "returned",
+        "failed",
+        "cancelled",
+      ];
+      const { status, reason } = req.body;
+      if (!VALID.includes(status))
+        return res.status(400).json({ error: "Invalid status" });
+      if (!String(reason || "").trim())
+        return res.status(400).json({ error: "Reason is required" });
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      applyOrderStatusChange(order, status, {
+        reason: String(reason || "").trim(),
+        changedBy: String(req.admin?._id || "admin"),
+      });
+      if (status === "delivered") {
+        await creditOrderRewardPoints(order);
+      }
+      await order.save();
+      if (status === "cancelled") {
+        sendOrderCancelledEmail(order, {
+          reason: String(reason || "").trim(),
+          cancelledBy: "admin",
+        }).catch(() => {});
+      }
+      res.json(order);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    await order.save();
-    if (status === 'cancelled') {
-      sendOrderCancelledEmail(order, {
-        reason: String(reason || '').trim(),
-        cancelledBy: 'admin',
-      }).catch(() => {});
-    }
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // PUT /api/admin/orders/:id/payment-status
-router.put('/orders/:id/payment-status', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const VALID = ['unpaid', 'cod', 'paid', 'failed', 'cancelled'];
-    const { paymentStatus, paidAmount } = req.body;
-    if (!VALID.includes(paymentStatus)) return res.status(400).json({ error: 'Invalid payment status' });
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    order.paymentStatus = paymentStatus;
-    if (typeof paidAmount !== 'undefined') {
-      order.paidAmount = Number(paidAmount) || 0;
-    } else if (paymentStatus === 'paid') {
-      order.paidAmount = order.total || 0;
+router.put(
+  "/orders/:id/payment-status",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const VALID = ["unpaid", "cod", "paid", "failed", "cancelled"];
+      const { paymentStatus, paidAmount } = req.body;
+      if (!VALID.includes(paymentStatus))
+        return res.status(400).json({ error: "Invalid payment status" });
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      order.paymentStatus = paymentStatus;
+      if (typeof paidAmount !== "undefined") {
+        order.paidAmount = Number(paidAmount) || 0;
+      } else if (paymentStatus === "paid") {
+        order.paidAmount = order.total || 0;
+      }
+      order.updatedAt = new Date();
+      await order.save();
+      const customerUserId = await resolveCustomerUserId(order);
+      res.json({ ...order.toObject(), customerUserId });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    order.updatedAt = new Date();
-    await order.save();
-    const customerUserId = await resolveCustomerUserId(order);
-    res.json({ ...order.toObject(), customerUserId });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // PUT /api/admin/orders/:id/line-items — update items, shipping, discount; recalc totals
-router.put('/orders/:id/line-items', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+router.put(
+  "/orders/:id/line-items",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-    const { items, shipping, discount } = req.body || {};
+      const { items, shipping, discount } = req.body || {};
 
-    if (Array.isArray(items)) {
-      if (items.length === 0) {
-        return res.status(400).json({ error: 'Order must have at least one item.' });
+      if (Array.isArray(items)) {
+        if (items.length === 0) {
+          return res
+            .status(400)
+            .json({ error: "Order must have at least one item." });
+        }
+        order.items = items.map((item) => ({
+          productId: item.productId || null,
+          title: String(item.title || "").trim() || "Item",
+          price: Math.max(0, Number(item.price) || 0),
+          quantity: Math.max(1, Number(item.quantity) || 1),
+          image: item.image || null,
+          color: item.color || null,
+          size: item.size || null,
+          rewardPoints: Number(item.rewardPoints) || 0,
+        }));
+        order.subtotal = order.items.reduce(
+          (sum, item) => sum + item.price * item.quantity,
+          0,
+        );
       }
-      order.items = items.map((item) => ({
-        productId: item.productId || null,
-        title: String(item.title || '').trim() || 'Item',
-        price: Math.max(0, Number(item.price) || 0),
-        quantity: Math.max(1, Number(item.quantity) || 1),
-        image: item.image || null,
-        color: item.color || null,
-        size: item.size || null,
-        rewardPoints: Number(item.rewardPoints) || 0,
-      }));
-      order.subtotal = order.items.reduce(
-        (sum, item) => sum + item.price * item.quantity,
+
+      if (typeof shipping !== "undefined") {
+        order.shipping = Math.max(0, Number(shipping) || 0);
+      }
+      if (typeof discount !== "undefined") {
+        order.discount = Math.max(0, Number(discount) || 0);
+      }
+
+      order.total = Math.max(
         0,
+        (order.subtotal || 0) + (order.shipping || 0) - (order.discount || 0),
       );
+      order.updatedAt = new Date();
+      await order.save();
+      const customerUserId = await resolveCustomerUserId(order);
+      res.json({ ...order.toObject(), customerUserId });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-
-    if (typeof shipping !== 'undefined') {
-      order.shipping = Math.max(0, Number(shipping) || 0);
-    }
-    if (typeof discount !== 'undefined') {
-      order.discount = Math.max(0, Number(discount) || 0);
-    }
-
-    order.total = Math.max(
-      0,
-      (order.subtotal || 0) + (order.shipping || 0) - (order.discount || 0),
-    );
-    order.updatedAt = new Date();
-    await order.save();
-    const customerUserId = await resolveCustomerUserId(order);
-    res.json({ ...order.toObject(), customerUserId });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // GET /api/admin/couriers/sync-config — which couriers support API sync (for admin UI)
-router.get('/couriers/sync-config', requireAdmin, async (req, res) => {
+router.get("/couriers/sync-config", requireAdmin, async (req, res) => {
   res.json(await getCourierSyncConfig());
 });
 
 // GET /api/admin/couriers/booking-options — couriers ready for API parcel booking
-router.get('/couriers/booking-options', requireAdmin, async (req, res) => {
+router.get("/couriers/booking-options", requireAdmin, async (req, res) => {
   try {
     const items = await listBookableCouriers();
     res.json({ items });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // GET /api/admin/rewards — all users & orders with reward activity
-router.get('/rewards', requireAdmin, requirePermission('catalog'), async (req, res) => {
-  try {
-    const users = await User.find({ rewardPointsBalance: { $gt: 0 } })
-      .select('name email rewardPointsBalance createdAt')
-      .sort({ rewardPointsBalance: -1 })
-      .limit(200)
-      .lean();
+router.get(
+  "/rewards",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const users = await User.find({ rewardPointsBalance: { $gt: 0 } })
+        .select("name email rewardPointsBalance createdAt")
+        .sort({ rewardPointsBalance: -1 })
+        .limit(200)
+        .lean();
 
-    const orders = await Order.find({
-      $or: [
-        { rewardPointsEarned: { $gt: 0 } },
-        { rewardPointsRedeemed: { $gt: 0 } },
-      ],
-    })
-      .sort({ createdAt: -1 })
-      .limit(300)
-      .lean();
+      const orders = await Order.find({
+        $or: [
+          { rewardPointsEarned: { $gt: 0 } },
+          { rewardPointsRedeemed: { $gt: 0 } },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .limit(300)
+        .lean();
 
-    const orderRows = [];
-    for (const order of orders) {
-      const items = await enrichOrderItemsWithRewardPoints(order.items);
-      orderRows.push({
-        _id: order._id,
-        orderId: formatOrderIdSuffix(order._id),
-        userId: order.userId,
-        customerName: order.billingDetails?.name,
-        status: order.status,
-        createdAt: order.createdAt,
-        rewardPointsEarned: order.rewardPointsEarned || calcItemsRewardPoints(items),
-        rewardPointsRedeemed: order.rewardPointsRedeemed || 0,
-        rewardPointsDiscount: order.rewardPointsDiscount || 0,
-        credited: Boolean(order.rewardPointsCredited),
-        items,
+      const orderRows = [];
+      for (const order of orders) {
+        const items = await enrichOrderItemsWithRewardPoints(order.items);
+        orderRows.push({
+          _id: order._id,
+          orderId: formatOrderIdSuffix(order._id),
+          userId: order.userId,
+          customerName: order.billingDetails?.name,
+          status: order.status,
+          createdAt: order.createdAt,
+          rewardPointsEarned:
+            order.rewardPointsEarned || calcItemsRewardPoints(items),
+          rewardPointsRedeemed: order.rewardPointsRedeemed || 0,
+          rewardPointsDiscount: order.rewardPointsDiscount || 0,
+          credited: Boolean(order.rewardPointsCredited),
+          items,
+        });
+      }
+
+      const totalBalance = users.reduce(
+        (s, u) => s + (u.rewardPointsBalance || 0),
+        0,
+      );
+      const totalRedeemed = orderRows.reduce(
+        (s, o) => s + (o.rewardPointsRedeemed || 0),
+        0,
+      );
+      const totalEarned = orderRows.reduce(
+        (s, o) => s + (o.rewardPointsEarned || 0),
+        0,
+      );
+
+      res.json({
+        pointsPerTk: POINTS_PER_TK,
+        stats: {
+          usersWithBalance: users.length,
+          totalBalance,
+          totalBalanceTk: pointsToTk(totalBalance),
+          totalEarned,
+          totalRedeemed,
+          ordersWithRewards: orderRows.length,
+        },
+        users,
+        orders: orderRows,
       });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
+  },
+);
 
-    const totalBalance = users.reduce((s, u) => s + (u.rewardPointsBalance || 0), 0);
-    const totalRedeemed = orderRows.reduce((s, o) => s + (o.rewardPointsRedeemed || 0), 0);
-    const totalEarned = orderRows.reduce((s, o) => s + (o.rewardPointsEarned || 0), 0);
-
-    res.json({
-      pointsPerTk: POINTS_PER_TK,
-      stats: {
-        usersWithBalance: users.length,
-        totalBalance,
-        totalBalanceTk: pointsToTk(totalBalance),
-        totalEarned,
-        totalRedeemed,
-        ordersWithRewards: orderRows.length,
-      },
-      users,
-      orders: orderRows,
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-const PICKED_STATUSES = ['accepted', 'picked', 'approved'];
+const PICKED_STATUSES = ["accepted", "picked", "approved"];
 
 // PUT /api/admin/orders/:id/pick — pick toggle assigns picker + status accepted
-router.put('/orders/:id/pick', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { pick } = req.body || {};
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+router.put(
+  "/orders/:id/pick",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { pick } = req.body || {};
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-    const adminName = req.admin?.name || 'admin';
-    if (pick) {
-      if (order.pickedBy?.adminId && PICKED_STATUSES.includes(order.status)) {
-        if (order.pickedBy.adminId.toString() !== req.admin._id.toString()) {
-          return res.status(400).json({ error: `Already picked by ${order.pickedBy.name}` });
+      const adminName = req.admin?.name || "admin";
+      if (pick) {
+        if (order.pickedBy?.adminId && PICKED_STATUSES.includes(order.status)) {
+          if (order.pickedBy.adminId.toString() !== req.admin._id.toString()) {
+            return res
+              .status(400)
+              .json({ error: `Already picked by ${order.pickedBy.name}` });
+          }
+        } else {
+          order.pickedBy = {
+            adminId: req.admin._id,
+            name: adminName,
+            pickedAt: new Date(),
+          };
+          applyOrderStatusChange(order, "accepted", { changedBy: adminName });
         }
       } else {
-        order.pickedBy = {
-          adminId: req.admin._id,
-          name: adminName,
-          pickedAt: new Date(),
-        };
-        applyOrderStatusChange(order, 'accepted', { changedBy: adminName });
+        if (
+          order.pickedBy?.adminId &&
+          order.pickedBy.adminId.toString() !== req.admin._id.toString() &&
+          req.admin.role !== "admin"
+        ) {
+          return res
+            .status(403)
+            .json({ error: "Only the picker or an admin can unpick" });
+        }
+        order.pickedBy = null;
+        if (PICKED_STATUSES.includes(order.status)) {
+          applyOrderStatusChange(order, "pending", {
+            reason: "Unpicked",
+            changedBy: adminName,
+          });
+        }
       }
-    } else {
-      if (
-        order.pickedBy?.adminId &&
-        order.pickedBy.adminId.toString() !== req.admin._id.toString() &&
-        req.admin.role !== 'admin'
-      ) {
-        return res.status(403).json({ error: 'Only the picker or an admin can unpick' });
-      }
-      order.pickedBy = null;
-      if (PICKED_STATUSES.includes(order.status)) {
-        applyOrderStatusChange(order, 'pending', { reason: 'Unpicked', changedBy: adminName });
-      }
-    }
 
-    order.updatedAt = new Date();
-    await order.save();
-    res.json({ ...order.toObject(), orderId: formatOrderIdSuffix(order._id) });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      order.updatedAt = new Date();
+      await order.save();
+      res.json({
+        ...order.toObject(),
+        orderId: formatOrderIdSuffix(order._id),
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // GET /api/admin/admins/:id/pick-profile — orders picked by this authorized person
-router.get('/admins/:id/pick-profile', requireAdmin, async (req, res) => {
+router.get("/admins/:id/pick-profile", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    const person = await Admin.findById(req.params.id).select('-hashedPassword');
-    if (!person) return res.status(404).json({ error: 'Not found' });
+    if (req.admin.role !== "admin")
+      return res.status(403).json({ error: "Admin access required" });
+    const person = await Admin.findById(req.params.id).select(
+      "-hashedPassword",
+    );
+    if (!person) return res.status(404).json({ error: "Not found" });
 
-    const ordersRaw = await Order.find({ 'pickedBy.adminId': person._id })
-      .sort({ 'pickedBy.pickedAt': -1, createdAt: -1 })
+    const ordersRaw = await Order.find({ "pickedBy.adminId": person._id })
+      .sort({ "pickedBy.pickedAt": -1, createdAt: -1 })
       .limit(200)
       .lean();
 
@@ -3414,168 +4725,220 @@ router.get('/admins/:id/pick-profile', requireAdmin, async (req, res) => {
       stats: { total: orders.length },
     });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // PUT /api/admin/orders/:id/customer — update order customer info and sync user profile/address
-router.put('/orders/:id/customer', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+router.put(
+  "/orders/:id/customer",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-    const patch = req.body || {};
-    const current = order.billingDetails?.toObject?.() || order.billingDetails || {};
-    const nextBilling = {
-      ...current,
-      name: typeof patch.name !== 'undefined' ? String(patch.name || '').trim() : current.name,
-      phone: typeof patch.phone !== 'undefined' ? String(patch.phone || '').trim() : current.phone,
-      email: typeof patch.email !== 'undefined' ? String(patch.email || '').trim().toLowerCase() : current.email,
-      city: typeof patch.city !== 'undefined' ? String(patch.city || '').trim() : current.city,
-      zone: typeof patch.zone !== 'undefined' ? String(patch.zone || '').trim() : current.zone,
-      area: typeof patch.area !== 'undefined' ? String(patch.area || '').trim() : current.area,
-      address: typeof patch.address !== 'undefined' ? String(patch.address || '').trim() : current.address,
-      note: typeof patch.note !== 'undefined' ? String(patch.note || '').trim() : current.note,
-    };
+      const patch = req.body || {};
+      const current =
+        order.billingDetails?.toObject?.() || order.billingDetails || {};
+      const nextBilling = {
+        ...current,
+        name:
+          typeof patch.name !== "undefined"
+            ? String(patch.name || "").trim()
+            : current.name,
+        phone:
+          typeof patch.phone !== "undefined"
+            ? String(patch.phone || "").trim()
+            : current.phone,
+        email:
+          typeof patch.email !== "undefined"
+            ? String(patch.email || "")
+                .trim()
+                .toLowerCase()
+            : current.email,
+        city:
+          typeof patch.city !== "undefined"
+            ? String(patch.city || "").trim()
+            : current.city,
+        zone:
+          typeof patch.zone !== "undefined"
+            ? String(patch.zone || "").trim()
+            : current.zone,
+        area:
+          typeof patch.area !== "undefined"
+            ? String(patch.area || "").trim()
+            : current.area,
+        address:
+          typeof patch.address !== "undefined"
+            ? String(patch.address || "").trim()
+            : current.address,
+        note:
+          typeof patch.note !== "undefined"
+            ? String(patch.note || "").trim()
+            : current.note,
+      };
 
-    if (!nextBilling.name || !nextBilling.phone) {
-      return res.status(400).json({ error: 'Name and phone are required.' });
-    }
-
-    order.billingDetails = nextBilling;
-    order.userEmail = nextBilling.email || order.userEmail || null;
-    order.updatedAt = new Date();
-    await order.save();
-
-    const shouldSyncUser = patch.syncUser !== false;
-    if (shouldSyncUser) {
-      let user = null;
-      if (order.userId) user = await User.findById(order.userId);
-      if (!user && nextBilling.email) {
-        user = await User.findOne({ email: nextBilling.email });
+      if (!nextBilling.name || !nextBilling.phone) {
+        return res.status(400).json({ error: "Name and phone are required." });
       }
-      if (!user && nextBilling.phone) {
-        user = await User.findOne({ mobile: nextBilling.phone });
-      }
 
-      if (user) {
-        if (nextBilling.email && nextBilling.email !== user.email) {
-          const duplicate = await User.findOne({ email: nextBilling.email }).select('_id').lean();
-          if (duplicate && String(duplicate._id) !== String(user._id)) {
-            return res.status(400).json({ error: 'Cannot sync email: another user already uses it.' });
+      order.billingDetails = nextBilling;
+      order.userEmail = nextBilling.email || order.userEmail || null;
+      order.updatedAt = new Date();
+      await order.save();
+
+      const shouldSyncUser = patch.syncUser !== false;
+      if (shouldSyncUser) {
+        let user = null;
+        if (order.userId) user = await User.findById(order.userId);
+        if (!user && nextBilling.email) {
+          user = await User.findOne({ email: nextBilling.email });
+        }
+        if (!user && nextBilling.phone) {
+          user = await User.findOne({ mobile: nextBilling.phone });
+        }
+
+        if (user) {
+          if (nextBilling.email && nextBilling.email !== user.email) {
+            const duplicate = await User.findOne({ email: nextBilling.email })
+              .select("_id")
+              .lean();
+            if (duplicate && String(duplicate._id) !== String(user._id)) {
+              return res
+                .status(400)
+                .json({
+                  error: "Cannot sync email: another user already uses it.",
+                });
+            }
+            user.email = nextBilling.email;
           }
-          user.email = nextBilling.email;
-        }
-        user.name = nextBilling.name;
-        user.mobile = nextBilling.phone;
+          user.name = nextBilling.name;
+          user.mobile = nextBilling.phone;
 
-        const addressLine = [nextBilling.address, nextBilling.area].filter(Boolean).join(', ').trim();
-        if (user.addresses?.length) {
-          const addr = user.addresses[0];
-          addr.fullName = nextBilling.name;
-          addr.email = nextBilling.email || user.email || '';
-          addr.phone = nextBilling.phone;
-          addr.city = nextBilling.city || '';
-          addr.zone = nextBilling.zone || '';
-          addr.address = addressLine || nextBilling.address || '';
-        } else {
-          user.addresses = [
-            {
-              fullName: nextBilling.name,
-              email: nextBilling.email || user.email || '',
-              phone: nextBilling.phone,
-              city: nextBilling.city || '',
-              zone: nextBilling.zone || '',
-              address: addressLine || nextBilling.address || '',
-              type: 'Home',
-            },
-          ];
-        }
+          const addressLine = [nextBilling.address, nextBilling.area]
+            .filter(Boolean)
+            .join(", ")
+            .trim();
+          if (user.addresses?.length) {
+            const addr = user.addresses[0];
+            addr.fullName = nextBilling.name;
+            addr.email = nextBilling.email || user.email || "";
+            addr.phone = nextBilling.phone;
+            addr.city = nextBilling.city || "";
+            addr.zone = nextBilling.zone || "";
+            addr.address = addressLine || nextBilling.address || "";
+          } else {
+            user.addresses = [
+              {
+                fullName: nextBilling.name,
+                email: nextBilling.email || user.email || "",
+                phone: nextBilling.phone,
+                city: nextBilling.city || "",
+                zone: nextBilling.zone || "",
+                address: addressLine || nextBilling.address || "",
+                type: "Home",
+              },
+            ];
+          }
 
-        await user.save();
-        if (!order.userId) {
-          order.userId = String(user._id);
-          await order.save();
+          await user.save();
+          if (!order.userId) {
+            order.userId = String(user._id);
+            await order.save();
+          }
         }
       }
-    }
 
-    const customerUserId = await resolveCustomerUserId(order);
-    res.json({ ...order.toObject(), customerUserId });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      const customerUserId = await resolveCustomerUserId(order);
+      res.json({ ...order.toObject(), customerUserId });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // --- Courier management -------------------------------------------------------
-router.get('/couriers', requireAdmin, async (req, res) => {
+router.get("/couriers", requireAdmin, async (req, res) => {
   try {
     await ensureDefaultCouriers();
     const items = await Courier.find({}).sort({ sortOrder: 1, name: 1 });
     res.json({ items });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.post('/couriers', requireAdmin, async (req, res) => {
+router.post("/couriers", requireAdmin, async (req, res) => {
   try {
     const { name, slug, trackingUrlTemplate, sortOrder } = req.body || {};
     if (!name || !String(name).trim()) {
-      return res.status(400).json({ error: 'Courier name is required' });
+      return res.status(400).json({ error: "Courier name is required" });
     }
     const resolvedSlug =
       (slug && String(slug).trim().toLowerCase()) ||
-      String(name).trim().toLowerCase().replace(/\s+/g, '_');
+      String(name).trim().toLowerCase().replace(/\s+/g, "_");
     const courier = await Courier.create({
       name: String(name).trim(),
       slug: resolvedSlug,
-      trackingUrlTemplate: trackingUrlTemplate || '',
+      trackingUrlTemplate: trackingUrlTemplate || "",
       sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 50,
       isSystem: false,
     });
     res.status(201).json({ courier });
   } catch (err) {
-    res.status(500).json({ error: err.code === 11000 ? 'Courier slug already exists' : 'Server error' });
+    res
+      .status(500)
+      .json({
+        error:
+          err.code === 11000 ? "Courier slug already exists" : "Server error",
+      });
   }
 });
 
-router.put('/couriers/:id', requireAdmin, async (req, res) => {
+router.put("/couriers/:id", requireAdmin, async (req, res) => {
   try {
     const { name, slug, trackingUrlTemplate, sortOrder } = req.body || {};
     const courier = await Courier.findById(req.params.id);
-    if (!courier) return res.status(404).json({ error: 'Not found' });
-    if (typeof name !== 'undefined') courier.name = String(name).trim();
-    if (typeof slug !== 'undefined' && !courier.isSystem) {
+    if (!courier) return res.status(404).json({ error: "Not found" });
+    if (typeof name !== "undefined") courier.name = String(name).trim();
+    if (typeof slug !== "undefined" && !courier.isSystem) {
       courier.slug = String(slug).trim().toLowerCase();
     }
-    if (typeof trackingUrlTemplate !== 'undefined') {
-      courier.trackingUrlTemplate = trackingUrlTemplate || '';
+    if (typeof trackingUrlTemplate !== "undefined") {
+      courier.trackingUrlTemplate = trackingUrlTemplate || "";
     }
-    if (typeof sortOrder !== 'undefined') courier.sortOrder = Number(sortOrder) || 0;
+    if (typeof sortOrder !== "undefined")
+      courier.sortOrder = Number(sortOrder) || 0;
     await courier.save();
     res.json({ ok: true, courier });
   } catch (err) {
-    res.status(500).json({ error: err.code === 11000 ? 'Courier slug already exists' : 'Server error' });
+    res
+      .status(500)
+      .json({
+        error:
+          err.code === 11000 ? "Courier slug already exists" : "Server error",
+      });
   }
 });
 
-router.delete('/couriers/:id', requireAdmin, async (req, res) => {
+router.delete("/couriers/:id", requireAdmin, async (req, res) => {
   try {
     const courier = await Courier.findById(req.params.id);
-    if (!courier) return res.status(404).json({ error: 'Not found' });
+    if (!courier) return res.status(404).json({ error: "Not found" });
     await Courier.deleteOne({ _id: courier._id });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // GET /api/admin/couriers/:id/integration — masked courier API credentials
-router.get('/couriers/:id/integration', requireAdmin, async (req, res) => {
+router.get("/couriers/:id/integration", requireAdmin, async (req, res) => {
   try {
     const courier = await Courier.findById(req.params.id).lean();
-    if (!courier) return res.status(404).json({ error: 'Not found' });
+    if (!courier) return res.status(404).json({ error: "Not found" });
 
     const integration = await getCourierIntegration(courier.slug);
     res.json({
@@ -3595,24 +4958,25 @@ router.get('/couriers/:id/integration', requireAdmin, async (req, res) => {
         : {},
     });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // PUT /api/admin/couriers/:id/integration — save encrypted credentials
-router.put('/couriers/:id/integration', requireAdmin, async (req, res) => {
+router.put("/couriers/:id/integration", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin.role !== "admin") {
+      return res.status(403).json({ error: "Admin access required" });
     }
-    const { apiEnabled, credentials, storeConfig, capabilities } = req.body || {};
+    const { apiEnabled, credentials, storeConfig, capabilities } =
+      req.body || {};
     const courier = await saveCourierCredentials(req.params.id, {
       apiEnabled,
       credentials,
       storeConfig,
       capabilities,
     });
-    if (!courier) return res.status(404).json({ error: 'Not found' });
+    if (!courier) return res.status(404).json({ error: "Not found" });
 
     const integration = await getCourierIntegration(courier.slug);
     res.json({
@@ -3625,25 +4989,30 @@ router.put('/couriers/:id/integration', requireAdmin, async (req, res) => {
         storeConfig: courier.storeConfig,
         capabilities: courier.capabilities,
       },
-      credentials: maskCredentialsForSlug(courier.slug, integration.creds || {}),
+      credentials: maskCredentialsForSlug(
+        courier.slug,
+        integration.creds || {},
+      ),
     });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // POST /api/admin/couriers/:id/test-connection
-router.post('/couriers/:id/test-connection', requireAdmin, async (req, res) => {
+router.post("/couriers/:id/test-connection", requireAdmin, async (req, res) => {
   try {
     const courier = await Courier.findById(req.params.id);
-    if (!courier) return res.status(404).json({ error: 'Not found' });
+    if (!courier) return res.status(404).json({ error: "Not found" });
     if (!isIntegrationSlug(courier.slug)) {
-      return res.status(400).json({ error: 'This courier does not support API integration' });
+      return res
+        .status(400)
+        .json({ error: "This courier does not support API integration" });
     }
 
     const integration = await getCourierIntegration(courier.slug);
     if (!integration.creds) {
-      return res.status(400).json({ error: 'Credentials not configured' });
+      return res.status(400).json({ error: "Credentials not configured" });
     }
 
     const result = await testCourierConnection(
@@ -3655,7 +5024,7 @@ router.post('/couriers/:id/test-connection', requireAdmin, async (req, res) => {
     courier.integrationStatus = {
       lastTestedAt: new Date(),
       lastTestOk: true,
-      lastTestMessage: result.message || 'Connected',
+      lastTestMessage: result.message || "Connected",
     };
     await courier.save();
 
@@ -3667,57 +5036,61 @@ router.post('/couriers/:id/test-connection', requireAdmin, async (req, res) => {
         courier.integrationStatus = {
           lastTestedAt: new Date(),
           lastTestOk: false,
-          lastTestMessage: err.message || 'Connection failed',
+          lastTestMessage: err.message || "Connection failed",
         };
         await courier.save();
       }
     } catch {
       /* ignore */
     }
-    res.status(502).json({ error: err.message || 'Connection test failed' });
+    res.status(502).json({ error: err.message || "Connection test failed" });
   }
 });
 
 // GET /api/admin/couriers/:id/redx-areas — helper for RedX delivery area setup
-router.get('/couriers/:id/redx-areas', requireAdmin, async (req, res) => {
+router.get("/couriers/:id/redx-areas", requireAdmin, async (req, res) => {
   try {
     const courier = await Courier.findById(req.params.id).lean();
-    if (!courier || courier.slug !== 'redx') {
-      return res.status(400).json({ error: 'RedX courier required' });
+    if (!courier || courier.slug !== "redx") {
+      return res.status(400).json({ error: "RedX courier required" });
     }
-    const integration = await getCourierIntegration('redx');
+    const integration = await getCourierIntegration("redx");
     if (!integration.creds) {
-      return res.status(400).json({ error: 'RedX credentials not configured' });
+      return res.status(400).json({ error: "RedX credentials not configured" });
     }
-    const areas = await fetchRedxAreas(integration.creds, integration.storeConfig, {
-      districtName: req.query.district || req.query.district_name,
-    });
+    const areas = await fetchRedxAreas(
+      integration.creds,
+      integration.storeConfig,
+      {
+        districtName: req.query.district || req.query.district_name,
+      },
+    );
     res.json({ items: areas });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Failed to load areas' });
+    res.status(502).json({ error: err.message || "Failed to load areas" });
   }
 });
 
 // GET /api/admin/shipment-config — shop pickup + defaults
-router.get('/shipment-config', requireAdmin, async (req, res) => {
+router.get("/shipment-config", requireAdmin, async (req, res) => {
   try {
-    const Setting = (await import('../models/Setting.js')).default;
+    const Setting = (await import("../models/Setting.js")).default;
     let settings = await Setting.findOne().lean();
     if (!settings) settings = {};
     res.json({ shipmentConfig: settings.shipmentConfig || {} });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // PUT /api/admin/shipment-config
-router.put('/shipment-config', requireAdmin, async (req, res) => {
+router.put("/shipment-config", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+    if (req.admin.role !== "admin") {
+      return res.status(403).json({ error: "Admin access required" });
     }
     const { shipmentConfig } = req.body || {};
-    const Setting = (await import('../models/Setting.js')).default;
+    const Setting = (await import("../models/Setting.js")).default;
     const settings = await Setting.findOneAndUpdate(
       {},
       { $set: { shipmentConfig: shipmentConfig || {} } },
@@ -3725,29 +5098,32 @@ router.put('/shipment-config', requireAdmin, async (req, res) => {
     );
     res.json({ ok: true, shipmentConfig: settings.shipmentConfig });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // --- Timeline preset management -----------------------------------------------
-router.get('/timeline-presets', requireAdmin, async (req, res) => {
+router.get("/timeline-presets", requireAdmin, async (req, res) => {
   try {
-    const items = await TimelinePreset.find({}).sort({ sortOrder: 1, label: 1 });
+    const items = await TimelinePreset.find({}).sort({
+      sortOrder: 1,
+      label: 1,
+    });
     res.json({ items });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.post('/timeline-presets', requireAdmin, async (req, res) => {
+router.post("/timeline-presets", requireAdmin, async (req, res) => {
   try {
     const { label, statusKey, sortOrder } = req.body || {};
     if (!label || !String(label).trim()) {
-      return res.status(400).json({ error: 'Preset label is required' });
+      return res.status(400).json({ error: "Preset label is required" });
     }
     const resolvedKey =
       (statusKey && String(statusKey).trim().toLowerCase()) ||
-      String(label).trim().toLowerCase().replace(/\s+/g, '_');
+      String(label).trim().toLowerCase().replace(/\s+/g, "_");
     const preset = await TimelinePreset.create({
       label: String(label).trim(),
       statusKey: resolvedKey,
@@ -3755,459 +5131,591 @@ router.post('/timeline-presets', requireAdmin, async (req, res) => {
     });
     res.status(201).json({ preset });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.put('/timeline-presets/:id', requireAdmin, async (req, res) => {
+router.put("/timeline-presets/:id", requireAdmin, async (req, res) => {
   try {
     const { label, statusKey, sortOrder } = req.body || {};
     const preset = await TimelinePreset.findById(req.params.id);
-    if (!preset) return res.status(404).json({ error: 'Not found' });
-    if (typeof label !== 'undefined') preset.label = String(label).trim();
-    if (typeof statusKey !== 'undefined') preset.statusKey = String(statusKey).trim().toLowerCase();
-    if (typeof sortOrder !== 'undefined') preset.sortOrder = Number(sortOrder) || 0;
+    if (!preset) return res.status(404).json({ error: "Not found" });
+    if (typeof label !== "undefined") preset.label = String(label).trim();
+    if (typeof statusKey !== "undefined")
+      preset.statusKey = String(statusKey).trim().toLowerCase();
+    if (typeof sortOrder !== "undefined")
+      preset.sortOrder = Number(sortOrder) || 0;
     await preset.save();
     res.json({ ok: true, preset });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.delete('/timeline-presets/:id', requireAdmin, async (req, res) => {
+router.delete("/timeline-presets/:id", requireAdmin, async (req, res) => {
   try {
     const preset = await TimelinePreset.findById(req.params.id);
-    if (!preset) return res.status(404).json({ error: 'Not found' });
+    if (!preset) return res.status(404).json({ error: "Not found" });
     await TimelinePreset.deleteOne({ _id: preset._id });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // PUT /api/admin/orders/:id/shipment — assign courier + tracking, mark handed over
-router.put('/orders/:id/shipment', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { courier, trackingId, trackingUrl, markHandedOver = true } = req.body || {};
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-
-    if (courier && !(await isValidCourierSlug(courier))) {
-      return res.status(400).json({ error: 'Invalid courier' });
-    }
-
-    if (!order.shipment) order.shipment = { trackingEvents: [] };
-
-    if (courier !== undefined) order.shipment.courier = courier || null;
-    if (trackingId !== undefined) order.shipment.trackingId = trackingId ? String(trackingId).trim() : null;
-
-    if (trackingUrl !== undefined) {
-      order.shipment.trackingUrl = trackingUrl ? String(trackingUrl).trim() : null;
-    } else if (trackingId && order.shipment.courier) {
-      await ensureDefaultCouriers();
-      const courierDoc = await Courier.findOne({ slug: order.shipment.courier }).lean();
-      order.shipment.trackingUrl =
-        buildTrackingUrl(courierDoc?.trackingUrlTemplate, order.shipment.trackingId) ||
-        defaultTrackingUrl(order.shipment.courier, order.shipment.trackingId) ||
-        order.shipment.trackingUrl;
-    }
-
-    const hasCourierRef =
-      Boolean(order.shipment.courier && order.shipment.trackingId);
-    const hasTrackingLink = Boolean(order.shipment.trackingUrl);
-    const shouldHandOver =
-      markHandedOver &&
-      !order.shipment.handedToCourierAt &&
-      (hasCourierRef || hasTrackingLink);
-
-    if (shouldHandOver) {
-      order.shipment.handedToCourierAt = new Date();
-      if (['confirmed', 'processing'].includes(order.status)) {
-        order.status = 'shipped';
-      }
-    }
-
-    order.updatedAt = new Date();
-    await order.save();
-
+router.put(
+  "/orders/:id/shipment",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
     try {
-      const syncResult = await syncOrderShipment(order, { force: true });
-      if (syncResult.ok && syncResult.order) {
-        return res.json(syncResult.order);
-      }
-    } catch {
-      // sync failed; return saved order
-    }
+      const {
+        courier,
+        trackingId,
+        trackingUrl,
+        markHandedOver = true,
+      } = req.body || {};
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
 
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      if (courier && !(await isValidCourierSlug(courier))) {
+        return res.status(400).json({ error: "Invalid courier" });
+      }
+
+      if (!order.shipment) order.shipment = { trackingEvents: [] };
+
+      if (courier !== undefined) order.shipment.courier = courier || null;
+      if (trackingId !== undefined)
+        order.shipment.trackingId = trackingId
+          ? String(trackingId).trim()
+          : null;
+
+      if (trackingUrl !== undefined) {
+        order.shipment.trackingUrl = trackingUrl
+          ? String(trackingUrl).trim()
+          : null;
+      } else if (trackingId && order.shipment.courier) {
+        await ensureDefaultCouriers();
+        const courierDoc = await Courier.findOne({
+          slug: order.shipment.courier,
+        }).lean();
+        order.shipment.trackingUrl =
+          buildTrackingUrl(
+            courierDoc?.trackingUrlTemplate,
+            order.shipment.trackingId,
+          ) ||
+          defaultTrackingUrl(
+            order.shipment.courier,
+            order.shipment.trackingId,
+          ) ||
+          order.shipment.trackingUrl;
+      }
+
+      const hasCourierRef = Boolean(
+        order.shipment.courier && order.shipment.trackingId,
+      );
+      const hasTrackingLink = Boolean(order.shipment.trackingUrl);
+      const shouldHandOver =
+        markHandedOver &&
+        !order.shipment.handedToCourierAt &&
+        (hasCourierRef || hasTrackingLink);
+
+      if (shouldHandOver) {
+        order.shipment.handedToCourierAt = new Date();
+        if (["confirmed", "processing"].includes(order.status)) {
+          order.status = "shipped";
+        }
+      }
+
+      order.updatedAt = new Date();
+      await order.save();
+
+      try {
+        const syncResult = await syncOrderShipment(order, { force: true });
+        if (syncResult.ok && syncResult.order) {
+          return res.json(syncResult.order);
+        }
+      } catch {
+        // sync failed; return saved order
+      }
+
+      res.json(order);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // POST /api/admin/orders/:id/shipment/events — manual tracking line (no courier API)
-router.post('/orders/:id/shipment/events', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { status, message } = req.body || {};
-    const label = message || status;
-    if (!label || !String(label).trim()) {
-      return res.status(400).json({ error: 'Event message or status is required.' });
-    }
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    const normalizedStatus = status ? String(status).trim().toLowerCase() : '';
-    const isDelivered =
-      normalizedStatus === 'delivered' || /^delivered$/i.test(String(label).trim());
+router.post(
+  "/orders/:id/shipment/events",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { status, message } = req.body || {};
+      const label = message || status;
+      if (!label || !String(label).trim()) {
+        return res
+          .status(400)
+          .json({ error: "Event message or status is required." });
+      }
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      const normalizedStatus = status
+        ? String(status).trim().toLowerCase()
+        : "";
+      const isDelivered =
+        normalizedStatus === "delivered" ||
+        /^delivered$/i.test(String(label).trim());
 
-    if (isDelivered) {
-      applyOrderStatusChange(order, 'delivered', {
-        reason: String(label).trim(),
-        changedBy: String(req.admin?._id || 'admin'),
-      });
-    } else {
-      appendManualTrackingEvent(order, {
-        status: normalizedStatus || 'update',
-        message: String(label).trim(),
-      });
+      if (isDelivered) {
+        applyOrderStatusChange(order, "delivered", {
+          reason: String(label).trim(),
+          changedBy: String(req.admin?._id || "admin"),
+        });
+      } else {
+        appendManualTrackingEvent(order, {
+          status: normalizedStatus || "update",
+          message: String(label).trim(),
+        });
+      }
+      order.updatedAt = new Date();
+      await order.save();
+      res.json(order);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    order.updatedAt = new Date();
-    await order.save();
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // PUT /api/admin/orders/:id/shipment/events/:index — edit manual tracking event
-router.put('/orders/:id/shipment/events/:index', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const index = parseInt(req.params.index, 10);
-    const { status, message } = req.body || {};
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    const events = order.shipment?.trackingEvents || [];
-    if (index < 0 || index >= events.length) {
-      return res.status(404).json({ error: 'Tracking event not found' });
+router.put(
+  "/orders/:id/shipment/events/:index",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const index = parseInt(req.params.index, 10);
+      const { status, message } = req.body || {};
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      const events = order.shipment?.trackingEvents || [];
+      if (index < 0 || index >= events.length) {
+        return res.status(404).json({ error: "Tracking event not found" });
+      }
+      if (status) events[index].status = String(status).trim();
+      if (message) events[index].message = String(message).trim();
+      order.shipment.trackingEvents = events;
+      order.updatedAt = new Date();
+      await order.save();
+      res.json(order);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    if (status) events[index].status = String(status).trim();
-    if (message) events[index].message = String(message).trim();
-    order.shipment.trackingEvents = events;
-    order.updatedAt = new Date();
-    await order.save();
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // DELETE /api/admin/orders/:id/shipment/events/:index — remove tracking event
-router.delete('/orders/:id/shipment/events/:index', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const index = parseInt(req.params.index, 10);
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    const events = order.shipment?.trackingEvents || [];
-    if (index < 0 || index >= events.length) {
-      return res.status(404).json({ error: 'Tracking event not found' });
+router.delete(
+  "/orders/:id/shipment/events/:index",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const index = parseInt(req.params.index, 10);
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      const events = order.shipment?.trackingEvents || [];
+      if (index < 0 || index >= events.length) {
+        return res.status(404).json({ error: "Tracking event not found" });
+      }
+      events.splice(index, 1);
+      order.shipment.trackingEvents = events;
+      order.updatedAt = new Date();
+      await order.save();
+      res.json(order);
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    events.splice(index, 1);
-    order.shipment.trackingEvents = events;
-    order.updatedAt = new Date();
-    await order.save();
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // POST /api/admin/orders/:id/book-courier — create parcel via courier API
-router.post('/orders/:id/book-courier', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { courier, weight, codAmount, note, deliveryAreaId, deliveryAreaName, itemQuantity } =
-      req.body || {};
-    if (!courier) {
-      return res.status(400).json({ error: 'Courier is required' });
-    }
-
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-
-    const result = await bookParcelWithCourier(order, courier, {
-      weight,
-      codAmount,
-      note,
-      deliveryAreaId,
-      deliveryAreaName,
-      itemQuantity,
-    });
-
-    if (!result.ok) {
-      return res.status(400).json({
-        error: result.error,
-        code: result.code || 'book_failed',
-      });
-    }
-
-    if (!order.shipment) order.shipment = { trackingEvents: [] };
-    order.shipment.courier = result.courier;
-    order.shipment.trackingId = result.consignmentId;
-    order.shipment.trackingUrl = result.trackingUrl;
-    order.shipment.bookedAt = new Date();
-    order.shipment.bookingSource = 'api';
-    order.shipment.handedToCourierAt = order.shipment.handedToCourierAt || new Date();
-    order.shipment.courierStatus = 'Booked';
-
-    const courierLabel = result.courier.charAt(0).toUpperCase() + result.courier.slice(1);
-
-    const Setting = (await import('../models/Setting.js')).default;
-    const settings = await Setting.findOne().lean();
-    const nextStatus = settings?.shipmentConfig?.bookSetsStatus || 'shipped';
-    if (['confirmed', 'processing', 'accepted', 'picked', 'approved'].includes(order.status)) {
-      applyOrderStatusChange(order, nextStatus, {
-        reason: `Booked with ${courierLabel}`,
-        changedBy: req.admin?.name || String(req.admin?._id || 'admin'),
-      });
-    }
-
-    order.updatedAt = new Date();
-    await order.save();
-
+router.post(
+  "/orders/:id/book-courier",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
     try {
-      const syncResult = await syncOrderShipment(order, { force: true });
-      if (syncResult.ok && syncResult.order) {
-        return res.json(syncResult.order);
+      const {
+        courier,
+        weight,
+        codAmount,
+        note,
+        deliveryAreaId,
+        deliveryAreaName,
+        itemQuantity,
+      } = req.body || {};
+      if (!courier) {
+        return res.status(400).json({ error: "Courier is required" });
       }
-    } catch {
-      // sync failed; return saved order
-    }
 
-    res.json(order);
-  } catch (err) {
-    res.status(400).json({
-      error: err.message || 'Courier booking failed',
-      code: 'courier_api_error',
-    });
-  }
-});
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+
+      const result = await bookParcelWithCourier(order, courier, {
+        weight,
+        codAmount,
+        note,
+        deliveryAreaId,
+        deliveryAreaName,
+        itemQuantity,
+      });
+
+      if (!result.ok) {
+        return res.status(400).json({
+          error: result.error,
+          code: result.code || "book_failed",
+        });
+      }
+
+      if (!order.shipment) order.shipment = { trackingEvents: [] };
+      order.shipment.courier = result.courier;
+      order.shipment.trackingId = result.consignmentId;
+      order.shipment.trackingUrl = result.trackingUrl;
+      order.shipment.bookedAt = new Date();
+      order.shipment.bookingSource = "api";
+      order.shipment.handedToCourierAt =
+        order.shipment.handedToCourierAt || new Date();
+      order.shipment.courierStatus = "Booked";
+
+      const courierLabel =
+        result.courier.charAt(0).toUpperCase() + result.courier.slice(1);
+
+      const Setting = (await import("../models/Setting.js")).default;
+      const settings = await Setting.findOne().lean();
+      const nextStatus = settings?.shipmentConfig?.bookSetsStatus || "shipped";
+      if (
+        ["confirmed", "processing", "accepted", "picked", "approved"].includes(
+          order.status,
+        )
+      ) {
+        applyOrderStatusChange(order, nextStatus, {
+          reason: `Booked with ${courierLabel}`,
+          changedBy: req.admin?.name || String(req.admin?._id || "admin"),
+        });
+      }
+
+      order.updatedAt = new Date();
+      await order.save();
+
+      try {
+        const syncResult = await syncOrderShipment(order, { force: true });
+        if (syncResult.ok && syncResult.order) {
+          return res.json(syncResult.order);
+        }
+      } catch {
+        // sync failed; return saved order
+      }
+
+      res.json(order);
+    } catch (err) {
+      res.status(400).json({
+        error: err.message || "Courier booking failed",
+        code: "courier_api_error",
+      });
+    }
+  },
+);
 
 // POST /api/admin/orders/:id/shipment/sync — pull latest status from courier API
-router.post('/orders/:id/shipment/sync', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!order.shipment?.courier || !order.shipment?.trackingId) {
-      return res.status(400).json({ error: 'Courier and tracking ID are required.' });
-    }
+router.post(
+  "/orders/:id/shipment/sync",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const order = await Order.findById(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      if (!order.shipment?.courier || !order.shipment?.trackingId) {
+        return res
+          .status(400)
+          .json({ error: "Courier and tracking ID are required." });
+      }
 
-    if (!(await isCourierSyncConfigured(order.shipment.courier))) {
-      return res.status(400).json({
-        error:
-          'Courier API sync is not configured. Update order status manually or add a tracking link for the customer.',
-        code: 'courier_api_not_configured',
-      });
-    }
+      if (!(await isCourierSyncConfigured(order.shipment.courier))) {
+        return res.status(400).json({
+          error:
+            "Courier API sync is not configured. Update order status manually or add a tracking link for the customer.",
+          code: "courier_api_not_configured",
+        });
+      }
 
-    const result = await syncOrderShipment(order, { force: true });
-    if (!result.ok) {
-      const message =
-        result.reason === 'courier_api_not_configured'
-          ? 'Courier API sync is not configured. Update order status manually or add a tracking link for the customer.'
-          : result.reason || 'Could not sync shipment.';
-      return res.status(400).json({ error: message, code: result.reason });
+      const result = await syncOrderShipment(order, { force: true });
+      if (!result.ok) {
+        const message =
+          result.reason === "courier_api_not_configured"
+            ? "Courier API sync is not configured. Update order status manually or add a tracking link for the customer."
+            : result.reason || "Could not sync shipment.";
+        return res.status(400).json({ error: message, code: result.reason });
+      }
+      res.json(result.order);
+    } catch (err) {
+      res.status(502).json({ error: err.message || "Courier sync failed." });
     }
-    res.json(result.order);
-  } catch (err) {
-    res.status(502).json({ error: err.message || 'Courier sync failed.' });
-  }
-});
+  },
+);
 
 // DELETE /api/admin/orders/:id
-router.delete('/orders/:id', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const order = await Order.findByIdAndDelete(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/orders/:id",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const order = await Order.findByIdAndDelete(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ── Abandoned Carts ──────────────────────────────────────────────────────────
 
 // GET /api/admin/abandoned-carts — users with non-empty saved cart (5+ min old)
-router.get('/abandoned-carts', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { page = 1, limit = 20, q } = req.query;
-    const pg = Math.max(1, parseInt(page));
-    const lim = Math.min(100, Math.max(1, parseInt(limit)));
-    const lowerBound = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // last 30 days
-    const filter = {
-      'savedCart.items.0': { $exists: true },
-      'savedCart.updatedAt': { $gte: lowerBound },
-    };
-    if (q) {
-      filter.$or = [
-        { name: { $regex: q, $options: 'i' } },
-        { email: { $regex: q, $options: 'i' } },
-        { mobile: { $regex: q, $options: 'i' } },
-      ];
+router.get(
+  "/abandoned-carts",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20, q } = req.query;
+      const pg = Math.max(1, parseInt(page));
+      const lim = Math.min(100, Math.max(1, parseInt(limit)));
+      const lowerBound = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // last 30 days
+      const filter = {
+        "savedCart.items.0": { $exists: true },
+        "savedCart.updatedAt": { $gte: lowerBound },
+      };
+      if (q) {
+        filter.$or = [
+          { name: { $regex: q, $options: "i" } },
+          { email: { $regex: q, $options: "i" } },
+          { mobile: { $regex: q, $options: "i" } },
+        ];
+      }
+      const skip = (pg - 1) * lim;
+      const [users, total] = await Promise.all([
+        User.find(filter)
+          .select("name email mobile savedCart")
+          .sort({ "savedCart.updatedAt": -1 })
+          .skip(skip)
+          .limit(lim)
+          .lean(),
+        User.countDocuments(filter),
+      ]);
+      res.json({ users, total, pages: Math.ceil(total / lim) });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    const skip = (pg - 1) * lim;
-    const [users, total] = await Promise.all([
-      User.find(filter)
-        .select('name email mobile savedCart')
-        .sort({ 'savedCart.updatedAt': -1 })
-        .skip(skip)
-        .limit(lim)
-        .lean(),
-      User.countDocuments(filter),
-    ]);
-    res.json({ users, total, pages: Math.ceil(total / lim) });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // DELETE /api/admin/abandoned-carts/:userId/clear — clear a user's saved cart
-router.delete('/abandoned-carts/:userId/clear', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    await User.findByIdAndUpdate(req.params.userId, { savedCart: null });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/abandoned-carts/:userId/clear",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      await User.findByIdAndUpdate(req.params.userId, { savedCart: null });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ── Abandoned Checkouts ──────────────────────────────────────────────────────
 
 // GET /api/admin/abandoned-checkouts — incomplete checkout sessions from the last 30 days
-router.get('/abandoned-checkouts', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { page = 1, limit = 20, q } = req.query;
-    const pg = Math.max(1, parseInt(page));
-    const lim = Math.min(100, Math.max(1, parseInt(limit)));
-    const lowerBound = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // last 30 days
-    const filter = { status: 'incomplete', createdAt: { $gte: lowerBound } };
-    if (q) {
-      filter.$or = [
-        { userName: { $regex: q, $options: 'i' } },
-        { userEmail: { $regex: q, $options: 'i' } },
-        { userPhone: { $regex: q, $options: 'i' } },
+router.get(
+  "/abandoned-checkouts",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20, q } = req.query;
+      const pg = Math.max(1, parseInt(page));
+      const lim = Math.min(100, Math.max(1, parseInt(limit)));
+      const lowerBound = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // last 30 days
+      const filter = { status: "incomplete", createdAt: { $gte: lowerBound } };
+      if (q) {
+        filter.$or = [
+          { userName: { $regex: q, $options: "i" } },
+          { userEmail: { $regex: q, $options: "i" } },
+          { userPhone: { $regex: q, $options: "i" } },
+        ];
+      }
+      const skip = (pg - 1) * lim;
+      const [rawSessions, total] = await Promise.all([
+        CheckoutSession.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(lim)
+          .lean(),
+        CheckoutSession.countDocuments(filter),
+      ]);
+      // Enrich sessions that have a userId with user details
+      const userIds = [
+        ...new Set(rawSessions.map((s) => s.userId).filter(Boolean)),
       ];
+      let userMap = {};
+      if (userIds.length) {
+        const users = await User.find({ _id: { $in: userIds } })
+          .select("name email mobile")
+          .lean();
+        for (const u of users) userMap[String(u._id)] = u;
+      }
+      const sessions = rawSessions.map((s) => {
+        const u = s.userId ? userMap[String(s.userId)] : null;
+        return {
+          ...s,
+          userName: s.userName || u?.name || null,
+          userEmail: s.userEmail || u?.email || null,
+          userPhone: s.userPhone || u?.mobile || null,
+        };
+      });
+      res.json({ sessions, total, pages: Math.ceil(total / lim) });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
     }
-    const skip = (pg - 1) * lim;
-    const [rawSessions, total] = await Promise.all([
-      CheckoutSession.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(lim)
-        .lean(),
-      CheckoutSession.countDocuments(filter),
-    ]);
-    // Enrich sessions that have a userId with user details
-    const userIds = [...new Set(rawSessions.map((s) => s.userId).filter(Boolean))];
-    let userMap = {};
-    if (userIds.length) {
-      const users = await User.find({ _id: { $in: userIds } }).select('name email mobile').lean();
-      for (const u of users) userMap[String(u._id)] = u;
-    }
-    const sessions = rawSessions.map((s) => {
-      const u = s.userId ? userMap[String(s.userId)] : null;
-      return {
-        ...s,
-        userName: s.userName || u?.name || null,
-        userEmail: s.userEmail || u?.email || null,
-        userPhone: s.userPhone || u?.mobile || null,
-      };
-    });
-    res.json({ sessions, total, pages: Math.ceil(total / lim) });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+  },
+);
 
 // DELETE /api/admin/abandoned-checkouts/:id — remove a checkout session record
-router.delete('/abandoned-checkouts/:id', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    await CheckoutSession.findByIdAndDelete(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/abandoned-checkouts/:id",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      await CheckoutSession.findByIdAndDelete(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // ── All Wishlists ────────────────────────────────────────────────────────────
 
 // GET /api/admin/wishlists — products ranked by wishlist count
-router.get('/wishlists', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const pg = Math.max(1, parseInt(page));
-    const lim = Math.min(100, Math.max(1, parseInt(limit)));
+router.get(
+  "/wishlists",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 20 } = req.query;
+      const pg = Math.max(1, parseInt(page));
+      const lim = Math.min(100, Math.max(1, parseInt(limit)));
 
-    // Aggregate all wishlist entries across users
-    const allItems = await User.aggregate([
-      { $match: { 'wishlist.0': { $exists: true } } },
-      { $unwind: '$wishlist' },
-      { $group: {
-        _id: '$wishlist',
-        count: { $sum: 1 },
-        customers: { $push: { id: '$_id', name: '$name', email: '$email', mobile: '$mobile' } },
-      }},
-      { $sort: { count: -1 } },
-    ]);
+      // Aggregate all wishlist entries across users
+      const allItems = await User.aggregate([
+        { $match: { "wishlist.0": { $exists: true } } },
+        { $unwind: "$wishlist" },
+        {
+          $group: {
+            _id: "$wishlist",
+            count: { $sum: 1 },
+            customers: {
+              $push: {
+                id: "$_id",
+                name: "$name",
+                email: "$email",
+                mobile: "$mobile",
+              },
+            },
+          },
+        },
+        { $sort: { count: -1 } },
+      ]);
 
-    const total = allItems.length;
-    const pageItems = allItems.slice((pg - 1) * lim, pg * lim);
+      const total = allItems.length;
+      const pageItems = allItems.slice((pg - 1) * lim, pg * lim);
 
-    // Enrich with product details
-    const rawIds = pageItems.map((a) => a._id).filter(Boolean);
-    const objectIds = rawIds
-      .map((id) => { try { return new mongoose.Types.ObjectId(id); } catch { return null; } })
-      .filter(Boolean);
+      // Enrich with product details
+      const rawIds = pageItems.map((a) => a._id).filter(Boolean);
+      const objectIds = rawIds
+        .map((id) => {
+          try {
+            return new mongoose.Types.ObjectId(id);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
 
-    const products = objectIds.length
-      ? await Product.find({ _id: { $in: objectIds } }).select('title images price status').lean()
-      : [];
-    const productMap = {};
-    for (const p of products) productMap[String(p._id)] = p;
+      const products = objectIds.length
+        ? await Product.find({ _id: { $in: objectIds } })
+            .select("title images price status")
+            .lean()
+        : [];
+      const productMap = {};
+      for (const p of products) productMap[String(p._id)] = p;
 
-    const items = pageItems.map((a) => ({
-      productId: a._id,
-      product: productMap[String(a._id)] || null,
-      count: a.count,
-      customers: a.customers.slice(0, 10),
-    }));
+      const items = pageItems.map((a) => ({
+        productId: a._id,
+        product: productMap[String(a._id)] || null,
+        count: a.count,
+        customers: a.customers.slice(0, 10),
+      }));
 
-    res.json({ items, total, pages: Math.ceil(total / lim) });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+      res.json({ items, total, pages: Math.ceil(total / lim) });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // DELETE /api/admin/wishlists/:productId — remove product from ALL users' wishlists
-router.delete('/wishlists/:productId', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { productId } = req.params;
-    await User.updateMany(
-      { wishlist: productId },
-      { $pull: { wishlist: productId } }
-    );
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/wishlists/:productId",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { productId } = req.params;
+      await User.updateMany(
+        { wishlist: productId },
+        { $pull: { wishlist: productId } },
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 // DELETE /api/admin/wishlists/:productId/users/:userId — remove one user's wishlist entry
-router.delete('/wishlists/:productId/users/:userId', requireAdmin, requirePermission('orders'), async (req, res) => {
-  try {
-    const { productId, userId } = req.params;
-    await User.findByIdAndUpdate(userId, { $pull: { wishlist: productId } });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.delete(
+  "/wishlists/:productId/users/:userId",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { productId, userId } = req.params;
+      await User.findByIdAndUpdate(userId, { $pull: { wishlist: productId } });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 export default router;

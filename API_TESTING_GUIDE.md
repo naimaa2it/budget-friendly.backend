@@ -156,7 +156,7 @@ Content-Type: application/json
 
 Body:
 {
-  "email": "admin@SmartBuy BD.com",
+  "email": "admin@Pickob.com",
   "password": "admin123",
   "secret": "your_admin_secret"
 }
@@ -168,7 +168,7 @@ Body:
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@SmartBuy BD.com",
+    "email": "admin@Pickob.com",
     "password": "admin123",
     "secret": "your_admin_secret"
   }' \
@@ -182,7 +182,7 @@ curl -X POST http://localhost:5000/api/admin/login \
   "ok": true,
   "admin": {
     "_id": "admin123",
-    "email": "admin@SmartBuy BD.com",
+    "email": "admin@Pickob.com",
     "name": "Admin Name",
     "role": "admin"
   }
@@ -433,7 +433,7 @@ fetch("http://localhost:5000/api/products/upload", {
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "SmartBuy BD/products/abc123"
+  "public_id": "Pickob/products/abc123"
 }
 ```
 
@@ -796,7 +796,7 @@ Body:
     "details": "Unused with original packaging"
   },
   "seo": {
-    "title": "Buy Wireless Headphones - SmartBuy BD",
+    "title": "Buy Wireless Headphones - Pickob",
     "description": "Shop high-quality wireless headphones",
     "keywords": ["wireless", "headphones", "bluetooth"]
   }
@@ -932,8 +932,8 @@ Body:
   "title": "Summer Sale",
   "desktopImage": "https://res.cloudinary.com/.../desktop.webp",
   "mobileImage": "https://res.cloudinary.com/.../mobile.webp",
-  "desktopPublicId": "SmartBuy BD/banners/desktop123",
-  "mobilePublicId": "SmartBuy BD/banners/mobile123",
+  "desktopPublicId": "Pickob/banners/desktop123",
+  "mobilePublicId": "Pickob/banners/mobile123",
   "link": "/shop/summer-sale",
   "isActive": true
 }
@@ -965,7 +965,7 @@ Body:
   "status": "published",
   "publishedAt": "2026-03-28T10:00:00.000Z",
   "seo": {
-    "title": "Top 10 Fashion Trends in 2026 | SmartBuy BD Blog",
+    "title": "Top 10 Fashion Trends in 2026 | Pickob Blog",
     "description": "Explore the hottest fashion trends of 2026",
     "keywords": ["fashion", "trends", "style"]
   }
@@ -1003,13 +1003,13 @@ curl -X POST http://localhost:5000/api/admin/upload \
 **Postman:**
 
 ```
-GET {{baseUrl}}/api/admin/media?folder=SmartBuy BD/products&next_cursor=abc123
+GET {{baseUrl}}/api/admin/media?folder=Pickob/products&next_cursor=abc123
 ```
 
 **cURL:**
 
 ```bash
-curl "http://localhost:5000/api/admin/media?folder=SmartBuy BD/products" \
+curl "http://localhost:5000/api/admin/media?folder=Pickob/products" \
   -b admin_cookies.txt
 ```
 
@@ -1026,8 +1026,8 @@ Content-Type: application/json
 Body:
 {
   "public_ids": [
-    "SmartBuy BD/products/old_image1",
-    "SmartBuy BD/banners/old_banner"
+    "Pickob/products/old_image1",
+    "Pickob/banners/old_banner"
   ]
 }
 ```
@@ -1040,8 +1040,8 @@ curl -X DELETE http://localhost:5000/api/admin/media \
   -b admin_cookies.txt \
   -d '{
     "public_ids": [
-      "SmartBuy BD/products/old_image1",
-      "SmartBuy BD/banners/old_banner"
+      "Pickob/products/old_image1",
+      "Pickob/banners/old_banner"
     ]
   }'
 ```
@@ -1058,7 +1058,7 @@ Content-Type: application/json
 
 Body:
 {
-  "email": "moderator@SmartBuy BD.com",
+  "email": "moderator@Pickob.com",
   "name": "Moderator Name",
   "password": "securePassword123",
   "role": "moderator",
@@ -1182,7 +1182,7 @@ Body:
 ## Postman Collection Structure
 
 ```
-📁 SmartBuy BD API
+📁 Pickob API
 ├── 📁 Auth
 │   ├── User Login (Firebase)
 │   ├── Admin Login
@@ -1246,7 +1246,7 @@ Create environment in Postman with these variables:
 
 ```
 baseUrl: http://localhost:5000
-adminEmail: admin@SmartBuy BD.com
+adminEmail: admin@Pickob.com
 adminPassword: admin123
 adminSecret: your_admin_secret
 testUserId: user123

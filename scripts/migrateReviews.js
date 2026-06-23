@@ -12,7 +12,7 @@ import Review from "../models/Review.js";
 import FAQ from "../models/FAQ.js";
 
 const MONGODB_URI =
-  process.env.MONGODB_URI || "mongodb://localhost:27017/SmartBuy BD";
+  process.env.MONGODB_URI || "mongodb://localhost:27017/Pickob";
 
 async function run() {
   await mongoose.connect(MONGODB_URI);
@@ -70,7 +70,7 @@ async function run() {
           question: f.question || "",
           answer: f.answer || "",
           askedBy: f.askedBy || "Anonymous",
-          answeredBy: f.answeredBy || "SmartBuy BD Team",
+          answeredBy: f.answeredBy || "Pickob Team",
           isPublished: f.isPublished !== false,
           order: i,
           createdAt: f.createdAt || new Date(),

@@ -82,7 +82,7 @@ async function main() {
   const URI =
     process.env.MONGODB_URI ||
     process.env.MONGO_URI ||
-    "mongodb://localhost:27017/SmartBuy BD";
+    "mongodb://localhost:27017/Pickob";
   await mongoose.connect(URI);
   console.log("Connected to MongoDB");
 

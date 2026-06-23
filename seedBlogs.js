@@ -237,7 +237,7 @@ async function seedBlogs() {
   try {
     // Connect to MongoDB
     await mongoose.connect(
-      process.env.MONGODB_URI || "mongodb://localhost:27017/SmartBuy BD",
+      process.env.MONGODB_URI || "mongodb://localhost:27017/Pickob",
     );
     console.log("✅ Connected to MongoDB");
 

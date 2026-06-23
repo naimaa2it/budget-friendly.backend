@@ -16,7 +16,7 @@ const PaymentProvidersSchema = new mongoose.Schema(
 
 const SocialLinkSchema = new mongoose.Schema(
   {
-    url:     { type: String, default: '' },
+    url: { type: String, default: "" },
     enabled: { type: Boolean, default: true },
   },
   { _id: false },
@@ -24,22 +24,22 @@ const SocialLinkSchema = new mongoose.Schema(
 
 const PolicyItemSchema = new mongoose.Schema(
   {
-    question: { type: String, default: '' },
-    answer:   { type: String, default: '' },
+    question: { type: String, default: "" },
+    answer: { type: String, default: "" },
   },
   { _id: false },
 );
 
 const PolicySectionSchema = new mongoose.Schema(
   {
-    heading: { type: String, default: '' },
-    content: { type: String, default: '' },
+    heading: { type: String, default: "" },
+    content: { type: String, default: "" },
   },
   { _id: false },
 );
 
 const SettingsSchema = new mongoose.Schema({
-  storeName: { type: String, default: "SmartBuy BD" },
+  storeName: { type: String, default: "Pickob" },
   storeEmail: { type: String, default: "" },
   footerInfo: {
     phone: { type: String, default: "" },
@@ -52,17 +52,17 @@ const SettingsSchema = new mongoose.Schema({
     address: { type: String, default: "" },
   },
   socialLinks: {
-    facebook:  { type: SocialLinkSchema, default: () => ({}) },
+    facebook: { type: SocialLinkSchema, default: () => ({}) },
     instagram: { type: SocialLinkSchema, default: () => ({}) },
-    twitter:   { type: SocialLinkSchema, default: () => ({}) },
-    tiktok:    { type: SocialLinkSchema, default: () => ({}) },
-    youtube:   { type: SocialLinkSchema, default: () => ({}) },
+    twitter: { type: SocialLinkSchema, default: () => ({}) },
+    tiktok: { type: SocialLinkSchema, default: () => ({}) },
+    youtube: { type: SocialLinkSchema, default: () => ({}) },
   },
   taxPercent: { type: Number, default: 0 },
   lowStockThreshold: { type: Number, default: 5 },
   defaultShipping: { type: Number, default: 0 },
   paymentProviders: { type: PaymentProvidersSchema, default: () => ({}) },
-  cloudinaryFolder: { type: String, default: "SmartBuyBD/products" },
+  cloudinaryFolder: { type: String, default: "PickobBD/products" },
   topBannerEnabled: { type: Boolean, default: false },
   topBannerHtml: { type: String, default: "" },
   topBannerConfig: {
@@ -189,11 +189,11 @@ const SettingsSchema = new mongoose.Schema({
     },
   },
   policyContent: {
-    shipping: { type: [PolicyItemSchema],   default: [] },
-    return:   { type: [PolicyItemSchema],   default: [] },
-    faq:      { type: [PolicyItemSchema],   default: [] },
-    privacy:  { type: [PolicySectionSchema], default: [] },
-    terms:    { type: [PolicySectionSchema], default: [] },
+    shipping: { type: [PolicyItemSchema], default: [] },
+    return: { type: [PolicyItemSchema], default: [] },
+    faq: { type: [PolicyItemSchema], default: [] },
+    privacy: { type: [PolicySectionSchema], default: [] },
+    terms: { type: [PolicySectionSchema], default: [] },
   },
   updatedAt: { type: Date, default: Date.now },
 });

@@ -512,7 +512,7 @@ Cookie: token=<jwt_token>
 - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`
 - `IMG_MAX_WIDTH` (default: 1600)
 - `IMG_QUALITY` (default: 75)
-- `CLOUDINARY_FOLDER` (default: SmartBuy BD/products)
+- `CLOUDINARY_FOLDER` (default: Pickob/products)
 
 ---
 
@@ -521,7 +521,7 @@ Cookie: token=<jwt_token>
 ### Admin Login
 
 ```
-Email: admin@SmartBuy BD.com
+Email: admin@Pickob.com
 Password: admin123
 Secret: [Your ADMIN_SECRET]
 ```
@@ -543,13 +543,13 @@ CVV: 123
 **Get Products:**
 
 ```bash
-curl https://api.SmartBuy BD.com/api/products?page=1&limit=20
+curl https://api.Pickob.com/api/products?page=1&limit=20
 ```
 
 **Create Order:**
 
 ```bash
-curl -X POST https://api.SmartBuy BD.com/api/orders \
+curl -X POST https://api.Pickob.com/api/orders \
   -H "Content-Type: application/json" \
   -d '{
     "userEmail": "test@example.com",
@@ -562,10 +562,10 @@ curl -X POST https://api.SmartBuy BD.com/api/orders \
 **Admin Login:**
 
 ```bash
-curl -X POST https://api.SmartBuy BD.com/api/admin/login \
+curl -X POST https://api.Pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@SmartBuy BD.com",
+    "email": "admin@Pickob.com",
     "password": "admin123",
     "secret": "your_secret"
   }' \
@@ -575,7 +575,7 @@ curl -X POST https://api.SmartBuy BD.com/api/admin/login \
 **Get Dashboard (with cookie):**
 
 ```bash
-curl https://api.SmartBuy BD.com/api/admin/dashboard-overview \
+curl https://api.Pickob.com/api/admin/dashboard-overview \
   -b cookies.txt
 ```
 
@@ -625,6 +625,6 @@ curl https://api.SmartBuy BD.com/api/admin/dashboard-overview \
 ## Support
 
 - **Full Documentation:** See `API_DOCUMENTATION.md`
-- **Email:** support@SmartBuy BD.com
+- **Email:** support@Pickob.com
 - **Version:** 1.0.0
 - **Last Updated:** March 28, 2026

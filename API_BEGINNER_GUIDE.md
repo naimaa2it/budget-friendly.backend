@@ -1,6 +1,6 @@
 # Complete Step-by-Step API Guide (A to Z)
 
-**SmartBuy BD E-Commerce API - Beginner's Guide**
+**Pickob E-Commerce API - Beginner's Guide**
 
 This guide will walk you through every step of using the API, from the very first login to performing all major operations.
 
@@ -33,7 +33,7 @@ This guide will walk you through every step of using the API, from the very firs
 
 2. **Your backend server running**:
    - URL: `http://localhost:5000` (local development)
-   - OR your production URL: `https://SmartBuy BDbackend.onrender.com`
+   - OR your production URL: `https://Pickobbackend.onrender.com`
 
 3. **Basic information**:
    - Admin email and password (you'll create this)
@@ -47,7 +47,7 @@ This guide will walk you through every step of using the API, from the very firs
 
 ```bash
 # Navigate to backend folder
-cd e:/SmartBuy BD/SmartBuy BDbackend
+cd e:/Pickob/Pickobbackend
 
 # Install dependencies (first time only)
 npm install
@@ -822,7 +822,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 
 ```json
 {
-  "email": "admin@SmartBuy BD.com",
+  "email": "admin@Pickob.com",
   "password": "yourpassword123",
   "adminSecret": "your_admin_secret_key_here"
 }
@@ -836,7 +836,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 3. Body → raw → JSON
 4. Paste:
    {
-     "email": "admin@SmartBuy BD.com",
+     "email": "admin@Pickob.com",
      "password": "yourpassword123",
      "adminSecret": "paste_your_ADMIN_SECRET_here"
    }
@@ -849,7 +849,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@SmartBuy BD.com",
+    "email": "admin@Pickob.com",
     "password": "yourpassword123",
     "secret": "your_admin_secret"
   }' \
@@ -863,7 +863,7 @@ curl -X POST http://localhost:5000/api/admin/login \
   "ok": true,
   "admin": {
     "_id": "admin123",
-    "email": "admin@SmartBuy BD.com",
+    "email": "admin@Pickob.com",
     "name": "Admin Name",
     "role": "admin",
     "isActive": true
@@ -898,7 +898,7 @@ curl http://localhost:5000/api/auth/me -b admin_cookies.txt
 {
   "user": {
     "_id": "admin123",
-    "email": "admin@SmartBuy BD.com",
+    "email": "admin@Pickob.com",
     "role": "admin",
     "type": "admin"
   }
@@ -1094,8 +1094,8 @@ curl -X POST http://localhost:5000/api/admin/upload \
 
 ```json
 {
-  "url": "https://res.cloudinary.com/yourcloud/image/upload/v1234/SmartBuy BD/products/abc123.webp",
-  "public_id": "SmartBuy BD/products/abc123"
+  "url": "https://res.cloudinary.com/yourcloud/image/upload/v1234/Pickob/products/abc123.webp",
+  "public_id": "Pickob/products/abc123"
 }
 ```
 
@@ -1161,7 +1161,7 @@ Now let's create the actual product!
     "details": "Return unused items with original packaging"
   },
   "seo": {
-    "title": "Buy Wireless Bluetooth Headphones - SmartBuy BD",
+    "title": "Buy Wireless Bluetooth Headphones - Pickob",
     "description": "Shop high-quality wireless Bluetooth headphones with noise cancellation. Free shipping on orders over 999৳",
     "keywords": [
       "wireless headphones",
@@ -1440,7 +1440,7 @@ curl http://localhost:5000/api/orders/my -b customer.txt
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email":"admin@SmartBuy BD.com",
+    "email":"admin@Pickob.com",
     "password":"yourpass",
     "secret":"your_admin_secret"
   }' \
@@ -1670,7 +1670,7 @@ Body: {status}
 
 **Congratulations!** 🎉
 
-You now know how to use the SmartBuy BD API from A to Z!
+You now know how to use the Pickob API from A to Z!
 
 For more details, check out:
 

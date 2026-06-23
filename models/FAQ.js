@@ -10,7 +10,7 @@ const FAQSchema = new mongoose.Schema({
   question: { type: String, required: true },
   answer: { type: String, required: true },
   askedBy: { type: String, default: "Anonymous" },
-  answeredBy: { type: String, default: "SmartBuy BD Team" },
+  answeredBy: { type: String, default: "Pickob Team" },
   isPublished: { type: Boolean, default: true },
   order: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },

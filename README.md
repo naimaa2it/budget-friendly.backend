@@ -1,6 +1,6 @@
-# SmartBuy BD E-Commerce Backend
+# Pickob E-Commerce Backend
 
-A comprehensive Node.js/Express backend for the SmartBuy BD e-commerce platform with admin dashboard, payment integration, and full API support.
+A comprehensive Node.js/Express backend for the Pickob e-commerce platform with admin dashboard, payment integration, and full API support.
 
 ---
 
@@ -76,7 +76,7 @@ A comprehensive Node.js/Express backend for the SmartBuy BD e-commerce platform 
 
 ```bash
 git clone <your-repo-url>
-cd SmartBuy BDbackend
+cd Pickobbackend
 ```
 
 2. **Install dependencies**
@@ -130,7 +130,7 @@ PORT=5000
 NODE_ENV=development
 
 # Database
-MONGODB_URI=mongodb://localhost:27017/SmartBuy BD
+MONGODB_URI=mongodb://localhost:27017/Pickob
 
 # JWT Secret
 JWT_SECRET=your_super_secret_jwt_key_here_min_32_chars
@@ -142,7 +142,7 @@ ADMIN_SECRET=your_admin_secret_key
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
-CLOUDINARY_FOLDER=SmartBuy BD/products
+CLOUDINARY_FOLDER=Pickob/products
 
 # Image Optimization
 IMG_MAX_WIDTH=1600
@@ -201,7 +201,7 @@ node -e "console.log(require('crypto').randomBytes(16).toString('hex'))"
 ## 🗂️ Project Structure
 
 ```
-SmartBuy BDbackend/
+Pickobbackend/
 ├── index.js                 # Main server file
 ├── routes/
 │   ├── auth.js             # Authentication routes
@@ -287,7 +287,7 @@ curl -X POST http://localhost:5000/api/orders \
 curl -X POST http://localhost:5000/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@SmartBuy BD.com",
+    "email": "admin@Pickob.com",
     "password": "admin123",
     "secret": "your_admin_secret"
   }'
@@ -382,7 +382,7 @@ curl -X POST http://localhost:5000/api/products/upload \
 ```json
 {
   "url": "https://res.cloudinary.com/.../optimized.webp",
-  "public_id": "SmartBuy BD/products/abc123"
+  "public_id": "Pickob/products/abc123"
 }
 ```
 
@@ -511,7 +511,7 @@ Import the API collection structure from [API_TESTING_GUIDE.md](./API_TESTING_GU
 heroku login
 
 # Create app
-heroku create SmartBuy BD-api
+heroku create Pickob-api
 
 # Set environment variables
 heroku config:set NODE_ENV=production
@@ -538,11 +538,11 @@ sudo npm install -g pm2
 
 # Clone and setup
 git clone <your-repo>
-cd SmartBuy BDbackend
+cd Pickobbackend
 npm install
 
 # Start with PM2
-pm2 start index.js --name SmartBuy BD-api
+pm2 start index.js --name Pickob-api
 pm2 startup
 pm2 save
 
@@ -662,7 +662,7 @@ This project is proprietary and confidential.
 
 ## 📞 Support
 
-- **Email:** support@SmartBuy BD.com
+- **Email:** support@Pickob.com
 - **Documentation:** See `/docs` folder
 - **Issues:** Create GitHub issue
 
@@ -696,7 +696,7 @@ This project is proprietary and confidential.
 
 ---
 
-**Built with ❤️ by the SmartBuy BD Team**
+**Built with ❤️ by the Pickob Team**
 
 **Version:** 1.0.0
 **Last Updated:** March 28, 2026
@@ -712,7 +712,7 @@ This project is proprietary and confidential.
 - 📊 [Admin Dashboard](#)
 
 // Connect to MongoDB (with fallback if SRV DNS lookup fails)
-const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/SmartBuy BD';
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/Pickob';
 const MONGODB_URI_DIRECT = process.env.MONGODB_URI_DIRECT;
 
 async function connectMongo() {
@@ -751,15 +751,15 @@ console.log(`Server is running on port ${PORT}`);
 });
 
 ADMIN_EMAIL=naimaa2it@gmail.com
-ADMIN_SECRET=SmartBuy BDadminsecrect262626
+ADMIN_SECRET=Pickobadminsecrect262626
 CLOUDINARY_API_KEY=446279722954425
 CLOUDINARY_API_SECRET=6f286BxKJk2FEgR1kHYKoqlyTyY
 CLOUDINARY_CLOUD_NAME=dqyaobg8j
 
-# FRONTEND_ORIGIN=https://SmartBuy BDfrontend-ei5y.vercel.app
+# FRONTEND_ORIGIN=https://Pickobfrontend-ei5y.vercel.app
 
 FRONTEND_ORIGIN=http://localhost:3000
-MONGODB_URI="mongodb://SmartBuy BD:SmartBuy BD@ac-uarjbv7-shard-00-00.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-01.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-02.txpmesm.mongodb.net:27017/SmartBuy BD?ssl=true&replicaSet=atlas-ji89w4-shard-0&authSource=admin&retryWrites=true&w=majority"
+MONGODB_URI="mongodb://Pickob:Pickob@ac-uarjbv7-shard-00-00.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-01.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-02.txpmesm.mongodb.net:27017/Pickob?ssl=true&replicaSet=atlas-ji89w4-shard-0&authSource=admin&retryWrites=true&w=majority"
 PORT=5000
 SMTP_HOST=smtp.gmail.com
 SMTP_PASS="obsi iufk hodz hses"
@@ -767,7 +767,7 @@ SMTP_PORT=465
 SMTP_USER=naimaa2it@gmail.com
 STORE_EMAIL=naimaa2it@gmail.com
 STORE_ID=a2it69acfd899c29d
-STORE_NAME=SmartBuy BD
+STORE_NAME=Pickob
 STORE_PASSWORD=a2it69acfd899c29d@ssl
 STORE_PHONE=01884242851
 
@@ -839,7 +839,7 @@ next();
 const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB (with fallback if SRV DNS lookup fails)
-const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/SmartBuy BD';
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/Pickob';
 const MONGODB_URI_DIRECT = process.env.MONGODB_URI_DIRECT;
 
 async function connectMongo() {

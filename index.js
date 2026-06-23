@@ -70,7 +70,7 @@ const ALLOWED_ORIGINS = new Set(
     .map((o) => o.trim())
     .filter(Boolean),
 );
-// Optional: allow Vercel preview URLs matching a pattern, e.g. ^https://SmartBuy BDfrontend-[a-z0-9-]+\.vercel\.app$
+// Optional: allow Vercel preview URLs matching a pattern, e.g. ^https://Pickobfrontend-[a-z0-9-]+\.vercel\.app$
 const VERCEL_PATTERN = process.env.VERCEL_PROJECT_PATTERN
   ? new RegExp(process.env.VERCEL_PROJECT_PATTERN)
   : null;
@@ -121,7 +121,7 @@ const PORT = process.env.PORT || 5000;
 const MONGODB_URI =
   process.env.MONGODB_URI ||
   process.env.MONGO_URI ||
-  "mongodb://localhost:27017/SmartBuy BD";
+  "mongodb://localhost:27017/Pickob";
 const MONGODB_URI_DIRECT = process.env.MONGODB_URI_DIRECT;
 
 async function connectMongo() {
@@ -244,7 +244,7 @@ connectMongo()
   .catch(() => {});
 
 app.get("/", (req, res) => {
-  res.send("Welcome to SmartBuy BD Backend!");
+  res.send("Welcome to Pickob Backend!");
 });
 
 app.use("/api/auth", authLimiter, authRoutes); // here have all of the auth related routes like login, register, logout, refresh token etc.
