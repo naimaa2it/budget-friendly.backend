@@ -461,6 +461,24 @@ router.put("/settings", requireAdmin, async (req, res) => {
   }
 });
 
+// Policy pages content — any authenticated moderator/admin can manage
+router.put("/settings/policy", requireAdmin, async (req, res) => {
+  try {
+    const { policyContent } = req.body || {};
+    if (!policyContent || typeof policyContent !== "object")
+      return res.status(400).json({ error: "policyContent object required" });
+    const Setting = (await import("../models/Setting.js")).default;
+    const settings = await Setting.findOneAndUpdate(
+      {},
+      { $set: { policyContent } },
+      { upsert: true, new: true },
+    );
+    res.json({ ok: true, settings });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // Badge options — moderators with catalog permission can manage
 router.put(
   "/settings/badges",

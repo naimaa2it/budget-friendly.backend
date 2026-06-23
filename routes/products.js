@@ -84,7 +84,9 @@ router.get("/", async (req, res) => {
     }
     if (badge) filter.badges = badge;
     if (tag) {
-      const tagVal = String(tag).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const tagVal = String(tag)
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filter.tags = { $regex: tagVal, $options: "i" };
     }
     // boolean flag fields — whitelist to prevent injection
@@ -243,7 +245,7 @@ router.get("/categories", async (req, res) => {
         _id: c._id,
         name: c.name,
         slug: c.slug,
-        description: c.description || '',
+        description: c.description || "",
         parent: c.parent ? String(c.parent) : null,
         level: c.level,
         order: c.order,
@@ -492,30 +494,42 @@ const reviewImageUpload = multer({
   },
 });
 
-router.post("/review-images/upload", requireUser, reviewImageUpload.array("images", 4), async (req, res) => {
-  try {
-    ensureCloudinaryConfigured();
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: "No files uploaded" });
+router.post(
+  "/review-images/upload",
+  requireUser,
+  reviewImageUpload.array("images", 4),
+  async (req, res) => {
+    try {
+      ensureCloudinaryConfigured();
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+      const urls = await Promise.all(
+        req.files.map(
+          (file) =>
+            new Promise((resolve, reject) => {
+              cloudinary.uploader
+                .upload_stream(
+                  {
+                    folder: `${process.env.CLOUDINARY_FOLDER || "PickobBD"}/reviews`,
+                    quality: "auto",
+                    fetch_format: "auto",
+                  },
+                  (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result.secure_url);
+                  },
+                )
+                .end(file.buffer);
+            }),
+        ),
+      );
+      res.json({ ok: true, urls });
+    } catch (err) {
+      res.status(500).json({ error: "Upload failed" });
     }
-    const urls = await Promise.all(
-      req.files.map((file) =>
-        new Promise((resolve, reject) => {
-          cloudinary.uploader.upload_stream(
-            { folder: `${process.env.CLOUDINARY_FOLDER || "SmartBuyBD"}/reviews`, quality: "auto", fetch_format: "auto" },
-            (err, result) => {
-              if (err) reject(err);
-              else resolve(result.secure_url);
-            },
-          ).end(file.buffer);
-        }),
-      ),
-    );
-    res.json({ ok: true, urls });
-  } catch (err) {
-    res.status(500).json({ error: "Upload failed" });
-  }
-});
+  },
+);
 
 // Submit a review (must be logged-in user)
 router.post("/:id/reviews", requireUser, reviewLimiter, async (req, res) => {
@@ -531,7 +545,9 @@ router.post("/:id/reviews", requireUser, reviewLimiter, async (req, res) => {
       authorName?.trim() || req.user.name || req.user.email.split("@")[0];
     // validate images: max 4 URLs, must be strings
     const reviewImages = Array.isArray(images)
-      ? images.filter((u) => typeof u === "string" && u.startsWith("http")).slice(0, 4)
+      ? images
+          .filter((u) => typeof u === "string" && u.startsWith("http"))
+          .slice(0, 4)
       : [];
     prod.reviews.push({
       user: req.user._id,
@@ -575,13 +591,18 @@ router.put("/:id/reviews/:index", requireUser, async (req, res) => {
     if (Date.now() - new Date(review.createdAt).getTime() > EDIT_WINDOW_MS)
       return res
         .status(403)
-        .json({ error: "Edit window expired. Reviews can only be edited within 10 minutes of posting." });
+        .json({
+          error:
+            "Edit window expired. Reviews can only be edited within 10 minutes of posting.",
+        });
     review.authorName =
       authorName?.trim() || req.user.name || req.user.email.split("@")[0];
     review.rating = Number(rating);
     review.body = body.trim();
     if (Array.isArray(images)) {
-      review.images = images.filter((u) => typeof u === "string" && u.startsWith("http")).slice(0, 4);
+      review.images = images
+        .filter((u) => typeof u === "string" && u.startsWith("http"))
+        .slice(0, 4);
     }
     await prod.save();
     res.json({
@@ -940,7 +961,7 @@ router.post(
         new Promise((resolve, reject) => {
           const stream = cloudinary.uploader.upload_stream(
             {
-              folder: `${process.env.CLOUDINARY_FOLDER || 'SmartBuyBD'}/products`,
+              folder: `${process.env.CLOUDINARY_FOLDER || "PickobBD"}/products`,
               resource_type: "image",
             },
             (error, result) => {
