@@ -12,6 +12,7 @@ import CheckoutSession from "../models/CheckoutSession.js";
 import CustomerTag from "../models/CustomerTag.js";
 import Barcode from "../models/Barcode.js";
 import Product from "../models/Product.js";
+import FAQ from "../models/FAQ.js";
 import Variation from "../models/Variation.js";
 import BlogPost from "../models/BlogPost.js";
 import BlogCategory from "../models/BlogCategory.js";
@@ -1585,16 +1586,24 @@ router.post(
       clone.reviewCount = 0;
       clone.averageRating = 0;
       clone.monthlySold = 0;
-      clone.inventory = 0;
       if (Array.isArray(clone.variants)) {
-        clone.variants = clone.variants.map(({ _id, ...rest }) => ({
-          ...rest,
-          inventory: 0,
-        }));
+        clone.variants = clone.variants.map(({ _id, ...rest }) => ({ ...rest }));
       }
 
       const p = new Product(clone);
       await p.save();
+
+      // copy FAQ entries from the separate FAQ collection
+      const sourceFaqs = await FAQ.find({ productId: source._id }).lean();
+      if (sourceFaqs.length > 0) {
+        await FAQ.insertMany(
+          sourceFaqs.map(({ _id, createdAt, updatedAt, ...faq }) => ({
+            ...faq,
+            productId: p._id,
+          })),
+        );
+      }
+
       clearProductsCache();
       res.json({ ok: true, product: p });
     } catch (err) {
