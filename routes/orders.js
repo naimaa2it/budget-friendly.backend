@@ -40,8 +40,8 @@ import {
 
 const router = express.Router();
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
-const FRONTEND_URL = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
+const BACKEND_URL = process.env.BACKEND_URL || "https://api.pickob.com";
+const FRONTEND_URL = process.env.FRONTEND_ORIGIN || "https://pickob.com";
 // Credentials are read lazily (inside each handler) so they are always
 // resolved after dotenv has populated process.env, regardless of ESM
 // module evaluation order.
