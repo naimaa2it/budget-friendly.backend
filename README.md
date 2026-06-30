@@ -106,7 +106,7 @@ npm start
 6. **Verify installation**
 
 ```bash
-curl http://localhost:5000/api/auth/ping
+curl https://api.pickob.com/api/auth/ping
 ```
 
 Expected response:
@@ -150,7 +150,7 @@ IMG_QUALITY=75
 
 # CORS Configuration
 FRONTEND_ORIGIN=http://localhost:3000
-BACKEND_URL=http://localhost:5000
+BACKEND_URL=https://api.pickob.com
 
 # SSLCommerz Payment Gateway
 STORE_ID=your_store_id
@@ -244,7 +244,7 @@ Pickobbackend/
 ### Base URL
 
 ```
-Development: http://localhost:5000
+Development: https://api.pickob.com
 Production: https://api.yourdomain.com
 ```
 
@@ -265,13 +265,13 @@ Production: https://api.yourdomain.com
 **List Products:**
 
 ```bash
-curl http://localhost:5000/api/products?page=1&limit=20
+curl https://api.pickob.com/api/products?page=1&limit=20
 ```
 
 **Create Order:**
 
 ```bash
-curl -X POST http://localhost:5000/api/orders \
+curl -X POST https://api.pickob.com/api/orders \
   -H "Content-Type: application/json" \
   -d '{
     "userEmail": "customer@example.com",
@@ -284,7 +284,7 @@ curl -X POST http://localhost:5000/api/orders \
 **Admin Login:**
 
 ```bash
-curl -X POST http://localhost:5000/api/admin/login \
+curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@Pickob.com",
@@ -373,7 +373,7 @@ All uploaded images are automatically optimized:
 ### Upload Endpoint
 
 ```bash
-curl -X POST http://localhost:5000/api/products/upload \
+curl -X POST https://api.pickob.com/api/products/upload \
   -F "image=@/path/to/image.jpg"
 ```
 
@@ -470,13 +470,13 @@ See [API_TESTING_GUIDE.md](./API_TESTING_GUIDE.md) for detailed testing instruct
 
 ```bash
 # Test server health
-curl http://localhost:5000/api/auth/ping
+curl https://api.pickob.com/api/auth/ping
 
 # Test product listing
-curl http://localhost:5000/api/products?limit=5
+curl https://api.pickob.com/api/products?limit=5
 
 # Test with authentication
-curl http://localhost:5000/api/auth/me \
+curl https://api.pickob.com/api/auth/me \
   -H "Cookie: token=<your_jwt_token>"
 ```
 
@@ -558,7 +558,7 @@ server {
     server_name api.yourdomain.com;
 
     location / {
-        proxy_pass http://localhost:5000;
+        proxy_pass https://api.pickob.com;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';

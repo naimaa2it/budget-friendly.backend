@@ -1,7 +1,7 @@
 # Pickob E-Commerce Platform - API Documentation
 
 **Version:** 1.0.0
-**Base URL:** `https://your-backend-domain.com` or `http://localhost:5000`
+**Base URL:** `https://your-backend-domain.com` or `https://api.pickob.com`
 **Last Updated:** March 28, 2026
 
 ---

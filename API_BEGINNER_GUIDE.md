@@ -32,7 +32,7 @@ This guide will walk you through every step of using the API, from the very firs
    - **Your browser console** (Press F12 in Chrome/Firefox)
 
 2. **Your backend server running**:
-   - URL: `http://localhost:5000` (local development)
+   - URL: `https://api.pickob.com` (local development)
    - OR your production URL: `https://Pickobbackend.onrender.com`
 
 3. **Basic information**:
@@ -64,7 +64,7 @@ Server is running on port 5000
 Using MongoDB URI: MONGODB_URI
 ```
 
-✅ **Success!** Your server is now running at `http://localhost:5000`
+✅ **Success!** Your server is now running at `https://api.pickob.com`
 
 ---
 
@@ -73,18 +73,18 @@ Using MongoDB URI: MONGODB_URI
 **Using cURL:**
 
 ```bash
-curl http://localhost:5000/api/auth/ping
+curl https://api.pickob.com/api/auth/ping
 ```
 
 **Using Browser:**
-Open your browser and go to: `http://localhost:5000/api/auth/ping`
+Open your browser and go to: `https://api.pickob.com/api/auth/ping`
 
 **Using Postman:**
 
 1. Open Postman
 2. Create a new request
 3. Set method to `GET`
-4. Enter URL: `http://localhost:5000/api/auth/ping`
+4. Enter URL: `https://api.pickob.com/api/auth/ping`
 5. Click "Send"
 
 **Expected Response:**
@@ -115,7 +115,7 @@ Every API call has these parts:
    - DELETE = Remove data
 
 2. **URL** (Where to send the request)
-   - Example: `http://localhost:5000/api/products`
+   - Example: `https://api.pickob.com/api/products`
 
 3. **Headers** (Additional information)
    - Example: `Content-Type: application/json`
@@ -130,20 +130,20 @@ Every API call has these parts:
 ```
 1. Click "New" → "HTTP Request"
 2. Set Method: GET
-3. Enter URL: http://localhost:5000/api/products
+3. Enter URL: https://api.pickob.com/api/products
 4. Click "Send"
 ```
 
 **Using cURL:**
 
 ```bash
-curl http://localhost:5000/api/products
+curl https://api.pickob.com/api/products
 ```
 
 **Using Browser Console (F12):**
 
 ```javascript
-fetch("http://localhost:5000/api/products")
+fetch("https://api.pickob.com/api/products")
   .then((response) => response.json())
   .then((data) => console.log(data));
 ```
@@ -187,7 +187,7 @@ This API uses **JWT tokens** stored in **cookies**:
 ### 3.2 User Registration/Login (Firebase)
 
 **Method:** POST
-**URL:** `http://localhost:5000/api/auth/firebase-login`
+**URL:** `https://api.pickob.com/api/auth/firebase-login`
 **Content-Type:** application/json
 
 **Request Body:**
@@ -205,7 +205,7 @@ This API uses **JWT tokens** stored in **cookies**:
 
 ```
 1. Method: POST
-2. URL: http://localhost:5000/api/auth/firebase-login
+2. URL: https://api.pickob.com/api/auth/firebase-login
 3. Go to "Body" tab → Select "raw" → Select "JSON"
 4. Paste the JSON above
 5. Click "Send"
@@ -214,7 +214,7 @@ This API uses **JWT tokens** stored in **cookies**:
 **Using cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/auth/firebase-login \
+curl -X POST https://api.pickob.com/api/auth/firebase-login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john.doe@example.com",
@@ -230,7 +230,7 @@ curl -X POST http://localhost:5000/api/auth/firebase-login \
 **Using Browser Console:**
 
 ```javascript
-fetch("http://localhost:5000/api/auth/firebase-login", {
+fetch("https://api.pickob.com/api/auth/firebase-login", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -272,13 +272,13 @@ fetch("http://localhost:5000/api/auth/firebase-login", {
 ### 3.3 Verify You're Logged In
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/auth/me`
+**URL:** `https://api.pickob.com/api/auth/me`
 
 **Using Postman:**
 
 ```
 1. Method: GET
-2. URL: http://localhost:5000/api/auth/me
+2. URL: https://api.pickob.com/api/auth/me
 3. Click "Send"
 ```
 
@@ -287,13 +287,13 @@ fetch("http://localhost:5000/api/auth/firebase-login", {
 **Using cURL (with saved cookie):**
 
 ```bash
-curl http://localhost:5000/api/auth/me -b cookies.txt
+curl https://api.pickob.com/api/auth/me -b cookies.txt
 ```
 
 **Using Browser Console:**
 
 ```javascript
-fetch("http://localhost:5000/api/auth/me", {
+fetch("https://api.pickob.com/api/auth/me", {
   credentials: "include",
 })
   .then((res) => res.json())
@@ -324,10 +324,10 @@ Now that you're logged in, let's explore products.
 ### 4.1 Get All Products (Basic)
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/products`
+**URL:** `https://api.pickob.com/api/products`
 
 ```bash
-curl http://localhost:5000/api/products
+curl https://api.pickob.com/api/products
 ```
 
 ---
@@ -335,10 +335,10 @@ curl http://localhost:5000/api/products
 ### 4.2 Search Products
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/products?q=phone`
+**URL:** `https://api.pickob.com/api/products?q=phone`
 
 ```bash
-curl "http://localhost:5000/api/products?q=phone"
+curl "https://api.pickob.com/api/products?q=phone"
 ```
 
 **What this does:** Searches for products with "phone" in the title or description.
@@ -348,10 +348,10 @@ curl "http://localhost:5000/api/products?q=phone"
 ### 4.3 Filter by Price Range
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/products?minPrice=500&maxPrice=2000`
+**URL:** `https://api.pickob.com/api/products?minPrice=500&maxPrice=2000`
 
 ```bash
-curl "http://localhost:5000/api/products?minPrice=500&maxPrice=2000"
+curl "https://api.pickob.com/api/products?minPrice=500&maxPrice=2000"
 ```
 
 **What this does:** Shows only products between 500৳ and 2000৳.
@@ -361,10 +361,10 @@ curl "http://localhost:5000/api/products?minPrice=500&maxPrice=2000"
 ### 4.4 Filter by Category
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/products?categoryId=cat123`
+**URL:** `https://api.pickob.com/api/products?categoryId=cat123`
 
 ```bash
-curl "http://localhost:5000/api/products?categoryId=cat123"
+curl "https://api.pickob.com/api/products?categoryId=cat123"
 ```
 
 ---
@@ -372,7 +372,7 @@ curl "http://localhost:5000/api/products?categoryId=cat123"
 ### 4.5 Sort Products by Price (Low to High)
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/products?sort=priceLow`
+**URL:** `https://api.pickob.com/api/products?sort=priceLow`
 
 **All sort options:**
 
@@ -388,13 +388,13 @@ curl "http://localhost:5000/api/products?categoryId=cat123"
 ### 4.6 Combine Filters (Power Search!)
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/products?q=shirt&minPrice=500&maxPrice=1500&sort=priceLow&page=1&limit=20`
+**URL:** `https://api.pickob.com/api/products?q=shirt&minPrice=500&maxPrice=1500&sort=priceLow&page=1&limit=20`
 
 **Using Postman:**
 
 ```
 1. Method: GET
-2. URL: http://localhost:5000/api/products
+2. URL: https://api.pickob.com/api/products
 3. Click "Params" tab
 4. Add parameters:
    - q: shirt
@@ -418,14 +418,14 @@ curl "http://localhost:5000/api/products?categoryId=cat123"
 ### 4.7 Get Single Product Details
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/products/prod123`
+**URL:** `https://api.pickob.com/api/products/prod123`
 
 Replace `prod123` with the actual product ID from the list.
 
 **Using cURL:**
 
 ```bash
-curl http://localhost:5000/api/products/prod123
+curl https://api.pickob.com/api/products/prod123
 ```
 
 **Expected Response:**
@@ -460,7 +460,7 @@ Now let's place an order! This is a multi-step process.
 Before creating an actual order, let's preview the price.
 
 **Method:** POST
-**URL:** `http://localhost:5000/api/orders/quote`
+**URL:** `https://api.pickob.com/api/orders/quote`
 **Content-Type:** application/json
 
 **Request Body:**
@@ -484,7 +484,7 @@ Before creating an actual order, let's preview the price.
 
 ```
 1. Method: POST
-2. URL: http://localhost:5000/api/orders/quote
+2. URL: https://api.pickob.com/api/orders/quote
 3. Body → raw → JSON
 4. Paste JSON above
 5. Click "Send"
@@ -493,7 +493,7 @@ Before creating an actual order, let's preview the price.
 **Using cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/orders/quote \
+curl -X POST https://api.pickob.com/api/orders/quote \
   -H "Content-Type: application/json" \
   -d '{
     "items": [
@@ -552,7 +552,7 @@ curl -X POST http://localhost:5000/api/orders/quote \
 Now let's create the real order!
 
 **Method:** POST
-**URL:** `http://localhost:5000/api/orders`
+**URL:** `https://api.pickob.com/api/orders`
 **Content-Type:** application/json
 
 **Request Body:**
@@ -586,7 +586,7 @@ Now let's create the real order!
 
 ```
 1. Method: POST
-2. URL: http://localhost:5000/api/orders
+2. URL: https://api.pickob.com/api/orders
 3. Body → raw → JSON
 4. Paste the complete JSON above
 5. Click "Send"
@@ -595,7 +595,7 @@ Now let's create the real order!
 **Using cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/orders \
+curl -X POST https://api.pickob.com/api/orders \
   -H "Content-Type: application/json" \
   -d '{
     "userEmail": "john.doe@example.com",
@@ -694,13 +694,13 @@ For online payment (Bkash, cards), change the `paymentMethod`:
 ### 5.4 View Your Orders
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/orders/my`
+**URL:** `https://api.pickob.com/api/orders/my`
 
 **Using Postman:**
 
 ```
 1. Method: GET
-2. URL: http://localhost:5000/api/orders/my
+2. URL: https://api.pickob.com/api/orders/my
 3. Make sure you're logged in (cookie from Step 3)
 4. Click "Send"
 ```
@@ -708,7 +708,7 @@ For online payment (Bkash, cards), change the `paymentMethod`:
 **Using cURL:**
 
 ```bash
-curl http://localhost:5000/api/orders/my -b cookies.txt
+curl https://api.pickob.com/api/orders/my -b cookies.txt
 ```
 
 **Expected Response:**
@@ -735,12 +735,12 @@ curl http://localhost:5000/api/orders/my -b cookies.txt
 ### 5.5 View Single Order Details
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/orders/order123`
+**URL:** `https://api.pickob.com/api/orders/order123`
 
 Replace `order123` with your actual order ID.
 
 ```bash
-curl http://localhost:5000/api/orders/order123
+curl https://api.pickob.com/api/orders/order123
 ```
 
 ---
@@ -750,13 +750,13 @@ curl http://localhost:5000/api/orders/order123
 You can cancel COD orders within 30 minutes of creation.
 
 **Method:** PATCH
-**URL:** `http://localhost:5000/api/orders/order123/cancel`
+**URL:** `https://api.pickob.com/api/orders/order123/cancel`
 
 **Using Postman:**
 
 ```
 1. Method: PATCH
-2. URL: http://localhost:5000/api/orders/order123/cancel
+2. URL: https://api.pickob.com/api/orders/order123/cancel
 3. Make sure you're logged in
 4. Click "Send"
 ```
@@ -764,7 +764,7 @@ You can cancel COD orders within 30 minutes of creation.
 **Using cURL:**
 
 ```bash
-curl -X PATCH http://localhost:5000/api/orders/order123/cancel \
+curl -X PATCH https://api.pickob.com/api/orders/order123/cancel \
   -b cookies.txt
 ```
 
@@ -783,7 +783,7 @@ curl -X PATCH http://localhost:5000/api/orders/order123/cancel \
 
 ### 5.7 Edit Order(within 30 minutes)
 
-1.Method: Patch 2. URL: http://localhost:5000/api/orders/:id/edit 3. Make sure you're logged in 4. Click "Send"
+1.Method: Patch 2. URL: https://api.pickob.com/api/orders/:id/edit 3. Make sure you're logged in 4. Click "Send"
 
 {"items": [
 {
@@ -815,7 +815,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 ### 6.2 Admin Login
 
 **Method:** POST
-**URL:** `http://localhost:5000/api/admin/login`
+**URL:** `https://api.pickob.com/api/admin/login`
 **Content-Type:** application/json
 
 **Request Body:**
@@ -832,7 +832,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 
 ```
 1. Method: POST
-2. URL: http://localhost:5000/api/admin/login
+2. URL: https://api.pickob.com/api/admin/login
 3. Body → raw → JSON
 4. Paste:
    {
@@ -846,7 +846,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 **Using cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/admin/login \
+curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@Pickob.com",
@@ -884,12 +884,12 @@ curl -X POST http://localhost:5000/api/admin/login \
 ### 6.3 Verify Admin Login
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/auth/me`
+**URL:** `https://api.pickob.com/api/auth/me`
 
 **Using cURL:**
 
 ```bash
-curl http://localhost:5000/api/auth/me -b admin_cookies.txt
+curl https://api.pickob.com/api/auth/me -b admin_cookies.txt
 ```
 
 **Expected Response:**
@@ -916,13 +916,13 @@ Now let's explore the admin dashboard.
 ### 7.1 Get Dashboard Overview
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/admin/dashboard-overview`
+**URL:** `https://api.pickob.com/api/admin/dashboard-overview`
 
 **Using Postman:**
 
 ```
 1. Method: GET
-2. URL: http://localhost:5000/api/admin/dashboard-overview
+2. URL: https://api.pickob.com/api/admin/dashboard-overview
 3. Make sure you're logged in as admin
 4. Click "Send"
 ```
@@ -930,7 +930,7 @@ Now let's explore the admin dashboard.
 **Using cURL:**
 
 ```bash
-curl http://localhost:5000/api/admin/dashboard-overview \
+curl https://api.pickob.com/api/admin/dashboard-overview \
   -b admin_cookies.txt
 ```
 
@@ -1003,7 +1003,7 @@ curl http://localhost:5000/api/admin/dashboard-overview \
 Before creating products, you need categories.
 
 **Method:** POST
-**URL:** `http://localhost:5000/api/admin/categories`
+**URL:** `https://api.pickob.com/api/admin/categories`
 **Content-Type:** application/json
 
 **Request Body:**
@@ -1021,7 +1021,7 @@ Before creating products, you need categories.
 
 ```
 1. Method: POST
-2. URL: http://localhost:5000/api/admin/categories
+2. URL: https://api.pickob.com/api/admin/categories
 3. Body → raw → JSON
 4. Paste the JSON above
 5. Make sure you're logged in as admin
@@ -1031,7 +1031,7 @@ Before creating products, you need categories.
 **Using cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/admin/categories \
+curl -X POST https://api.pickob.com/api/admin/categories \
   -H "Content-Type: application/json" \
   -b admin_cookies.txt \
   -d '{
@@ -1066,14 +1066,14 @@ curl -X POST http://localhost:5000/api/admin/categories \
 Before creating a product, let's upload an image.
 
 **Method:** POST
-**URL:** `http://localhost:5000/api/admin/upload`
+**URL:** `https://api.pickob.com/api/admin/upload`
 **Content-Type:** multipart/form-data
 
 **Using Postman:**
 
 ```
 1. Method: POST
-2. URL: http://localhost:5000/api/admin/upload
+2. URL: https://api.pickob.com/api/admin/upload
 3. Body → form-data
 4. Add field:
    - Key: image (change type to "File")
@@ -1085,7 +1085,7 @@ Before creating a product, let's upload an image.
 **Using cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/admin/upload \
+curl -X POST https://api.pickob.com/api/admin/upload \
   -b admin_cookies.txt \
   -F "image=@/path/to/your/product-image.jpg"
 ```
@@ -1108,7 +1108,7 @@ curl -X POST http://localhost:5000/api/admin/upload \
 Now let's create the actual product!
 
 **Method:** POST
-**URL:** `http://localhost:5000/api/admin/products`
+**URL:** `https://api.pickob.com/api/admin/products`
 **Content-Type:** application/json
 
 **Request Body:**
@@ -1176,7 +1176,7 @@ Now let's create the actual product!
 
 ```
 1. Method: POST
-2. URL: http://localhost:5000/api/admin/products
+2. URL: https://api.pickob.com/api/admin/products
 3. Body → raw → JSON
 4. Paste the complete JSON above
 5. Update the categoryId with your actual category ID
@@ -1188,7 +1188,7 @@ Now let's create the actual product!
 **Using cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/admin/products \
+curl -X POST https://api.pickob.com/api/admin/products \
   -H "Content-Type: application/json" \
   -b admin_cookies.txt \
   -d '{
@@ -1225,7 +1225,7 @@ curl -X POST http://localhost:5000/api/admin/products \
 ### 8.4 Update a Product
 
 **Method:** PUT
-**URL:** `http://localhost:5000/api/admin/products/prod123`
+**URL:** `https://api.pickob.com/api/admin/products/prod123`
 **Content-Type:** application/json
 
 **Request Body (you can update any fields):**
@@ -1242,7 +1242,7 @@ curl -X POST http://localhost:5000/api/admin/products \
 
 ```
 1. Method: PUT
-2. URL: http://localhost:5000/api/admin/products/prod123
+2. URL: https://api.pickob.com/api/admin/products/prod123
 3. Body → raw → JSON
 4. Paste the JSON above
 5. Click "Send"
@@ -1253,12 +1253,12 @@ curl -X POST http://localhost:5000/api/admin/products \
 ### 8.5 Delete a Product (Soft Delete)
 
 **Method:** DELETE
-**URL:** `http://localhost:5000/api/admin/products/prod123`
+**URL:** `https://api.pickob.com/api/admin/products/prod123`
 
 This changes status to "archived" but doesn't actually delete it.
 
 ```bash
-curl -X DELETE http://localhost:5000/api/admin/products/prod123 \
+curl -X DELETE https://api.pickob.com/api/admin/products/prod123 \
   -b admin_cookies.txt
 ```
 
@@ -1267,12 +1267,12 @@ curl -X DELETE http://localhost:5000/api/admin/products/prod123 \
 ### 8.6 Delete a Product (Permanently)
 
 **Method:** DELETE
-**URL:** `http://localhost:5000/api/admin/products/prod123?force=true`
+**URL:** `https://api.pickob.com/api/admin/products/prod123?force=true`
 
 This permanently removes the product from the database.
 
 ```bash
-curl -X DELETE "http://localhost:5000/api/admin/products/prod123?force=true" \
+curl -X DELETE "https://api.pickob.com/api/admin/products/prod123?force=true" \
   -b admin_cookies.txt
 ```
 
@@ -1283,13 +1283,13 @@ curl -X DELETE "http://localhost:5000/api/admin/products/prod123?force=true" \
 ### 9.1 View All Orders
 
 **Method:** GET
-**URL:** `http://localhost:5000/api/admin/orders`
+**URL:** `https://api.pickob.com/api/admin/orders`
 
 **Using Postman:**
 
 ```
 1. Method: GET
-2. URL: http://localhost:5000/api/admin/orders
+2. URL: https://api.pickob.com/api/admin/orders
 3. Make sure you're logged in as admin
 4. Click "Send"
 ```
@@ -1297,7 +1297,7 @@ curl -X DELETE "http://localhost:5000/api/admin/products/prod123?force=true" \
 **With filters:**
 
 ```
-http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
+https://api.pickob.com/api/admin/orders?status=pending&page=1&limit=50
 ```
 
 ---
@@ -1305,7 +1305,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 ### 9.2 Update Order Status
 
 **Method:** PUT
-**URL:** `http://localhost:5000/api/admin/orders/order123/status`
+**URL:** `https://api.pickob.com/api/admin/orders/order123/status`
 **Content-Type:** application/json
 
 **Request Body:**
@@ -1331,7 +1331,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 
 ```
 1. Method: PUT
-2. URL: http://localhost:5000/api/admin/orders/order123/status
+2. URL: https://api.pickob.com/api/admin/orders/order123/status
 3. Body → raw → JSON
 4. Paste: {"status": "confirmed"}
 5. Click "Send"
@@ -1355,7 +1355,7 @@ http://localhost:5000/api/admin/orders?status=pending&page=1&limit=50
 ### 9.3 Update Payment Status
 
 **Method:** PUT
-**URL:** `http://localhost:5000/api/admin/orders/order123/payment-status`
+**URL:** `https://api.pickob.com/api/admin/orders/order123/payment-status`
 
 **Request Body:**
 
@@ -1386,19 +1386,19 @@ Let me show you complete real-world scenarios step by step.
 
 ```bash
 # Step 1: Customer logs in
-curl -X POST http://localhost:5000/api/auth/firebase-login \
+curl -X POST https://api.pickob.com/api/auth/firebase-login \
   -H "Content-Type: application/json" \
   -d '{"email":"customer@example.com","name":"Customer","provider":"password"}' \
   -c customer.txt
 
 # Step 2: Browse products
-curl http://localhost:5000/api/products?q=headphones
+curl https://api.pickob.com/api/products?q=headphones
 
 # Step 3: View product details (copy ID from step 2)
-curl http://localhost:5000/api/products/prod123
+curl https://api.pickob.com/api/products/prod123
 
 # Step 4: Get price quote
-curl -X POST http://localhost:5000/api/orders/quote \
+curl -X POST https://api.pickob.com/api/orders/quote \
   -H "Content-Type: application/json" \
   -d '{
     "items":[{"productId":"prod123","quantity":1}],
@@ -1406,7 +1406,7 @@ curl -X POST http://localhost:5000/api/orders/quote \
   }'
 
 # Step 5: Create order
-curl -X POST http://localhost:5000/api/orders \
+curl -X POST https://api.pickob.com/api/orders \
   -H "Content-Type: application/json" \
   -b customer.txt \
   -d '{
@@ -1424,7 +1424,7 @@ curl -X POST http://localhost:5000/api/orders \
   }'
 
 # Step 6: View order history
-curl http://localhost:5000/api/orders/my -b customer.txt
+curl https://api.pickob.com/api/orders/my -b customer.txt
 ```
 
 ---
@@ -1437,7 +1437,7 @@ curl http://localhost:5000/api/orders/my -b customer.txt
 
 ```bash
 # Step 1: Admin login
-curl -X POST http://localhost:5000/api/admin/login \
+curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email":"admin@Pickob.com",
@@ -1447,7 +1447,7 @@ curl -X POST http://localhost:5000/api/admin/login \
   -c admin.txt
 
 # Step 2: Create category
-curl -X POST http://localhost:5000/api/admin/categories \
+curl -X POST https://api.pickob.com/api/admin/categories \
   -H "Content-Type: application/json" \
   -b admin.txt \
   -d '{
@@ -1458,13 +1458,13 @@ curl -X POST http://localhost:5000/api/admin/categories \
 # (Save the category ID from response)
 
 # Step 3: Upload image
-curl -X POST http://localhost:5000/api/admin/upload \
+curl -X POST https://api.pickob.com/api/admin/upload \
   -b admin.txt \
   -F "image=@product.jpg"
 # (Save the URL from response)
 
 # Step 4: Create product
-curl -X POST http://localhost:5000/api/admin/products \
+curl -X POST https://api.pickob.com/api/admin/products \
   -H "Content-Type: application/json" \
   -b admin.txt \
   -d '{
@@ -1478,19 +1478,19 @@ curl -X POST http://localhost:5000/api/admin/products \
   }'
 
 # Step 5: View dashboard
-curl http://localhost:5000/api/admin/dashboard-overview -b admin.txt
+curl https://api.pickob.com/api/admin/dashboard-overview -b admin.txt
 
 # Step 6: View pending orders
-curl "http://localhost:5000/api/admin/orders?status=pending" -b admin.txt
+curl "https://api.pickob.com/api/admin/orders?status=pending" -b admin.txt
 
 # Step 7: Confirm an order
-curl -X PUT http://localhost:5000/api/admin/orders/order123/status \
+curl -X PUT https://api.pickob.com/api/admin/orders/order123/status \
   -H "Content-Type: application/json" \
   -b admin.txt \
   -d '{"status":"confirmed"}'
 
 # Step 8: Mark payment as received
-curl -X PUT http://localhost:5000/api/admin/orders/order123/payment-status \
+curl -X PUT https://api.pickob.com/api/admin/orders/order123/payment-status \
   -H "Content-Type: application/json" \
   -b admin.txt \
   -d '{"paymentStatus":"paid"}'
@@ -1506,13 +1506,13 @@ curl -X PUT http://localhost:5000/api/admin/orders/order123/payment-status \
 
 ```bash
 # Step 1: Customer logs in
-curl -X POST http://localhost:5000/api/auth/firebase-login \
+curl -X POST https://api.pickob.com/api/auth/firebase-login \
   -H "Content-Type: application/json" \
   -d '{"email":"customer@example.com","name":"Customer","provider":"password"}' \
   -c customer.txt
 
 # Step 2: Submit review
-curl -X POST http://localhost:5000/api/products/prod123/reviews \
+curl -X POST https://api.pickob.com/api/products/prod123/reviews \
   -H "Content-Type: application/json" \
   -b customer.txt \
   -d '{
@@ -1523,7 +1523,7 @@ curl -X POST http://localhost:5000/api/products/prod123/reviews \
   }'
 
 # Step 3: Ask a question
-curl -X POST http://localhost:5000/api/products/prod123/questions \
+curl -X POST https://api.pickob.com/api/products/prod123/questions \
   -H "Content-Type: application/json" \
   -b customer.txt \
   -d '{

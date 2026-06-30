@@ -118,10 +118,7 @@ app.use(generalLimiter);
 const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB (with fallback if SRV DNS lookup fails)
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  process.env.MONGO_URI ||
-  "mongodb://localhost:27017/Pickob";
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 const MONGODB_URI_DIRECT = process.env.MONGODB_URI_DIRECT;
 
 async function connectMongo() {

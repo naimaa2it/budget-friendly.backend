@@ -543,13 +543,13 @@ CVV: 123
 **Get Products:**
 
 ```bash
-curl https://api.Pickob.com/api/products?page=1&limit=20
+curl https://api.pickob.com/api/products?page=1&limit=20
 ```
 
 **Create Order:**
 
 ```bash
-curl -X POST https://api.Pickob.com/api/orders \
+curl -X POST https://api.pickob.com/api/orders \
   -H "Content-Type: application/json" \
   -d '{
     "userEmail": "test@example.com",
@@ -562,7 +562,7 @@ curl -X POST https://api.Pickob.com/api/orders \
 **Admin Login:**
 
 ```bash
-curl -X POST https://api.Pickob.com/api/admin/login \
+curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@Pickob.com",
@@ -575,7 +575,7 @@ curl -X POST https://api.Pickob.com/api/admin/login \
 **Get Dashboard (with cookie):**
 
 ```bash
-curl https://api.Pickob.com/api/admin/dashboard-overview \
+curl https://api.pickob.com/api/admin/dashboard-overview \
   -b cookies.txt
 ```
 
