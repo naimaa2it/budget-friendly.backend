@@ -183,12 +183,10 @@ const requireAdmin = async (req, res, next) => {
 // Admin / Moderator registration endpoint has been superseded by manual seeding.
 // Keeping route for compatibility, but reject all requests to prevent self-registration.
 router.post("/register", async (req, res) => {
-  return res
-    .status(403)
-    .json({
-      error:
-        "Admin registration is disabled. Please contact an existing administrator.",
-    });
+  return res.status(403).json({
+    error:
+      "Admin registration is disabled. Please contact an existing administrator.",
+  });
 });
 
 // Check if email already exists as admin (same email can be user + admin)
@@ -230,12 +228,10 @@ router.post(
         !process.env.CLOUDINARY_API_KEY ||
         !process.env.CLOUDINARY_API_SECRET
       ) {
-        return res
-          .status(500)
-          .json({
-            error:
-              "Server upload not configured (Cloudinary credentials missing).",
-          });
+        return res.status(500).json({
+          error:
+            "Server upload not configured (Cloudinary credentials missing).",
+        });
       }
 
       // Get folder from request body or query (default to products)
@@ -1587,7 +1583,9 @@ router.post(
       clone.averageRating = 0;
       clone.monthlySold = 0;
       if (Array.isArray(clone.variants)) {
-        clone.variants = clone.variants.map(({ _id, ...rest }) => ({ ...rest }));
+        clone.variants = clone.variants.map(({ _id, ...rest }) => ({
+          ...rest,
+        }));
       }
 
       const p = new Product(clone);
@@ -1855,11 +1853,9 @@ router.post("/login", async (req, res) => {
     // Check if account is locked
     if (admin.isCurrentlyLocked) {
       const minutesLeft = Math.ceil((admin.lockUntil - Date.now()) / 60000);
-      return res
-        .status(423)
-        .json({
-          error: `Account is temporarily locked. Try again in ${minutesLeft} minutes.`,
-        });
+      return res.status(423).json({
+        error: `Account is temporarily locked. Try again in ${minutesLeft} minutes.`,
+      });
     }
 
     // Verify password
@@ -2082,11 +2078,9 @@ router.post(
       });
       res.status(201).json({ tag });
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          error: err.code === 11000 ? "Tag already exists" : "Server error",
-        });
+      res.status(500).json({
+        error: err.code === 11000 ? "Tag already exists" : "Server error",
+      });
     }
   },
 );
@@ -2107,11 +2101,9 @@ router.put(
       await tag.save();
       res.json({ ok: true, tag });
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          error: err.code === 11000 ? "Tag already exists" : "Server error",
-        });
+      res.status(500).json({
+        error: err.code === 11000 ? "Tag already exists" : "Server error",
+      });
     }
   },
 );
@@ -2235,11 +2227,9 @@ router.post(
       }
       res.status(201).json({ ok: true, item });
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          error: err.code === 11000 ? "Barcode already exists" : "Server error",
-        });
+      res.status(500).json({
+        error: err.code === 11000 ? "Barcode already exists" : "Server error",
+      });
     }
   },
 );
@@ -2319,11 +2309,9 @@ router.put(
       await item.populate("product", "title images barcode sku status");
       res.json({ ok: true, item });
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          error: err.code === 11000 ? "Barcode already exists" : "Server error",
-        });
+      res.status(500).json({
+        error: err.code === 11000 ? "Barcode already exists" : "Server error",
+      });
     }
   },
 );
@@ -4833,11 +4821,9 @@ router.put(
               .select("_id")
               .lean();
             if (duplicate && String(duplicate._id) !== String(user._id)) {
-              return res
-                .status(400)
-                .json({
-                  error: "Cannot sync email: another user already uses it.",
-                });
+              return res.status(400).json({
+                error: "Cannot sync email: another user already uses it.",
+              });
             }
             user.email = nextBilling.email;
           }
@@ -4915,12 +4901,10 @@ router.post("/couriers", requireAdmin, async (req, res) => {
     });
     res.status(201).json({ courier });
   } catch (err) {
-    res
-      .status(500)
-      .json({
-        error:
-          err.code === 11000 ? "Courier slug already exists" : "Server error",
-      });
+    res.status(500).json({
+      error:
+        err.code === 11000 ? "Courier slug already exists" : "Server error",
+    });
   }
 });
 
@@ -4941,12 +4925,10 @@ router.put("/couriers/:id", requireAdmin, async (req, res) => {
     await courier.save();
     res.json({ ok: true, courier });
   } catch (err) {
-    res
-      .status(500)
-      .json({
-        error:
-          err.code === 11000 ? "Courier slug already exists" : "Server error",
-      });
+    res.status(500).json({
+      error:
+        err.code === 11000 ? "Courier slug already exists" : "Server error",
+    });
   }
 });
 
@@ -5750,193 +5732,240 @@ router.delete(
 // Body: { from?: "SmartBuyBD", to?: "Pickob" }
 // Renames every Cloudinary asset under `from/` to `to/` (keeping sub-paths),
 // then updates every image URL / public_id in all MongoDB collections.
-router.post(
-  "/migrate-cloudinary-folder",
-  requireAdmin,
-  async (req, res) => {
-    const { from = "SmartBuyBD", to = "Pickob" } = req.body || {};
-    if (!from || !to || from === to) {
-      return res.status(400).json({ error: "Provide different from/to folder names" });
+router.post("/migrate-cloudinary-folder", requireAdmin, async (req, res) => {
+  const { from = "SmartBuyBD", to = "Pickob" } = req.body || {};
+  if (!from || !to || from === to) {
+    return res
+      .status(400)
+      .json({ error: "Provide different from/to folder names" });
+  }
+
+  const log = { cloudinary: { renamed: 0, skipped: 0, errors: [] }, db: {} };
+
+  // Recursively replace every occurrence of `from` with `to` in any JS value
+  const rep = (v) => {
+    if (typeof v === "string") return v.replaceAll(from, to);
+    if (Array.isArray(v)) return v.map(rep);
+    if (v && typeof v === "object") {
+      const o = {};
+      for (const [k, iv] of Object.entries(v)) o[k] = rep(iv);
+      return o;
     }
+    return v;
+  };
 
-    const log = { cloudinary: { renamed: 0, skipped: 0, errors: [] }, db: {} };
-
-    // Recursively replace every occurrence of `from` with `to` in any JS value
-    const rep = (v) => {
-      if (typeof v === "string") return v.replaceAll(from, to);
-      if (Array.isArray(v)) return v.map(rep);
-      if (v && typeof v === "object") {
-        const o = {};
-        for (const [k, iv] of Object.entries(v)) o[k] = rep(iv);
-        return o;
-      }
-      return v;
+  try {
+    // ── Phase 1: rename Cloudinary assets ──────────────────────────────────
+    const fetchAll = async (resource_type) => {
+      const items = [];
+      let cursor;
+      do {
+        const r = await cloudinary.api.resources({
+          type: "upload",
+          resource_type,
+          prefix: `${from}/`,
+          max_results: 500,
+          ...(cursor ? { next_cursor: cursor } : {}),
+        });
+        items.push(...(r.resources || []));
+        cursor = r.next_cursor;
+      } while (cursor);
+      return items.map((a) => ({ ...a, resource_type }));
     };
 
-    try {
-      // ── Phase 1: rename Cloudinary assets ──────────────────────────────────
-      const fetchAll = async (resource_type) => {
-        const items = [];
-        let cursor;
-        do {
-          const r = await cloudinary.api.resources({
-            type: "upload",
-            resource_type,
-            prefix: `${from}/`,
-            max_results: 500,
-            ...(cursor ? { next_cursor: cursor } : {}),
-          });
-          items.push(...(r.resources || []));
-          cursor = r.next_cursor;
-        } while (cursor);
-        return items.map((a) => ({ ...a, resource_type }));
-      };
+    const allAssets = [
+      ...(await fetchAll("image")),
+      ...(await fetchAll("video")),
+    ];
 
-      const allAssets = [
-        ...(await fetchAll("image")),
-        ...(await fetchAll("video")),
-      ];
-
-      // Rename in batches of 5 to stay within Cloudinary rate limits
-      for (let i = 0; i < allAssets.length; i += 5) {
-        await Promise.all(
-          allAssets.slice(i, i + 5).map(async (a) => {
-            const newId = to + a.public_id.slice(from.length);
-            try {
-              await cloudinary.uploader.rename(a.public_id, newId, {
-                resource_type: a.resource_type,
-                overwrite: false,
-              });
-              log.cloudinary.renamed++;
-            } catch (e) {
-              if (/already exists/i.test(e.message || "")) {
-                log.cloudinary.skipped++;
-              } else {
-                log.cloudinary.errors.push(`${a.public_id}: ${e.message}`);
-              }
+    // Rename in batches of 5 to stay within Cloudinary rate limits
+    for (let i = 0; i < allAssets.length; i += 5) {
+      await Promise.all(
+        allAssets.slice(i, i + 5).map(async (a) => {
+          const newId = to + a.public_id.slice(from.length);
+          try {
+            await cloudinary.uploader.rename(a.public_id, newId, {
+              resource_type: a.resource_type,
+              overwrite: false,
+            });
+            log.cloudinary.renamed++;
+          } catch (e) {
+            if (/already exists/i.test(e.message || "")) {
+              log.cloudinary.skipped++;
+            } else {
+              log.cloudinary.errors.push(`${a.public_id}: ${e.message}`);
             }
-          }),
-        );
+          }
+        }),
+      );
+    }
+
+    // ── Phase 2: update MongoDB (simple fetch-modify-save, no pipeline) ──────
+
+    // User — image URL + imagePublicId
+    const userDocs = await User.find({
+      $or: [{ image: { $regex: from } }, { imagePublicId: { $regex: from } }],
+    }).lean();
+    let userCount = 0;
+    for (const d of userDocs) {
+      const upd = {};
+      if (d.image?.includes(from)) upd.image = d.image.replaceAll(from, to);
+      if (d.imagePublicId?.includes(from))
+        upd.imagePublicId = d.imagePublicId.replaceAll(from, to);
+      if (Object.keys(upd).length) {
+        await User.updateOne({ _id: d._id }, { $set: upd });
+        userCount++;
       }
+    }
+    log.db.users = userCount;
 
-      // ── Phase 2: update MongoDB (simple fetch-modify-save, no pipeline) ──────
+    // Category — images[] objects
+    const CategoryModel = (await import("../models/Category.js")).default;
+    const catDocs = await CategoryModel.find({
+      "images.url": { $regex: from },
+    }).lean();
+    let catCount = 0;
+    for (const d of catDocs) {
+      await CategoryModel.updateOne(
+        { _id: d._id },
+        { $set: { images: rep(d.images) } },
+      );
+      catCount++;
+    }
+    log.db.categories = catCount;
 
-      // User — image URL + imagePublicId
-      const userDocs = await User.find({
-        $or: [{ image: { $regex: from } }, { imagePublicId: { $regex: from } }],
-      }).lean();
-      let userCount = 0;
-      for (const d of userDocs) {
-        const upd = {};
-        if (d.image?.includes(from)) upd.image = d.image.replaceAll(from, to);
-        if (d.imagePublicId?.includes(from)) upd.imagePublicId = d.imagePublicId.replaceAll(from, to);
-        if (Object.keys(upd).length) { await User.updateOne({ _id: d._id }, { $set: upd }); userCount++; }
+    // Product — images[] + detailedDescription (Mixed)
+    const prodDocs = await Product.find({
+      $or: [
+        { "images.url": { $regex: from } },
+        { "images.public_id": { $regex: from } },
+      ],
+    }).lean();
+    let prodCount = 0;
+    for (const d of prodDocs) {
+      const upd = {};
+      if (d.images?.length) upd.images = rep(d.images);
+      if (d.detailedDescription)
+        upd.detailedDescription = rep(d.detailedDescription);
+      if (Object.keys(upd).length) {
+        await Product.updateOne({ _id: d._id }, { $set: upd });
+        prodCount++;
       }
-      log.db.users = userCount;
+    }
+    log.db.products = prodCount;
 
-      // Category — images[] objects
-      const CategoryModel = (await import("../models/Category.js")).default;
-      const catDocs = await CategoryModel.find({ "images.url": { $regex: from } }).lean();
-      let catCount = 0;
-      for (const d of catDocs) {
-        await CategoryModel.updateOne({ _id: d._id }, { $set: { images: rep(d.images) } });
-        catCount++;
+    // Review — images[] of URL strings
+    const ReviewModel = (await import("../models/Review.js")).default;
+    const reviewDocs = await ReviewModel.find({
+      images: { $elemMatch: { $regex: from } },
+    }).lean();
+    let reviewCount = 0;
+    for (const d of reviewDocs) {
+      const newImages = d.images.map((u) =>
+        u?.includes(from) ? u.replaceAll(from, to) : u,
+      );
+      await ReviewModel.updateOne(
+        { _id: d._id },
+        { $set: { images: newImages } },
+      );
+      reviewCount++;
+    }
+    log.db.reviews = reviewCount;
+
+    // BlogPost — featuredImage + additionalImages + videos + dynamicSections
+    const blogDocs = await BlogPost.find({
+      $or: [
+        { "featuredImage.url": { $regex: from } },
+        { "featuredImage.public_id": { $regex: from } },
+        { "additionalImages.url": { $regex: from } },
+        { "videos.url": { $regex: from } },
+      ],
+    }).lean();
+    let blogCount = 0;
+    for (const d of blogDocs) {
+      const upd = {};
+      if (d.featuredImage) upd.featuredImage = rep(d.featuredImage);
+      if (d.additionalImages?.length)
+        upd.additionalImages = rep(d.additionalImages);
+      if (d.videos?.length) upd.videos = rep(d.videos);
+      if (d.dynamicSections?.length)
+        upd.dynamicSections = rep(d.dynamicSections);
+      if (Object.keys(upd).length) {
+        await BlogPost.updateOne({ _id: d._id }, { $set: upd });
+        blogCount++;
       }
-      log.db.categories = catCount;
+    }
+    log.db.blogposts = blogCount;
 
-      // Product — images[] + detailedDescription (Mixed)
-      const prodDocs = await Product.find({
-        $or: [{ "images.url": { $regex: from } }, { "images.public_id": { $regex: from } }],
-      }).lean();
-      let prodCount = 0;
-      for (const d of prodDocs) {
-        const upd = {};
-        if (d.images?.length) upd.images = rep(d.images);
-        if (d.detailedDescription) upd.detailedDescription = rep(d.detailedDescription);
-        if (Object.keys(upd).length) { await Product.updateOne({ _id: d._id }, { $set: upd }); prodCount++; }
+    // Setting — websiteLogo + cloudinaryFolder
+    const SettingModel = (await import("../models/Setting.js")).default;
+    const settingDocs = await SettingModel.find({
+      $or: [
+        { "websiteLogo.url": { $regex: from } },
+        { cloudinaryFolder: { $regex: from } },
+      ],
+    }).lean();
+    let settingCount = 0;
+    for (const d of settingDocs) {
+      const upd = {};
+      if (d.websiteLogo?.url?.includes(from))
+        upd.websiteLogo = rep(d.websiteLogo);
+      if (d.cloudinaryFolder?.includes(from))
+        upd.cloudinaryFolder = d.cloudinaryFolder.replaceAll(from, to);
+      if (Object.keys(upd).length) {
+        await SettingModel.updateOne({ _id: d._id }, { $set: upd });
+        settingCount++;
       }
-      log.db.products = prodCount;
+    }
+    log.db.settings = settingCount;
 
-      // Review — images[] of URL strings
-      const ReviewModel = (await import("../models/Review.js")).default;
-      const reviewDocs = await ReviewModel.find({ images: { $elemMatch: { $regex: from } } }).lean();
-      let reviewCount = 0;
-      for (const d of reviewDocs) {
-        const newImages = d.images.map((u) => (u?.includes(from) ? u.replaceAll(from, to) : u));
-        await ReviewModel.updateOne({ _id: d._id }, { $set: { images: newImages } });
-        reviewCount++;
-      }
-      log.db.reviews = reviewCount;
-
-      // BlogPost — featuredImage + additionalImages + videos + dynamicSections
-      const blogDocs = await BlogPost.find({
+    // Banner / PromoPanel / Popup / PromoStripItem — image.url + image.public_id
+    const patchImageModel = async (modelPath, key) => {
+      const M = (await import(modelPath)).default;
+      const docs = await M.find({
         $or: [
-          { "featuredImage.url": { $regex: from } },
-          { "featuredImage.public_id": { $regex: from } },
-          { "additionalImages.url": { $regex: from } },
-          { "videos.url": { $regex: from } },
+          { "image.url": { $regex: from } },
+          { "image.public_id": { $regex: from } },
         ],
       }).lean();
-      let blogCount = 0;
-      for (const d of blogDocs) {
+      let count = 0;
+      for (const d of docs) {
         const upd = {};
-        if (d.featuredImage) upd.featuredImage = rep(d.featuredImage);
-        if (d.additionalImages?.length) upd.additionalImages = rep(d.additionalImages);
-        if (d.videos?.length) upd.videos = rep(d.videos);
-        if (d.dynamicSections?.length) upd.dynamicSections = rep(d.dynamicSections);
-        if (Object.keys(upd).length) { await BlogPost.updateOne({ _id: d._id }, { $set: upd }); blogCount++; }
-      }
-      log.db.blogposts = blogCount;
-
-      // Setting — websiteLogo + cloudinaryFolder
-      const SettingModel = (await import("../models/Setting.js")).default;
-      const settingDocs = await SettingModel.find({
-        $or: [{ "websiteLogo.url": { $regex: from } }, { cloudinaryFolder: { $regex: from } }],
-      }).lean();
-      let settingCount = 0;
-      for (const d of settingDocs) {
-        const upd = {};
-        if (d.websiteLogo?.url?.includes(from)) upd.websiteLogo = rep(d.websiteLogo);
-        if (d.cloudinaryFolder?.includes(from)) upd.cloudinaryFolder = d.cloudinaryFolder.replaceAll(from, to);
-        if (Object.keys(upd).length) { await SettingModel.updateOne({ _id: d._id }, { $set: upd }); settingCount++; }
-      }
-      log.db.settings = settingCount;
-
-      // Banner / PromoPanel / Popup / PromoStripItem — image.url + image.public_id
-      const patchImageModel = async (modelPath, key) => {
-        const M = (await import(modelPath)).default;
-        const docs = await M.find({
-          $or: [{ "image.url": { $regex: from } }, { "image.public_id": { $regex: from } }],
-        }).lean();
-        let count = 0;
-        for (const d of docs) {
-          const upd = {};
-          if (d.image?.url?.includes(from)) upd["image.url"] = d.image.url.replaceAll(from, to);
-          if (d.image?.public_id?.includes(from)) upd["image.public_id"] = d.image.public_id.replaceAll(from, to);
-          if (Object.keys(upd).length) { await M.updateOne({ _id: d._id }, { $set: upd }); count++; }
+        if (d.image?.url?.includes(from))
+          upd["image.url"] = d.image.url.replaceAll(from, to);
+        if (d.image?.public_id?.includes(from))
+          upd["image.public_id"] = d.image.public_id.replaceAll(from, to);
+        if (Object.keys(upd).length) {
+          await M.updateOne({ _id: d._id }, { $set: upd });
+          count++;
         }
-        log.db[key] = count;
-      };
-      await patchImageModel("../models/Banner.js", "banners");
-      await patchImageModel("../models/PromoPanel.js", "promopanels");
-      await patchImageModel("../models/Popup.js", "popups");
-      await patchImageModel("../models/PromoStripItem.js", "promostripitems");
-
-      // OccasionSection — cards[].image
-      const OccModel = (await import("../models/OccasionSection.js")).default;
-      const occDocs = await OccModel.find({ "cards.image.url": { $regex: from } }).lean();
-      let occCount = 0;
-      for (const d of occDocs) {
-        await OccModel.updateOne({ _id: d._id }, { $set: { cards: rep(d.cards) } });
-        occCount++;
       }
-      log.db.occasionsections = occCount;
+      log.db[key] = count;
+    };
+    await patchImageModel("../models/Banner.js", "banners");
+    await patchImageModel("../models/PromoPanel.js", "promopanels");
+    await patchImageModel("../models/Popup.js", "popups");
+    await patchImageModel("../models/PromoStripItem.js", "promostripitems");
 
-      res.json({ ok: true, log });
-    } catch (err) {
-      res.status(500).json({ error: err.message, log });
+    // OccasionSection — cards[].image
+    const OccModel = (await import("../models/OccasionSection.js")).default;
+    const occDocs = await OccModel.find({
+      "cards.image.url": { $regex: from },
+    }).lean();
+    let occCount = 0;
+    for (const d of occDocs) {
+      await OccModel.updateOne(
+        { _id: d._id },
+        { $set: { cards: rep(d.cards) } },
+      );
+      occCount++;
     }
-  },
-);
+    log.db.occasionsections = occCount;
+
+    res.json({ ok: true, log });
+  } catch (err) {
+    res.status(500).json({ error: err.message, log });
+  }
+});
 
 export default router;
