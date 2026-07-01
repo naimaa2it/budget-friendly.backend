@@ -425,6 +425,22 @@ router.get("/tracking-config", async (req, res) => {
   }
 });
 
+router.get("/custom-code", async (req, res) => {
+  try {
+    const SettingModel = (await import("../models/Setting.js")).default;
+    const s = await SettingModel.findOne().lean();
+    const cc = s?.customCode;
+    if (!cc?.active) return res.json({ headerCode: "", bodyCode: "", footerCode: "" });
+    res.json({
+      headerCode: cc.headerCode || "",
+      bodyCode: cc.bodyCode || "",
+      footerCode: cc.footerCode || "",
+    });
+  } catch {
+    res.json({ headerCode: "", bodyCode: "", footerCode: "" });
+  }
+});
+
 // Settings (admin area)
 router.get("/settings", requireAdmin, async (req, res) => {
   try {

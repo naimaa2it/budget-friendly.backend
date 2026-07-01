@@ -188,6 +188,12 @@ const SettingsSchema = new mongoose.Schema({
       blogPage: { type: Boolean, default: true },
     },
   },
+  customCode: {
+    headerCode: { type: String, default: "" },
+    bodyCode: { type: String, default: "" },
+    footerCode: { type: String, default: "" },
+    active: { type: Boolean, default: true },
+  },
   policyContent: {
     shipping: { type: [PolicyItemSchema], default: [] },
     return: { type: [PolicyItemSchema], default: [] },
