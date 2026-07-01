@@ -47,7 +47,7 @@ import cartRoutes from "./routes/cart.js";
 import cronRoutes from "./routes/cron.js";
 import { syncActiveShipments } from "./lib/shipmentTracking.js";
 import { seedDefaultsIfEmpty } from "./lib/courierDefaults.js";
-import { generalLimiter, authLimiter } from "./lib/rateLimiters.js";
+import { generalLimiter } from "./lib/rateLimiters.js";
 import logger from "./lib/logger.js";
 import { sendAbandonedCartEmail } from "./lib/mailer.js";
 import { redisClient } from "./lib/redis.js";
@@ -247,7 +247,7 @@ app.get("/", (req, res) => {
   res.send("Welcome to Pickob Backend!");
 });
 
-app.use("/api/auth", authLimiter, authRoutes); // here have all of the auth related routes like login, register, logout, refresh token etc.
+app.use("/api/auth", authRoutes); // here have all of the auth related routes like login, register, logout, refresh token etc.
 
 app.use("/api/admin", adminRoutes); // here have all of the admin related routes like user management, product management, order management etc.
 
