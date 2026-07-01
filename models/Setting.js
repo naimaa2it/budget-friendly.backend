@@ -194,6 +194,22 @@ const SettingsSchema = new mongoose.Schema({
     footerCode: { type: String, default: "" },
     active: { type: Boolean, default: true },
   },
+  footerLinks: {
+    quickLinks: [
+      {
+        label: { type: String, default: "" },
+        href: { type: String, default: "" },
+        _id: false,
+      },
+    ],
+    customerService: [
+      {
+        label: { type: String, default: "" },
+        href: { type: String, default: "" },
+        _id: false,
+      },
+    ],
+  },
   policyContent: {
     shipping: { type: [PolicyItemSchema], default: [] },
     return: { type: [PolicyItemSchema], default: [] },

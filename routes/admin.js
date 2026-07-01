@@ -354,6 +354,10 @@ router.get("/top-banner", async (req, res) => {
         privacy: [],
         terms: [],
       },
+      footerLinks: {
+        quickLinks: Array.isArray(s?.footerLinks?.quickLinks) ? s.footerLinks.quickLinks : [],
+        customerService: Array.isArray(s?.footerLinks?.customerService) ? s.footerLinks.customerService : [],
+      },
     });
   } catch (err) {
     res.json({
@@ -375,6 +379,7 @@ router.get("/top-banner", async (req, res) => {
         privacy: [],
         terms: [],
       },
+      footerLinks: { quickLinks: [], customerService: [] },
     });
   }
 });
