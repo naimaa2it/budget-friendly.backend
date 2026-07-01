@@ -211,6 +211,32 @@ router.post("/check-email", async (req, res) => {
   }
 });
 
+// Cloudinary signed-upload params — frontend uploads directly, bypassing Vercel body limit
+router.get("/upload/sign", requireAdmin, (req, res) => {
+  try {
+    ensureCloudinaryConfigured();
+    const timestamp = Math.round(Date.now() / 1000);
+    const folder = String(
+      req.query.folder ||
+        `${process.env.CLOUDINARY_FOLDER || "Pickob"}/products`,
+    );
+    const paramsToSign = { folder, timestamp };
+    const signature = cloudinary.utils.api_sign_request(
+      paramsToSign,
+      process.env.CLOUDINARY_API_SECRET,
+    );
+    res.json({
+      signature,
+      timestamp,
+      folder,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to generate upload signature" });
+  }
+});
+
 // Image/Video upload to Cloudinary (admin-only) — optimized server-side with sharp
 router.post(
   "/upload",
