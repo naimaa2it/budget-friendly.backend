@@ -493,10 +493,12 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-// Upload review images — authenticated users only, max 4 images, 3MB each
+// Upload review images — authenticated users only, max 4 images, 10MB each.
+// (Kept as a fallback path; the frontend now uploads review images directly to
+// Cloudinary via /api/user/upload/sign to bypass Vercel's 4.5MB body cap.)
 const reviewImageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 3 * 1024 * 1024, files: 4 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 4 },
   fileFilter: (_, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Only image files are allowed"), false);

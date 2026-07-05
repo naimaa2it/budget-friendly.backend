@@ -24,6 +24,33 @@ const ensureCloudinaryConfigured = () => {
   }
 };
 
+// Cloudinary signed-upload params for logged-in users — lets the browser
+// upload avatars/review images directly to Cloudinary, bypassing Vercel's
+// 4.5MB serverless body cap. Folder is restricted server-side to avoid abuse.
+const signUpload = (req, res) => {
+  try {
+    ensureCloudinaryConfigured();
+    const timestamp = Math.round(Date.now() / 1000);
+    const base = process.env.CLOUDINARY_FOLDER || "Pickob";
+    const allowed = [`${base}/profiles`, `${base}/reviews`];
+    const requested = String(req.query.folder || "");
+    const folder = allowed.includes(requested) ? requested : `${base}/profiles`;
+    const signature = cloudinary.utils.api_sign_request(
+      { folder, timestamp },
+      process.env.CLOUDINARY_API_SECRET,
+    );
+    res.json({
+      signature,
+      timestamp,
+      folder,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to generate upload signature" });
+  }
+};
+
 // middleware to make sure user is logged in (either user or admin token)
 const requireUser = async (req, res, next) => {
   try {
@@ -40,7 +67,10 @@ const requireUser = async (req, res, next) => {
   }
 };
 
-// update profile (name/email/mobile/dob + optional image file)
+// Signed direct-upload params for avatars/review images (logged-in users).
+router.get("/upload/sign", requireUser, signUpload);
+
+// update profile (name/email/mobile/dob + optional image file or image URL)
 router.put(
   "/profile",
   requireUser,
@@ -134,6 +164,20 @@ router.put(
 
         u.image = result.secure_url || result.url;
         u.imagePublicId = result.public_id;
+      } else if (
+        typeof req.body?.imageUrl === "string" &&
+        req.body.imageUrl.startsWith("http")
+      ) {
+        // Image was uploaded directly to Cloudinary from the browser (bypasses
+        // Vercel's 4.5MB body cap) — we just persist the resulting URL/id.
+        if (u.imagePublicId && u.imagePublicId !== req.body.imagePublicId) {
+          try {
+            await ensureCloudinaryConfigured();
+            await cloudinary.uploader.destroy(u.imagePublicId);
+          } catch (delErr) {}
+        }
+        u.image = req.body.imageUrl;
+        u.imagePublicId = req.body.imagePublicId || undefined;
       }
 
       await u.save();

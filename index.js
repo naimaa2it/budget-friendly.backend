@@ -110,8 +110,12 @@ app.use(
   }),
 );
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+// JSON/form bodies never carry raw image bytes (uploads go straight to
+// Cloudinary), but product/blog docs with rich HTML + many image URLs can grow
+// past a couple MB — keep the limit generous so saves never 413 "entity too
+// large". File uploads are capped at 10MB client-side (see lib/uploadImage.js).
+app.use(express.json({ limit: "12mb" }));
+app.use(express.urlencoded({ extended: true, limit: "12mb" }));
 app.use(cookieParser());
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/admin")) return next();
