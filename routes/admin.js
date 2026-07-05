@@ -1069,18 +1069,10 @@ router.get(
       const skip = (Math.max(1, page) - 1) * limit;
       const filter = {};
 
-      if (status === "draft") {
-        filter.status = "draft";
-        filter.createdBy = req.admin._id;
-      } else if (status) {
+      if (status) {
         filter.status = status;
-      } else {
-        // Default: show published/archived + current admin drafts (no other admin drafts)
-        filter.$or = [
-          { status: { $ne: "draft" } },
-          { createdBy: req.admin._id },
-        ];
       }
+      // No status param = show all statuses (admin dashboard should see everything)
 
       if (categoryId) {
         // accept one id or comma-separated list
