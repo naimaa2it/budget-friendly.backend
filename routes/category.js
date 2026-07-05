@@ -91,7 +91,7 @@ router.post("/", requireAdmin, async (req, res) => {
       level = parent.level + 1;
     }
 
-    const cat = new (await import("../models/Category.js")).default({
+    const cat = new Category({
       name,
       parent: parentId || undefined,
       level,
@@ -151,29 +151,6 @@ router.put("/:id", requireAdmin, async (req, res) => {
         }
       } catch {
         // ignore Cloudinary errors
-      }
-    }
-
-    // process image removals (delete from Cloudinary if public_id removed)
-    if (Array.isArray(cat.images) && Array.isArray(images)) {
-      const oldIds = cat.images.map((i) => i && i.public_id).filter(Boolean);
-      const newIds = images.map((i) => i && i.public_id).filter(Boolean);
-      const removed = oldIds.filter((id) => !newIds.includes(id));
-      if (removed.length > 0) {
-        try {
-          ensureCloudinaryConfigured();
-          for (const publicId of removed) {
-            try {
-              await cloudinary.uploader.destroy(publicId, {
-                resource_type: "image",
-              });
-            } catch {
-              // ignore Cloudinary errors
-            }
-          }
-        } catch {
-          // ignore Cloudinary errors
-        }
       }
     }
 
