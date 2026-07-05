@@ -7,6 +7,7 @@ import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import sharp from "sharp";
 import { redisClient, clearProductsCache } from "../lib/redis.js";
+import { getCatMemCache, setCatMemCache } from "../lib/catCache.js";
 
 let cloudinaryConfigured = false;
 const ensureCloudinaryConfigured = () => {
@@ -219,21 +220,30 @@ router.get("/", async (req, res) => {
 router.get("/categories", async (req, res) => {
   try {
     const CAT_CACHE_KEY = "products:categories:v2";
+
+    // 1. in-memory cache (fastest — no network)
+    const memHit = getCatMemCache();
+    if (memHit) return res.json(memHit);
+
+    // 2. Redis cache
     if (redisClient?.isReady) {
       try {
         const cached = await redisClient.get(CAT_CACHE_KEY);
         if (cached) {
+          const parsed = JSON.parse(cached);
+          setCatMemCache(parsed);
           res.setHeader(
             "Cache-Control",
             "public, max-age=600, stale-while-revalidate=3600",
           );
-          return res.json(JSON.parse(cached));
+          return res.json(parsed);
         }
       } catch {}
     }
 
+    // 3. DB query
     const Category = (await import("../models/Category.js")).default;
-    const cats = await Category.find({ isActive: true }).sort({
+    const cats = await Category.find({ isActive: true }).lean().sort({
       level: 1,
       order: 1,
       name: 1,
@@ -261,6 +271,7 @@ router.get("/categories", async (req, res) => {
     }
 
     const payload = { categories: roots };
+    setCatMemCache(payload);
     if (redisClient?.isReady) {
       redisClient
         .setEx(CAT_CACHE_KEY, 600, JSON.stringify(payload))

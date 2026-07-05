@@ -4,9 +4,11 @@ import Admin from "../models/Admin.js";
 import Product from "../models/Product.js";
 import { v2 as cloudinary } from "cloudinary";
 import { redisClient } from "../lib/redis.js";
+import { bustCatMemCache } from "../lib/catCache.js";
 
 const CAT_CACHE_KEY = "products:categories:v2";
 const bustCatCache = () => {
+  bustCatMemCache();
   if (redisClient?.isReady) redisClient.del(CAT_CACHE_KEY).catch(() => {});
 };
 
@@ -25,7 +27,10 @@ const ensureCloudinaryConfigured = () => {
   }
 };
 
-// Middleware to require admin JWT cookie (copied from admin.js to keep router standalone)
+// In-memory admin cache — avoids one Atlas round-trip per request (~150-300ms saved)
+const _adminCache = new Map();
+const ADMIN_CACHE_TTL_MS = 60_000; // 1 minute
+
 const requireAdmin = async (req, res, next) => {
   try {
     const token = req.cookies?.token;
@@ -33,10 +38,19 @@ const requireAdmin = async (req, res, next) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type !== "admin")
       return res.status(403).json({ error: "Admin access required" });
-    const admin = await Admin.findById(payload.id);
+
+    const hit = _adminCache.get(payload.id);
+    if (hit && Date.now() - hit.ts < ADMIN_CACHE_TTL_MS) {
+      req.admin = hit.admin;
+      return next();
+    }
+
+    const admin = await Admin.findById(payload.id).lean();
     if (!admin) return res.status(403).json({ error: "Admin not found" });
     if (!admin.isActive)
       return res.status(403).json({ error: "Account disabled" });
+
+    _adminCache.set(payload.id, { admin, ts: Date.now() });
     req.admin = admin;
     next();
   } catch (err) {
