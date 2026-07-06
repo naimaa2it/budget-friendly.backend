@@ -87,15 +87,20 @@ router.all("/abandoned-cart", async (req, res) => {
   }
 });
 
-// Permanently remove products that have sat in the trash past the retention
-// window (30 days). Recycle-bin cleanup — runs alongside the other pingers.
+// Permanently remove products + orders that have sat in the trash past the
+// retention window (30 days). Recycle-bin cleanup — runs alongside the pingers.
 router.all("/trash-cleanup", async (req, res) => {
   try {
     const cutoff = new Date(Date.now() - TRASH_RETENTION_MS);
-    const deleted = await permanentlyDeleteProducts({
+    const products = await permanentlyDeleteProducts({
       deletedAt: { $ne: null, $lt: cutoff },
     });
-    res.json({ ok: true, deleted });
+    // orders carry no external assets, so a plain deleteMany is enough
+    const { default: Order } = await import("../models/Order.js");
+    const orderResult = await Order.deleteMany({
+      deletedAt: { $ne: null, $lt: cutoff },
+    });
+    res.json({ ok: true, products, orders: orderResult.deletedCount });
   } catch (err) {
     logger.error({ err }, "Trash cleanup cron failed");
     res.status(500).json({ error: "Server error" });

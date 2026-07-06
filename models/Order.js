@@ -232,6 +232,14 @@ const OrderSchema = new mongoose.Schema({
   clientIp: { type: String, default: "" },
   deviceId: { type: String, default: "" },
   userAgent: { type: String, default: "" },
+
+  // soft-delete / recycle bin — when deletedAt is set the order lives in
+  // "trash": hidden from the orders dashboard + its stats, but kept in the DB
+  // so it can be restored within the retention window. A cron job permanently
+  // removes orders whose deletedAt is older than the window.
+  deletedAt: { type: Date, default: null },
+  deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -247,6 +255,7 @@ OrderSchema.index({ deviceId: 1, createdAt: -1 });
 OrderSchema.index({ userId: 1, status: 1 });
 OrderSchema.index({ userId: 1, createdAt: -1 }); // fast "my orders" sort
 OrderSchema.index({ status: 1, createdAt: -1 });
+OrderSchema.index({ deletedAt: 1, createdAt: -1 }); // trash listing + cron cleanup
 OrderSchema.index({ userEmail: 1, createdAt: -1 });
 OrderSchema.index({ paymentStatus: 1, createdAt: -1 });
 OrderSchema.index({ "shipment.trackingId": 1 }, { sparse: true }); // webhook lookups

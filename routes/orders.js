@@ -1198,7 +1198,11 @@ router.get("/my", async (req, res) => {
 
     if (!ownerFilters.length) return res.json({ orders: [] });
 
-    const orders = await Order.find({ $or: ownerFilters }).sort({
+    // never surface trashed orders to the customer
+    const orders = await Order.find({
+      $or: ownerFilters,
+      deletedAt: null,
+    }).sort({
       createdAt: -1,
     });
 
@@ -1496,6 +1500,11 @@ router.get("/:id", async (req, res) => {
     const identity = await getRequesterIdentity(req);
     const isAdmin = identity?.type === "admin";
     const isOwner = ownsOrder(order, identity);
+
+    // trashed orders are hidden from everyone except admins
+    if (order.deletedAt && !isAdmin) {
+      return res.status(404).json({ error: "Order not found" });
+    }
 
     if (isAdmin || isOwner) {
       return res.json({ order });

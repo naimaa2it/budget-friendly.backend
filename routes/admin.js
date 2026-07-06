@@ -4089,8 +4089,13 @@ router.get(
         dateFrom,
         dateTo,
         userId,
+        trashed,
       } = req.query;
       const filter = {};
+      // Recycle bin: ?trashed=true lists only trashed orders; otherwise trashed
+      // orders are hidden from the dashboard.
+      const inTrashView = trashed === "true" || trashed === "1";
+      filter.deletedAt = inTrashView ? { $ne: null } : null;
       if (userId) filter.userId = userId;
       if (dateFrom || dateTo) {
         filter.createdAt = {};
@@ -4140,7 +4145,8 @@ router.get(
       const skip = (parseInt(page) - 1) * parseInt(limit);
       const [ordersRaw, total] = await Promise.all([
         Order.find(filter)
-          .sort({ createdAt: -1 })
+          // trash view sorts by when items were trashed (newest first)
+          .sort(inTrashView ? { deletedAt: -1 } : { createdAt: -1 })
           .skip(skip)
           .limit(parseInt(limit))
           .lean(),
@@ -4166,21 +4172,28 @@ router.get(
         cancelled,
         failed,
       ] = await Promise.all([
-        Order.countDocuments({ status: "pending" }),
+        // stat counts exclude trashed orders so the tab badges + revenue stay accurate
+        Order.countDocuments({ status: "pending", deletedAt: null }),
         Order.countDocuments({
           status: { $in: ["accepted", "picked", "approved"] },
+          deletedAt: null,
         }),
-        Order.countDocuments({ status: "rejected" }),
-        Order.countDocuments({ status: "confirmed" }),
-        Order.countDocuments({ status: "processing" }),
-        Order.countDocuments({ status: "shipped" }),
-        Order.countDocuments({ status: "delivered" }),
-        Order.countDocuments({ status: "returned" }),
-        Order.countDocuments({ status: "cancelled" }),
-        Order.countDocuments({ status: "failed" }),
+        Order.countDocuments({ status: "rejected", deletedAt: null }),
+        Order.countDocuments({ status: "confirmed", deletedAt: null }),
+        Order.countDocuments({ status: "processing", deletedAt: null }),
+        Order.countDocuments({ status: "shipped", deletedAt: null }),
+        Order.countDocuments({ status: "delivered", deletedAt: null }),
+        Order.countDocuments({ status: "returned", deletedAt: null }),
+        Order.countDocuments({ status: "cancelled", deletedAt: null }),
+        Order.countDocuments({ status: "failed", deletedAt: null }),
       ]);
       const revenueAgg = await Order.aggregate([
-        { $match: { status: { $nin: ["cancelled", "failed"] } } },
+        {
+          $match: {
+            status: { $nin: ["cancelled", "failed"] },
+            deletedAt: null,
+          },
+        },
         { $group: { _id: null, total: { $sum: "$total" } } },
       ]);
       res.json({
@@ -4266,8 +4279,8 @@ router.get(
     try {
       const { page = 1, limit = 20, status, q } = req.query;
 
-      // Base: all orders whose delivery status is "returned"
-      const filter = { status: "returned" };
+      // Base: all orders whose delivery status is "returned" (exclude trashed)
+      const filter = { status: "returned", deletedAt: null };
 
       // Sub-filter by returnRequest processing status
       if (status && status !== "all") {
@@ -5593,16 +5606,98 @@ router.post(
   },
 );
 
-// DELETE /api/admin/orders/:id
+// DELETE /api/admin/orders/:id — move to trash (recoverable); ?force=true purges
 router.delete(
   "/orders/:id",
   requireAdmin,
   requirePermission("orders"),
   async (req, res) => {
     try {
-      const order = await Order.findByIdAndDelete(req.params.id);
+      const force = req.query.force === "true" || req.query.force === "1";
+      if (force) {
+        const order = await Order.findByIdAndDelete(req.params.id);
+        if (!order) return res.status(404).json({ error: "Order not found" });
+        return res.json({ ok: true });
+      }
+      const order = await Order.findByIdAndUpdate(
+        req.params.id,
+        { deletedAt: new Date(), deletedBy: req.admin._id },
+        { new: true },
+      );
       if (!order) return res.status(404).json({ error: "Order not found" });
-      res.json({ ok: true });
+      res.json({ ok: true, order });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// --- Orders recycle bin (bulk) --------------------------------------------
+// Validate a `{ ids: [...] }` body into a clean array of ObjectId strings.
+const parseOrderIds = (body) => {
+  const raw = Array.isArray(body?.ids) ? body.ids : [];
+  return raw
+    .map((id) => String(id || "").trim())
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
+};
+
+// POST /api/admin/orders/trash — bulk move orders to trash
+router.post(
+  "/orders/trash",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const ids = parseOrderIds(req.body);
+      if (ids.length === 0)
+        return res.status(400).json({ error: "No valid order ids provided" });
+      const result = await Order.updateMany(
+        { _id: { $in: ids }, deletedAt: null },
+        { $set: { deletedAt: new Date(), deletedBy: req.admin._id } },
+      );
+      res.json({ ok: true, trashed: result.modifiedCount });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// POST /api/admin/orders/restore — bulk restore orders from trash
+router.post(
+  "/orders/restore",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const ids = parseOrderIds(req.body);
+      if (ids.length === 0)
+        return res.status(400).json({ error: "No valid order ids provided" });
+      const result = await Order.updateMany(
+        { _id: { $in: ids }, deletedAt: { $ne: null } },
+        { $set: { deletedAt: null }, $unset: { deletedBy: "" } },
+      );
+      res.json({ ok: true, restored: result.modifiedCount });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// POST /api/admin/orders/permanent-delete — bulk permanent delete (trash only)
+router.post(
+  "/orders/permanent-delete",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const ids = parseOrderIds(req.body);
+      if (ids.length === 0)
+        return res.status(400).json({ error: "No valid order ids provided" });
+      const result = await Order.deleteMany({
+        _id: { $in: ids },
+        deletedAt: { $ne: null },
+      });
+      res.json({ ok: true, deleted: result.deletedCount });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
