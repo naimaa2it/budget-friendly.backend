@@ -72,7 +72,7 @@ router.get("/", async (req, res) => {
       vegan,
     } = req.query;
     const skip = (Math.max(1, page) - 1) * limit;
-    const filter = {};
+    const filter = { deletedAt: null }; // never surface trashed products
     if (status) filter.status = status;
     if (categoryId) {
       // allow comma-separated list of ids
@@ -426,7 +426,10 @@ router.get("/:id", async (req, res) => {
       }
     }
 
-    const prod = await Product.findById(req.params.id)
+    const prod = await Product.findOne({
+      _id: req.params.id,
+      deletedAt: null,
+    })
       .populate(
         "frequentlyBoughtTogether",
         "title price compareAtPrice images slug availability _id",
@@ -1014,7 +1017,7 @@ router.get("/batch", async (req, res) => {
     const ids = raw.slice(0, 50);
     // Only fields needed by CartContext: prices, stock, images, variants for
     // variant-price lookup.  Strip reviews/faqs/ingredients to keep payload small.
-    const products = await Product.find({ _id: { $in: ids } })
+    const products = await Product.find({ _id: { $in: ids }, deletedAt: null })
       .select(
         "_id title price compareAtPrice images availability inventory slug variants freeShipping",
       )

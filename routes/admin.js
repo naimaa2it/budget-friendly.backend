@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { clearProductsCache, clearProductCache } from "../lib/redis.js";
+import { permanentlyDeleteProducts } from "../lib/productCleanup.js";
 import mongoose from "mongoose";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
@@ -1065,9 +1066,14 @@ router.get(
   requirePermission("catalog"),
   async (req, res) => {
     try {
-      const { page = 1, limit = 20, q, categoryId, status } = req.query;
+      const { page = 1, limit = 20, q, categoryId, status, trashed } = req.query;
       const skip = (Math.max(1, page) - 1) * limit;
       const filter = {};
+
+      // Recycle bin: ?trashed=true lists only products currently in the trash;
+      // otherwise trashed products are hidden from the normal dashboard view.
+      const inTrashView = trashed === "true" || trashed === "1";
+      filter.deletedAt = inTrashView ? { $ne: null } : null;
 
       if (status) {
         filter.status = status;
@@ -1091,7 +1097,8 @@ router.get(
 
       const [items, total] = await Promise.all([
         Product.find(filter)
-          .sort({ updatedAt: -1 })
+          // in the trash view, order by when items were trashed (newest first)
+          .sort(inTrashView ? { deletedAt: -1 } : { updatedAt: -1 })
           .skip(Number(skip))
           .limit(Number(limit)),
         Product.countDocuments(filter),
@@ -1550,43 +1557,113 @@ router.delete(
       const force = req.query.force === "true" || req.query.force === "1";
 
       if (force) {
-        // permanent delete — remove Cloudinary images first
-        const p = await Product.findById(req.params.id);
-        if (!p) return res.status(404).json({ error: "Not found" });
-
-        if (Array.isArray(p.images) && p.images.length > 0) {
-          try {
-            ensureCloudinaryConfigured();
-            for (const img of p.images) {
-              if (img && img.public_id) {
-                try {
-                  await cloudinary.uploader.destroy(img.public_id, {
-                    resource_type: "image",
-                  });
-                } catch {
-                  // ignore Cloudinary errors
-                }
-              }
-            }
-          } catch {
-            // ignore Cloudinary errors
-          }
-        }
-
-        await detachBarcodeFromProduct(p._id);
-        await Product.deleteOne({ _id: p._id });
+        // permanent delete — remove Cloudinary images + barcodes + document
+        const deleted = await permanentlyDeleteProducts({ _id: req.params.id });
+        if (!deleted) return res.status(404).json({ error: "Not found" });
         return res.json({ ok: true });
       }
 
-      // soft-delete: set status=archived
+      // soft-delete: move to trash (recoverable within the retention window)
       const p = await Product.findByIdAndUpdate(
         req.params.id,
-        { status: "archived" },
+        { deletedAt: new Date(), deletedBy: req.admin._id },
         { new: true },
       );
       if (!p) return res.status(404).json({ error: "Not found" });
       await detachBarcodeFromProduct(p._id);
+      clearProductsCache();
+      clearProductCache(p._id);
       res.json({ ok: true, product: p });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// --- Recycle bin (bulk) ---------------------------------------------------
+// Parse and validate a `{ ids: [...] }` body into a clean array of ObjectIds.
+const parseProductIds = (body) => {
+  const raw = Array.isArray(body?.ids) ? body.ids : [];
+  return raw
+    .map((id) => String(id || "").trim())
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
+};
+
+// POST /api/admin/products/trash — bulk move products to the trash
+router.post(
+  "/products/trash",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const ids = parseProductIds(req.body);
+      if (ids.length === 0)
+        return res.status(400).json({ error: "No valid product ids provided" });
+
+      const result = await Product.updateMany(
+        { _id: { $in: ids }, deletedAt: null },
+        { $set: { deletedAt: new Date(), deletedBy: req.admin._id } },
+      );
+      // free up any barcodes so trashed products don't hold codes hostage
+      await Barcode.updateMany(
+        { product: { $in: ids } },
+        { $set: { product: null, productTitle: "" } },
+      );
+      await Product.updateMany(
+        { _id: { $in: ids } },
+        { $unset: { barcode: "" } },
+      );
+      clearProductsCache();
+      ids.forEach((id) => clearProductCache(id));
+      res.json({ ok: true, trashed: result.modifiedCount });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// POST /api/admin/products/restore — bulk restore products from the trash
+router.post(
+  "/products/restore",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const ids = parseProductIds(req.body);
+      if (ids.length === 0)
+        return res.status(400).json({ error: "No valid product ids provided" });
+
+      const result = await Product.updateMany(
+        { _id: { $in: ids }, deletedAt: { $ne: null } },
+        { $set: { deletedAt: null }, $unset: { deletedBy: "" } },
+      );
+      clearProductsCache();
+      ids.forEach((id) => clearProductCache(id));
+      res.json({ ok: true, restored: result.modifiedCount });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// POST /api/admin/products/permanent-delete — bulk permanent delete.
+// Restricted to items already in the trash so a stray call can't wipe live
+// products; also removes their Cloudinary images and barcodes.
+router.post(
+  "/products/permanent-delete",
+  requireAdmin,
+  requirePermission("catalog"),
+  async (req, res) => {
+    try {
+      const ids = parseProductIds(req.body);
+      if (ids.length === 0)
+        return res.status(400).json({ error: "No valid product ids provided" });
+
+      const deleted = await permanentlyDeleteProducts({
+        _id: { $in: ids },
+        deletedAt: { $ne: null },
+      });
+      res.json({ ok: true, deleted });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }

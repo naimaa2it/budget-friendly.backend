@@ -69,7 +69,7 @@ router.get('/most-searched', requireAdmin, async (req, res) => {
 router.get('/most-popular', requireAdmin, async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 20, 100);
-    const items = await Product.find({ status: { $ne: 'archived' } })
+    const items = await Product.find({ status: { $ne: 'archived' }, deletedAt: null })
       .sort({ viewCount: -1 })
       .limit(limit)
       .select('title slug images price variants viewCount monthlySold status')

@@ -97,6 +97,13 @@ const ProductSchema = new mongoose.Schema(
       default: "published",
     },
 
+    // soft-delete / recycle bin — when deletedAt is set the product lives in
+    // "trash": hidden from all storefront + normal dashboard listings, but kept
+    // in the DB so it can be restored within the retention window. A cron job
+    // permanently removes items whose deletedAt is older than the window.
+    deletedAt: { type: Date, default: null },
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+
     // images & variants
     images: [ImageSchema],
     variants: [VariantSchema],
@@ -285,6 +292,7 @@ ProductSchema.virtual('isFlashSaleActive').get(function () {
   return true;
 });
 
+ProductSchema.index({ deletedAt: 1 }); // trash listing + cron cleanup sweep
 ProductSchema.index({ flashSale: 1, flashSaleEndsAt: 1 });
 ProductSchema.index({ title: "text", slug: "text", description: "text", "ingredients.inciName": "text" });
 ProductSchema.index({ categoryId: 1, price: 1 });

@@ -2,6 +2,10 @@ import express from "express";
 import logger from "../lib/logger.js";
 import { sendAbandonedCartEmail } from "../lib/mailer.js";
 import { syncActiveShipments } from "../lib/shipmentTracking.js";
+import {
+  permanentlyDeleteProducts,
+  TRASH_RETENTION_MS,
+} from "../lib/productCleanup.js";
 
 const router = express.Router();
 
@@ -79,6 +83,21 @@ router.all("/abandoned-cart", async (req, res) => {
     res.json({ ok: true, sent, found: sessions.length });
   } catch (err) {
     logger.error({ err }, "Abandoned cart cron failed");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Permanently remove products that have sat in the trash past the retention
+// window (30 days). Recycle-bin cleanup — runs alongside the other pingers.
+router.all("/trash-cleanup", async (req, res) => {
+  try {
+    const cutoff = new Date(Date.now() - TRASH_RETENTION_MS);
+    const deleted = await permanentlyDeleteProducts({
+      deletedAt: { $ne: null, $lt: cutoff },
+    });
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    logger.error({ err }, "Trash cleanup cron failed");
     res.status(500).json({ error: "Server error" });
   }
 });
