@@ -1256,24 +1256,33 @@ const normalizeFaqs = (faqs) => {
       const body = (f.answer || "").trim();
       const communityAnswers = (f.answers || []).filter((a) => !a.isOfficial);
       const existingOfficial = (f.answers || []).find((a) => a.isOfficial);
+      // Preserve an admin-chosen question date (shown on the product page).
+      // When omitted or invalid, fall back to "now" so ordering stays sensible.
+      const parsedDate = f.createdAt ? new Date(f.createdAt) : null;
+      const questionDate =
+        parsedDate && !Number.isNaN(parsedDate.getTime())
+          ? parsedDate
+          : new Date();
       if (!body) {
         return {
           question: f.question.trim(),
+          createdAt: questionDate,
           answers: f.answers || [],
         };
       }
       const officialAnswer = existingOfficial
-        ? { ...existingOfficial, body, createdAt: new Date() }
+        ? { ...existingOfficial, body, createdAt: questionDate }
         : {
             body,
             isOfficial: true,
             authorName: "Seller",
             helpful: 0,
             helpfulBy: [],
-            createdAt: new Date(),
+            createdAt: questionDate,
           };
       return {
         question: f.question.trim(),
+        createdAt: questionDate,
         answers: [officialAnswer, ...communityAnswers],
       };
     });
