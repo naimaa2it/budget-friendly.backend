@@ -1508,14 +1508,12 @@ POST /api/admin/login
 ```json
 {
   "email": "admin@example.com",
-  "password": "your_password",
-  "secret": "admin_secret_key"
+  "password": "your_password"
 }
 ```
 
 **Validation:**
 
-- `secret` must match `ADMIN_SECRET` environment variable
 - Max 20 failed login attempts
 - Account locks for 2 hours after max attempts
 
@@ -2172,14 +2170,13 @@ POST /api/admin/admins
   "email": "newadmin@example.com",
   "name": "New Admin",
   "password": "secure_password",
-  "role": "admin", // or "moderator"
-  "secret": "admin_secret_key"
+  "role": "admin" // or "moderator"
 }
 ```
 
 **Validation:**
 
-- `secret` must match `ADMIN_SECRET`
+- Requires an authenticated admin (JWT cookie)
 - Password min 8 characters
 - Email must be unique
 
@@ -3061,7 +3058,7 @@ POST /api/waitlist
 | 201  | Created               | Successful POST                                 |
 | 400  | Bad Request           | Missing/invalid parameters, validation errors   |
 | 401  | Unauthorized          | Missing or invalid JWT token                    |
-| 403  | Forbidden             | Insufficient permissions, admin secret mismatch |
+| 403  | Forbidden             | Insufficient permissions                        |
 | 404  | Not Found             | Resource doesn't exist                          |
 | 423  | Locked                | Account locked (too many failed login attempts) |
 | 500  | Internal Server Error | Unexpected server error                         |
@@ -3126,9 +3123,6 @@ MONGODB_URI=mongodb://localhost:27017/Pickob
 
 # JWT Secret
 JWT_SECRET=your_super_secret_key_here
-
-# Admin Secret (for admin registration/login)
-ADMIN_SECRET=your_admin_secret_key
 
 # Cloudinary
 CLOUDINARY_CLOUD_NAME=your_cloud_name
@@ -3218,7 +3212,6 @@ All dates use **ISO 8601** format:
 ```
 Email: admin@Pickob.com
 Password: admin123
-Secret: [ADMIN_SECRET from .env]
 ```
 
 ### Test Payment (SSLCommerz Sandbox)

@@ -367,8 +367,7 @@
 ```json
 {
   "email": "admin@example.com",
-  "password": "your_password",
-  "secret": "admin_secret_key"
+  "password": "your_password"
 }
 ```
 
@@ -498,7 +497,6 @@ Cookie: token=<jwt_token>
 
 - ✅ `MONGODB_URI`
 - ✅ `JWT_SECRET`
-- ✅ `ADMIN_SECRET`
 - ✅ `CLOUDINARY_CLOUD_NAME`
 - ✅ `CLOUDINARY_API_KEY`
 - ✅ `CLOUDINARY_API_SECRET`
@@ -523,7 +521,6 @@ Cookie: token=<jwt_token>
 ```
 Email: admin@Pickob.com
 Password: admin123
-Secret: [Your ADMIN_SECRET]
 ```
 
 ### SSLCommerz Sandbox (Test Card)

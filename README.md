@@ -135,9 +135,6 @@ MONGODB_URI=mongodb://localhost:27017/Pickob
 # JWT Secret
 JWT_SECRET=your_super_secret_jwt_key_here_min_32_chars
 
-# Admin Secret (for admin creation)
-ADMIN_SECRET=your_admin_secret_key
-
 # Cloudinary Configuration
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
@@ -191,9 +188,6 @@ When you later get a **Pathao Merchant** account, add `PATHAO_CLIENT_ID`, `PATHA
 ```bash
 # Generate JWT Secret
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-
-# Generate Admin Secret
-node -e "console.log(require('crypto').randomBytes(16).toString('hex'))"
 ```
 
 ---
@@ -288,8 +282,7 @@ curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@Pickob.com",
-    "password": "admin123",
-    "secret": "your_admin_secret"
+    "password": "admin123"
   }'
 ```
 
@@ -420,7 +413,6 @@ The admin dashboard (`GET /api/admin/dashboard-overview`) provides:
 
 ### API Security
 
-- Admin secret required for admin creation
 - Role-based access control
 - Input validation on all endpoints
 - SQL injection prevention (Mongoose)
@@ -751,7 +743,6 @@ console.log(`Server is running on port ${PORT}`);
 });
 
 ADMIN_EMAIL=naimaa2it@gmail.com
-ADMIN_SECRET=Pickobadminsecrect262626
 CLOUDINARY_API_KEY=446279722954425
 CLOUDINARY_API_SECRET=6f286BxKJk2FEgR1kHYKoqlyTyY
 CLOUDINARY_CLOUD_NAME=dqyaobg8j

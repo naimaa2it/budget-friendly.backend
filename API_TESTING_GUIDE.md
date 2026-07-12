@@ -157,8 +157,7 @@ Content-Type: application/json
 Body:
 {
   "email": "admin@Pickob.com",
-  "password": "admin123",
-  "secret": "your_admin_secret"
+  "password": "admin123"
 }
 ```
 
@@ -169,8 +168,7 @@ curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@Pickob.com",
-    "password": "admin123",
-    "secret": "your_admin_secret"
+    "password": "admin123"
   }' \
   -c admin_cookies.txt
 ```
@@ -1061,8 +1059,7 @@ Body:
   "email": "moderator@Pickob.com",
   "name": "Moderator Name",
   "password": "securePassword123",
-  "role": "moderator",
-  "secret": "your_admin_secret"
+  "role": "moderator"
 }
 ```
 
@@ -1248,7 +1245,6 @@ Create environment in Postman with these variables:
 baseUrl: https://api.pickob.com
 adminEmail: admin@Pickob.com
 adminPassword: admin123
-adminSecret: your_admin_secret
 testUserId: user123
 testProductId: prod123
 testOrderId: order123

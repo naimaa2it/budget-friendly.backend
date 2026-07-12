@@ -37,7 +37,6 @@ This guide will walk you through every step of using the API, from the very firs
 
 3. **Basic information**:
    - Admin email and password (you'll create this)
-   - Admin secret (from your .env file)
 
 ---
 
@@ -802,13 +801,7 @@ Now let's learn how to log in as an admin.
 
 ### 6.1 First-Time Admin Setup
 
-If you don't have an admin account yet, you need to create one. But first, you need the admin secret from your `.env` file.
-
-**Check your `.env` file:**
-
-```
-ADMIN_SECRET=your_admin_secret_key_here
-```
+If you don't have an admin account yet, you need to create one (an existing admin can create it from the dashboard, or use the seed script).
 
 ---
 
@@ -823,8 +816,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 ```json
 {
   "email": "admin@Pickob.com",
-  "password": "yourpassword123",
-  "adminSecret": "your_admin_secret_key_here"
+  "password": "yourpassword123"
 }
 ```
 
@@ -837,8 +829,7 @@ ADMIN_SECRET=your_admin_secret_key_here
 4. Paste:
    {
      "email": "admin@Pickob.com",
-     "password": "yourpassword123",
-     "adminSecret": "paste_your_ADMIN_SECRET_here"
+     "password": "yourpassword123"
    }
 5. Click "Send"
 ```
@@ -850,8 +841,7 @@ curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@Pickob.com",
-    "password": "yourpassword123",
-    "secret": "your_admin_secret"
+    "password": "yourpassword123"
   }' \
   -c admin_cookies.txt
 ```
@@ -875,8 +865,6 @@ curl -X POST https://api.pickob.com/api/admin/login \
 
 **⚠️ Important:**
 
-- The admin secret is required for security
-- Never share your admin secret publicly
 - Use different cookies for user and admin (separate cookie files)
 
 ---
@@ -1441,8 +1429,7 @@ curl -X POST https://api.pickob.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{
     "email":"admin@Pickob.com",
-    "password":"yourpass",
-    "secret":"your_admin_secret"
+    "password":"yourpass"
   }' \
   -c admin.txt
 

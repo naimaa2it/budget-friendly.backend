@@ -2775,13 +2775,11 @@ router.get(
   },
 );
 
-// Admin forgot password - returns token (in prod send an email)
+// Admin forgot password
 router.post("/forgot", async (req, res) => {
   try {
-    const { email, adminSecret } = req.body;
-    if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
-      return res.status(403).json({ error: "Invalid admin secret" });
-    }
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Missing fields" });
 
     const admin = await Admin.findOne({ email: email.toLowerCase() });
     if (!admin) {
@@ -2797,8 +2795,12 @@ router.post("/forgot", async (req, res) => {
     admin.resetExpires = Date.now() + 1000 * 60 * 30; // 30 minutes
     await admin.save();
 
-    // TODO: send email with link containing token
-    res.json({ ok: true, token, message: "Reset token generated" });
+    // TODO: send email with link containing token. The token must never be
+    // returned in the response — anyone could take over the account with it.
+    res.json({
+      ok: true,
+      message: "If account exists, reset token has been generated",
+    });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
