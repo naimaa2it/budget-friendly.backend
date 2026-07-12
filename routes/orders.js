@@ -934,7 +934,7 @@ router.post("/payment/success", async (req, res) => {
         }).catch(() => {});
 
         return res.redirect(
-          `${FRONTEND_URL}/checkout/success?orderId=${tran_id}`,
+          `${FRONTEND_URL}/thankyou/success?orderId=${tran_id}`,
         );
       }
     }
