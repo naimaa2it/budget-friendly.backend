@@ -31,6 +31,18 @@ const normalizeBarcodeCode = (value) =>
 
 const router = express.Router();
 
+// buyingPrice is internal cost data — never expose it on public endpoints.
+// Variants are embedded documents, so the field must be removed per-variant too.
+const stripBuyingPrice = (product) => {
+  if (!product) return product;
+  const p = { ...product };
+  delete p.buyingPrice;
+  if (Array.isArray(p.variants)) {
+    p.variants = p.variants.map(({ buyingPrice, ...rest }) => rest);
+  }
+  return p;
+};
+
 // Fields sufficient for product cards on listing/search/homepage — strips
 // reviews[], faqs[], ingredients[], specifications[] and other heavy arrays
 // only needed on the single-product detail page.  Cuts response size 60-80%.
@@ -194,7 +206,12 @@ router.get("/", async (req, res) => {
       Product.countDocuments(filter),
     ]);
 
-    const payload = { items, total, page: Number(page), limit: Number(limit) };
+    const payload = {
+      items: items.map(stripBuyingPrice),
+      total,
+      page: Number(page),
+      limit: Number(limit),
+    };
     // store in cache (short TTL)
     if (redisClient?.isReady) {
       redisClient
@@ -405,7 +422,10 @@ router.get("/barcode/:code", async (req, res) => {
       )
       .lean();
     if (product) {
-      return res.json({ product, barcode: barcodeRecord || null });
+      return res.json({
+        product: stripBuyingPrice(product),
+        barcode: barcodeRecord || null,
+      });
     }
 
     return res.status(404).json({ error: "Barcode not found" });
@@ -436,17 +456,18 @@ router.get("/:id", async (req, res) => {
       )
       .lean();
     if (!prod) return res.status(404).json({ error: "Not found" });
+    const safeProd = stripBuyingPrice(prod);
     // cache product detail for a bit longer
     if (redisClient?.isReady) {
       redisClient
         .setEx(
           prodCacheKey,
           Number(process.env.PRODUCT_CACHE_TTL || 300),
-          JSON.stringify(prod),
+          JSON.stringify(safeProd),
         )
         .catch(() => {});
     }
-    res.json({ product: prod });
+    res.json({ product: safeProd });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
@@ -1022,7 +1043,7 @@ router.get("/batch", async (req, res) => {
         "_id title price compareAtPrice images availability inventory slug variants freeShipping",
       )
       .lean();
-    res.json({ products });
+    res.json({ products: products.map(stripBuyingPrice) });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }

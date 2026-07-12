@@ -21,7 +21,11 @@ import Order from "../models/Order.js";
 import Courier from "../models/Courier.js";
 import TimelinePreset from "../models/TimelinePreset.js";
 import { formatOrderIdSuffix } from "../lib/orderLookup.js";
-import { requirePermission, sanitizePermissions } from "../lib/permissions.js";
+import {
+  requirePermission,
+  sanitizePermissions,
+  hasPermission,
+} from "../lib/permissions.js";
 import sharp from "sharp";
 import categoryRoutes from "./category.js";
 import { defaultTrackingUrl } from "../lib/couriers/constants.js";
@@ -551,7 +555,11 @@ router.put(
 
 // ─── Profit Margin ───────────────────────────────────────────────────────────
 
-router.get("/profit-margin", requireAdmin, async (req, res) => {
+router.get(
+  "/profit-margin",
+  requireAdmin,
+  requirePermission("reports.profit"),
+  async (req, res) => {
   try {
     const {
       q,
@@ -757,7 +765,11 @@ router.get("/profit-margin", requireAdmin, async (req, res) => {
 
 // ─── Profit Margin Analytics (monthly/yearly charts) ─────────────────────────
 
-router.get("/profit-margin/analytics", requireAdmin, async (req, res) => {
+router.get(
+  "/profit-margin/analytics",
+  requireAdmin,
+  requirePermission("reports.profit"),
+  async (req, res) => {
   try {
     const excludedStatuses = ["cancelled", "returned"];
 
@@ -1059,6 +1071,27 @@ router.patch("/inventory/:id", requireAdmin, async (req, res) => {
   }
 });
 
+// Buying price is its own granular permission — moderators without
+// products.buying_price must never receive it in any product payload.
+const canSeeBuyingPrice = (admin) =>
+  hasPermission(admin, "products.buying_price");
+
+const stripBuyingPrice = (product) => {
+  if (!product) return product;
+  const p =
+    typeof product.toObject === "function" ? product.toObject() : { ...product };
+  delete p.buyingPrice;
+  if (Array.isArray(p.variants)) {
+    p.variants = p.variants.map((v) => {
+      const variant =
+        typeof v.toObject === "function" ? v.toObject() : { ...v };
+      delete variant.buyingPrice;
+      return variant;
+    });
+  }
+  return p;
+};
+
 // Admin product management (protected)
 router.get(
   "/products",
@@ -1103,7 +1136,15 @@ router.get(
           .limit(Number(limit)),
         Product.countDocuments(filter),
       ]);
-      res.json({ items, total, page: Number(page), limit: Number(limit) });
+      const safeItems = canSeeBuyingPrice(req.admin)
+        ? items
+        : items.map(stripBuyingPrice);
+      res.json({
+        items: safeItems,
+        total,
+        page: Number(page),
+        limit: Number(limit),
+      });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
@@ -1298,6 +1339,16 @@ router.post(
       if (payload.faqs) payload.faqs = normalizeFaqs(payload.faqs);
       const nextBarcode = normalizeBarcodeCode(payload.barcode);
 
+      // Moderators without the buying-price permission cannot set it
+      if (!canSeeBuyingPrice(req.admin)) {
+        delete payload.buyingPrice;
+        if (Array.isArray(payload.variants)) {
+          payload.variants = payload.variants.map(
+            ({ buyingPrice, ...rest }) => rest,
+          );
+        }
+      }
+
       // ensure drafts and new products are attributed to the current admin
       if (!payload.createdBy) {
         payload.createdBy = req.admin._id;
@@ -1383,7 +1434,10 @@ router.post(
             .json({ error: barcodeErr.message || "Barcode already exists" });
         }
       }
-      res.json({ ok: true, product: p });
+      res.json({
+        ok: true,
+        product: canSeeBuyingPrice(req.admin) ? p : stripBuyingPrice(p),
+      });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
@@ -1408,7 +1462,9 @@ router.get(
       ) {
         return res.status(403).json({ error: "Access denied to this draft" });
       }
-      res.json({ product: p });
+      res.json({
+        product: canSeeBuyingPrice(req.admin) ? p : stripBuyingPrice(p),
+      });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
@@ -1455,6 +1511,27 @@ router.put(
       // Load existing product first so barcode ownership can be validated before updating.
       const existing = await Product.findById(req.params.id);
       if (!existing) return res.status(404).json({ error: "Not found" });
+
+      // Moderators without the buying-price permission can neither change nor
+      // wipe buying prices — restore the stored values before applying updates.
+      if (!canSeeBuyingPrice(req.admin)) {
+        delete updates.buyingPrice;
+        if (Array.isArray(updates.variants)) {
+          const existingVariants = existing.variants || [];
+          updates.variants = updates.variants.map((v, i) => {
+            const { buyingPrice, ...rest } = v;
+            const match =
+              (v._id &&
+                existingVariants.find(
+                  (ev) => String(ev._id) === String(v._id),
+                )) ||
+              existingVariants[i];
+            if (match?.buyingPrice != null)
+              rest.buyingPrice = match.buyingPrice;
+            return rest;
+          });
+        }
+      }
 
       if (nextBarcode) {
         const [duplicateBarcode, duplicateProduct] = await Promise.all([
@@ -1550,7 +1627,10 @@ router.put(
       } else {
         await detachBarcodeFromProduct(p._id);
       }
-      res.json({ ok: true, product: p });
+      res.json({
+        ok: true,
+        product: canSeeBuyingPrice(req.admin) ? p : stripBuyingPrice(p),
+      });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
@@ -1728,7 +1808,10 @@ router.post(
       }
 
       clearProductsCache();
-      res.json({ ok: true, product: p });
+      res.json({
+        ok: true,
+        product: canSeeBuyingPrice(req.admin) ? p : stripBuyingPrice(p),
+      });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
@@ -1954,14 +2037,9 @@ router.delete(
 // Admin login
 router.post("/login", async (req, res) => {
   try {
-    const { email, password, adminSecret } = req.body;
-    if (!email || !password || !adminSecret)
+    const { email, password } = req.body;
+    if (!email || !password)
       return res.status(400).json({ error: "Missing fields" });
-
-    // Validate admin secret
-    if (adminSecret !== process.env.ADMIN_SECRET) {
-      return res.status(403).json({ error: "Invalid admin secret" });
-    }
 
     const admin = await Admin.findOne({ email: email.toLowerCase() });
     if (!admin || !admin.hashedPassword) {
