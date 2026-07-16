@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 
 const PromoStripItemSchema = new mongoose.Schema({
   title:      { type: String, required: true, trim: true },
+  highlightWord:  { type: String, default: '', trim: true },
+  highlightColor: { type: String, default: '', trim: true },
   subtitle:   { type: String, default: '', trim: true },
   link:       { type: String, default: '/', trim: true },
   image: {
