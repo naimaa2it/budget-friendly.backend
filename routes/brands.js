@@ -22,6 +22,16 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Admin: list all brands (including inactive) for the dashboard
+router.get('/admin/list', requireAdmin, async (req, res) => {
+  try {
+    const brands = await Brand.find().sort({ order: 1, name: 1 }).lean();
+    res.json({ brands });
+  } catch {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Public: get single brand by slug
 router.get('/:slug', async (req, res) => {
   try {
