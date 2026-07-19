@@ -86,6 +86,13 @@ const SettingsSchema = new mongoose.Schema({
     height: { type: Number },
     format: { type: String, default: "" },
   },
+  favicon: {
+    public_id: { type: String, default: "" },
+    url: { type: String, default: "" },
+    width: { type: Number },
+    height: { type: Number },
+    format: { type: String, default: "" },
+  },
   megaMenuTags: [
     {
       name: { type: String, trim: true },
