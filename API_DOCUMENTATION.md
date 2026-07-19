@@ -1307,7 +1307,7 @@ POST /api/orders/:id/pay
 
 ---
 
-#### 6. Cancel Order
+#### 6. Order Cancel
 
 ```http
 PATCH /api/orders/:id/cancel
@@ -1340,7 +1340,7 @@ PATCH /api/orders/:id/cancel
 
 ---
 
-#### 7. Edit Order
+#### 7. Order Edit
 
 ```http
 PATCH /api/orders/:id/edit

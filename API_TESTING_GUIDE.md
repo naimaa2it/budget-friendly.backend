@@ -647,7 +647,7 @@ curl https://api.pickob.com/api/orders/order123
 
 ---
 
-### 6. Cancel Order (within 30 min)
+### 6. Order Cancel(within 30 min)
 
 **Postman:**
 
@@ -1103,7 +1103,7 @@ Body:
 5. [ ] Ask product question
 6. [ ] Create COD order
 7. [ ] View my orders
-8. [ ] Cancel order (within 30 min)
+8. [ ] order Cancel(within 30 min)
 9. [ ] Update profile
 10. [ ] Add/edit/delete address
 
@@ -1200,7 +1200,7 @@ Body:
 │   ├── Create Order (Online)
 │   ├── Get My Orders
 │   ├── Get Single Order
-│   ├── Cancel Order
+│   ├──  Order Cancel
 │   └── Payment Callbacks
 ├── 📁 Admin - Dashboard
 │   ├── Get Overview

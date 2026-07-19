@@ -744,7 +744,7 @@ curl https://api.pickob.com/api/orders/order123
 
 ---
 
-### 5.6 Cancel Order (within 30 minutes)
+### 5.6 Order Cancel(within 30 minutes)
 
 You can cancel COD orders within 30 minutes of creation.
 
@@ -780,7 +780,7 @@ curl -X PATCH https://api.pickob.com/api/orders/order123/cancel \
 }
 ```
 
-### 5.7 Edit Order(within 30 minutes)
+### 5.7 Order Edit(within 30 minutes)
 
 1.Method: Patch 2. URL: https://api.pickob.com/api/orders/:id/edit 3. Make sure you're logged in 4. Click "Send"
 

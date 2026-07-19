@@ -111,8 +111,8 @@
 | GET    | `/my`         | User | Get my orders                        |
 | GET    | `/:id`        | -    | Get single order                     |
 | POST   | `/:id/pay`    | User | Retry payment                        |
-| PATCH  | `/:id/cancel` | User | Cancel order (30min window)          |
-| PATCH  | `/:id/edit`   | User | Edit order details (30min)           |
+| PATCH  | `/:id/cancel` | User | order Cancel(30min window)           |
+| PATCH  | `/:id/edit`   | User | order details (30min)                |
 
 **Payment Callbacks (SSLCommerz):**
 
