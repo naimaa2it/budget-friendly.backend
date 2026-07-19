@@ -379,12 +379,14 @@ router.get("/top-banner", async (req, res) => {
       supportInfo: s?.supportInfo || { phone: "", email: "" },
       megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : [],
       socialLinks: s?.socialLinks || {},
-      policyContent: s?.policyContent || {
+      policyContent: {
         shipping: [],
         return: [],
         faq: [],
         privacy: [],
         terms: [],
+        about: [],
+        ...(s?.policyContent || {}),
       },
       footerLinks: {
         quickLinks: Array.isArray(s?.footerLinks?.quickLinks) ? s.footerLinks.quickLinks : [],
@@ -411,6 +413,7 @@ router.get("/top-banner", async (req, res) => {
         faq: [],
         privacy: [],
         terms: [],
+        about: [],
       },
       footerLinks: { quickLinks: [], customerService: [] },
     });

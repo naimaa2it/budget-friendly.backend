@@ -220,6 +220,7 @@ const SettingsSchema = new mongoose.Schema({
     faq: { type: [PolicyItemSchema], default: [] },
     privacy: { type: [PolicySectionSchema], default: [] },
     terms: { type: [PolicySectionSchema], default: [] },
+    about: { type: [PolicySectionSchema], default: [] },
   },
   updatedAt: { type: Date, default: Date.now },
 });
