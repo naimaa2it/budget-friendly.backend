@@ -38,6 +38,19 @@ const PolicySectionSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// About Us items can be either a paragraph block (heading/content) or a
+// Q&A block (question/answer) — `type` decides which fields apply.
+const AboutItemSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ["paragraph", "qa"], default: "paragraph" },
+    heading: { type: String, default: "" },
+    content: { type: String, default: "" },
+    question: { type: String, default: "" },
+    answer: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 const SettingsSchema = new mongoose.Schema({
   storeName: { type: String, default: "Pickob" },
   storeEmail: { type: String, default: "" },
@@ -227,7 +240,7 @@ const SettingsSchema = new mongoose.Schema({
     faq: { type: [PolicyItemSchema], default: [] },
     privacy: { type: [PolicySectionSchema], default: [] },
     terms: { type: [PolicySectionSchema], default: [] },
-    about: { type: [PolicySectionSchema], default: [] },
+    about: { type: [AboutItemSchema], default: [] },
   },
   updatedAt: { type: Date, default: Date.now },
 });
