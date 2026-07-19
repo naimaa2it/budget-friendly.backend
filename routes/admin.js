@@ -376,6 +376,7 @@ router.get("/top-banner", async (req, res) => {
       storeName: s?.storeName || "",
       footerInfo: s?.footerInfo || { phone: "", email: "", address: "" },
       contactInfo: s?.contactInfo || { phone: "", email: "", address: "" },
+      supportInfo: s?.supportInfo || { phone: "", email: "" },
       megaMenuTags: Array.isArray(s?.megaMenuTags) ? s.megaMenuTags : [],
       socialLinks: s?.socialLinks || {},
       policyContent: s?.policyContent || {
@@ -401,6 +402,7 @@ router.get("/top-banner", async (req, res) => {
       storeName: "",
       footerInfo: { phone: "", email: "", address: "" },
       contactInfo: { phone: "", email: "", address: "" },
+      supportInfo: { phone: "", email: "" },
       megaMenuTags: [],
       socialLinks: {},
       policyContent: {

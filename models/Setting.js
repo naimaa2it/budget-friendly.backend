@@ -51,6 +51,10 @@ const SettingsSchema = new mongoose.Schema({
     email: { type: String, default: "" },
     address: { type: String, default: "" },
   },
+  supportInfo: {
+    phone: { type: String, default: "" },
+    email: { type: String, default: "" },
+  },
   socialLinks: {
     facebook: { type: SocialLinkSchema, default: () => ({}) },
     instagram: { type: SocialLinkSchema, default: () => ({}) },
