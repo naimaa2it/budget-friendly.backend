@@ -6,6 +6,7 @@ const PromoPanelSchema = new mongoose.Schema({
   title:      { type: String, default: '' },
   buttonText: { type: String, default: 'View All' },
   buttonLink: { type: String, default: '/' },
+  viewAllLink: { type: String, default: '/tag/popular-pics/' },
   isActive:   { type: Boolean, default: true },
   order:      { type: Number, default: 0 },
   productIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
