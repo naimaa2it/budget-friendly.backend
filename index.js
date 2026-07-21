@@ -4,6 +4,14 @@
 // evaluated. Importing the side-effect entry point directly fixes this.
 import "dotenv/config";
 
+// The VPS this runs on has no working outbound IPv6 route, but plenty of
+// hosts we call (smtp.hostinger.com, MongoDB Atlas, etc.) publish AAAA
+// records — Node's default DNS order tries those first and fails instantly
+// with ENETUNREACH. Prefer IPv4 results globally so lookups fall back to an
+// address that's actually reachable.
+import dns from "node:dns";
+dns.setDefaultResultOrder("ipv4first");
+
 // Validate required environment variables at startup — fail fast rather than
 // silently running with unsafe defaults.
 const REQUIRED_ENV = [
