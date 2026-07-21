@@ -607,7 +607,7 @@ router.post("/", orderLimiter, async (req, res) => {
       !billingDetails?.name ||
       !billingDetails?.phone ||
       !billingDetails?.city ||
-      (isDhaka(billingDetails.city) && !billingDetails?.zone)
+      !billingDetails?.zone
     ) {
       return res.status(400).json({ error: "Missing required order fields" });
     }
