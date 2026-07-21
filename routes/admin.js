@@ -591,7 +591,9 @@ router.get(
     }
 
     const products = await Product.find(dbFilter)
-      .select("title sku images variants price buyingPrice category status")
+      .select(
+        "title sku images variants price buyingPrice costPerItem delivery packaging category status",
+      )
       .lean();
 
     // Aggregate sold units + revenue per product from non-cancelled/returned orders
@@ -613,39 +615,49 @@ router.get(
       if (s._id) soldMap[s._id] = s;
     });
 
-    const calcMargin = (sellingPrice, buyingPrice) => {
+    // sellingPrice is the product's actual/discounted selling price (p.price —
+    // compareAtPrice is only the "was" price shown for the discount badge).
+    // costPerItem = buying price + per-unit delivery + packaging cost.
+    const calcMargin = (sellingPrice, buyingPrice, costPerItem) => {
       const sp = Number(sellingPrice) || 0;
       const bp = Number(buyingPrice) || 0;
+      const cpi = Number(costPerItem) || bp;
       if (!sp) return null;
       if (!bp)
         return {
           sp,
           bp: 0,
+          cpi: 0,
           profit: null,
           marginPct: null,
           markupPct: null,
           hasData: false,
         };
-      const profit = sp - bp;
+      const profit = sp - cpi;
       const marginPct = (profit / sp) * 100;
-      const markupPct = bp > 0 ? (profit / bp) * 100 : null;
-      return { sp, bp, profit, marginPct, markupPct, hasData: true };
+      const markupPct = cpi > 0 ? (profit / cpi) * 100 : null;
+      return { sp, bp, cpi, profit, marginPct, markupPct, hasData: true };
     };
 
     const rows = products.map((p) => {
       const hasVariants = p.variants && p.variants.length > 0;
+      const extraPerItem =
+        (p.delivery?.value || 0) + (p.packaging?.value || 0);
       let variantMargins = [];
       let aggregateMargin = null;
 
       if (hasVariants) {
-        variantMargins = p.variants.map((v, i) => ({
-          index: i,
-          name:
-            [v.color?.name, v.size].filter(Boolean).join(" / ") ||
-            v.name ||
-            `Variant ${i + 1}`,
-          ...calcMargin(v.price || p.price, v.buyingPrice ?? p.buyingPrice),
-        }));
+        variantMargins = p.variants.map((v, i) => {
+          const vBp = v.buyingPrice ?? p.buyingPrice;
+          return {
+            index: i,
+            name:
+              [v.color?.name, v.size].filter(Boolean).join(" / ") ||
+              v.name ||
+              `Variant ${i + 1}`,
+            ...calcMargin(v.price || p.price, vBp, (vBp || 0) + extraPerItem),
+          };
+        });
         const validVariants = variantMargins.filter((v) => v.hasData);
         if (validVariants.length) {
           const avgMarginPct =
@@ -665,7 +677,11 @@ router.get(
           aggregateMargin = { hasData: false, noBuyingPrice: anyHasSp };
         }
       } else {
-        aggregateMargin = calcMargin(p.price, p.buyingPrice);
+        aggregateMargin = calcMargin(
+          p.price,
+          p.buyingPrice,
+          p.costPerItem || (p.buyingPrice || 0) + extraPerItem,
+        );
       }
 
       const marginPct = aggregateMargin?.marginPct ?? null;
@@ -681,18 +697,22 @@ router.get(
                 ? "medium"
                 : "high";
 
-      // Per-product sold financials (COGS estimated from current buying price)
+      // Per-product sold financials (COGS estimated from current cost per item:
+      // buying price + delivery + packaging)
       const sold = soldMap[p._id.toString()] || {};
-      const effBP =
+      const effCPI =
         hasVariants && p.variants?.length
           ? p.variants.reduce(
-              (s, v) => s + Number(v.buyingPrice ?? p.buyingPrice ?? 0),
+              (s, v) =>
+                s +
+                Number(v.buyingPrice ?? p.buyingPrice ?? 0) +
+                extraPerItem,
               0,
             ) / p.variants.length
-          : Number(p.buyingPrice ?? 0);
+          : Number(p.costPerItem || (p.buyingPrice || 0) + extraPerItem);
       const unitsSold = sold.unitsSold || 0;
       const soldRevenue = Math.round(sold.soldRevenue || 0);
-      const soldCOGS = Math.round(effBP * unitsSold);
+      const soldCOGS = Math.round(effCPI * unitsSold);
       const soldProfit = soldRevenue - soldCOGS;
 
       return {
@@ -826,19 +846,22 @@ router.get(
       ...new Set(itemAgg.map((r) => r._id.productId).filter(Boolean)),
     ];
     const bpProducts = await Product.find({ _id: { $in: productIds } })
-      .select("_id buyingPrice variants")
+      .select("_id buyingPrice variants costPerItem delivery packaging")
       .lean();
 
+    // Effective cost per item = buying price + delivery + packaging
     const bpMap = {};
     bpProducts.forEach((p) => {
       const pid = p._id.toString();
+      const extraPerItem = (p.delivery?.value || 0) + (p.packaging?.value || 0);
       if (p.buyingPrice) {
-        bpMap[pid] = Number(p.buyingPrice);
+        bpMap[pid] = Number(p.costPerItem || p.buyingPrice + extraPerItem);
       } else if (p.variants?.length) {
         const valid = p.variants.filter((v) => v.buyingPrice);
         if (valid.length)
           bpMap[pid] =
-            valid.reduce((s, v) => s + Number(v.buyingPrice), 0) / valid.length;
+            valid.reduce((s, v) => s + Number(v.buyingPrice) + extraPerItem, 0) /
+            valid.length;
       }
     });
 
