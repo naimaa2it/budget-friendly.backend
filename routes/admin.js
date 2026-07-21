@@ -70,7 +70,10 @@ import {
   appendManualTrackingEvent,
   syncOrderShipment,
 } from "../lib/shipmentTracking.js";
-import { sendOrderCancelledEmail } from "../lib/mailer.js";
+import {
+  sendOrderCancelledEmail,
+  sendOrderConfirmedEmail,
+} from "../lib/mailer.js";
 
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
@@ -4698,6 +4701,8 @@ router.put(
           reason: String(reason || "").trim(),
           cancelledBy: "admin",
         }).catch(() => {});
+      } else if (status === "confirmed") {
+        await sendOrderConfirmedEmail(order).catch(() => {});
       }
       res.json(order);
     } catch (err) {

@@ -14,6 +14,7 @@ import {
   sendAdminOrderNotification,
   sendPaymentConfirmedEmail,
   sendOrderCancelledEmail,
+  sendOrderConfirmedEmail,
 } from "../lib/mailer.js";
 import { syncOrderShipment } from "../lib/shipmentTracking.js";
 import { requirePermission } from "../lib/permissions.js";
@@ -1223,7 +1224,10 @@ router.get("/my", async (req, res) => {
         { _id: { $in: toConfirm.map((o) => o._id) } },
         { status: "confirmed", updatedAt: now },
       );
-      toConfirm.forEach((o) => (o.status = "confirmed"));
+      toConfirm.forEach((o) => {
+        o.status = "confirmed";
+        sendOrderConfirmedEmail(o).catch(() => {});
+      });
     }
 
     // Lazy sync courier tracking from live URLs (max 5 per request)
@@ -1410,6 +1414,7 @@ async function lazyConfirmCodOrder(order) {
     order.status = "confirmed";
     order.updatedAt = new Date();
     await order.save();
+    sendOrderConfirmedEmail(order).catch(() => {});
   }
 }
 
@@ -1498,6 +1503,7 @@ router.get("/:id", async (req, res) => {
       order.status = "confirmed";
       order.updatedAt = new Date();
       await order.save();
+      sendOrderConfirmedEmail(order).catch(() => {});
     }
 
     const identity = await getRequesterIdentity(req);
