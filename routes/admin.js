@@ -4694,7 +4694,7 @@ router.put(
       }
       await order.save();
       if (status === "cancelled") {
-        sendOrderCancelledEmail(order, {
+        await sendOrderCancelledEmail(order, {
           reason: String(reason || "").trim(),
           cancelledBy: "admin",
         }).catch(() => {});

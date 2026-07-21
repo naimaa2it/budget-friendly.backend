@@ -19,16 +19,18 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "Message must be at least 10 characters." });
   }
 
-  // Respond immediately — email goes out in background so the form never freezes
-  res.json({ success: true });
-
-  sendContactEmail({
+  // Await the send — on Vercel the function invocation ends as soon as the
+  // response is flushed, so fire-and-forget email sends here get killed
+  // before the SMTP handshake completes and silently never arrive.
+  await sendContactEmail({
     name: name.trim(),
     email: email.trim().toLowerCase(),
     message: message.trim(),
   }).catch((err) => {
-    console.error("[contact] Background email error:", err.message);
+    console.error("[contact] email error:", err.message);
   });
+
+  res.json({ success: true });
 });
 
 export default router;

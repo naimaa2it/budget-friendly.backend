@@ -778,9 +778,11 @@ router.post("/", orderLimiter, async (req, res) => {
       }
     }
 
-    // Send emails (non-blocking)
-    sendOrderConfirmationEmail(order).catch(() => {});
-    sendAdminOrderNotification(order).catch(() => {});
+    // Send emails — awaited because on Vercel the function invocation is
+    // frozen right after the response is sent, so fire-and-forget sends
+    // never finish their SMTP handshake and the email never arrives.
+    await sendOrderConfirmationEmail(order).catch(() => {});
+    await sendAdminOrderNotification(order).catch(() => {});
 
     // ── Cash on Delivery ──────────────────────────────────────────────────────
     if (paymentMethod === "cash-on-delivery") {
@@ -926,8 +928,9 @@ router.post("/payment/success", async (req, res) => {
           updatedAt: new Date(),
         });
 
-        // Send payment-confirmed email (non-blocking)
-        sendPaymentConfirmedEmail({
+        // Send payment-confirmed email — awaited, see note above on why
+        // fire-and-forget sends never complete on Vercel's serverless runtime.
+        await sendPaymentConfirmedEmail({
           ...order.toObject(),
           paymentStatus: "paid",
           valId: val_id,
@@ -1584,9 +1587,10 @@ router.patch("/:id/cancel", async (req, res) => {
       await refundUserRewardPoints(order.userId, order.rewardPointsRedeemed);
     }
 
-    sendOrderCancelledEmail(order, { reason, cancelledBy: "customer" }).catch(
-      () => {},
-    );
+    await sendOrderCancelledEmail(order, {
+      reason,
+      cancelledBy: "customer",
+    }).catch(() => {});
 
     res.json({ ok: true, order });
   } catch (err) {

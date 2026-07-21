@@ -60,7 +60,7 @@ const app = express();
 app.set("trust proxy", 1);
 
 // Allowed origins: explicit whitelist only — never reflect unknown origins.
-// Add all production domains + Vercel preview pattern to ALLOWED_ORIGINS env var.
+// Add all production domains to the ALLOWED_ORIGINS env var.
 const ALLOWED_ORIGINS = new Set(
   (
     process.env.ALLOWED_ORIGINS ||
@@ -70,10 +70,6 @@ const ALLOWED_ORIGINS = new Set(
     .map((o) => o.trim())
     .filter(Boolean),
 );
-// Optional: allow Vercel preview URLs matching a pattern, e.g. ^https://Pickobfrontend-[a-z0-9-]+\.vercel\.app$
-const VERCEL_PATTERN = process.env.VERCEL_PROJECT_PATTERN
-  ? new RegExp(process.env.VERCEL_PROJECT_PATTERN)
-  : null;
 
 const store_id = process.env.STORE_ID;
 const store_passwd = process.env.STORE_PASSWORD;
@@ -81,10 +77,7 @@ const is_live = process.env.IS_LIVE === "true";
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const isAllowed =
-    origin &&
-    (ALLOWED_ORIGINS.has(origin) ||
-      (VERCEL_PATTERN && VERCEL_PATTERN.test(origin)));
+  const isAllowed = origin && ALLOWED_ORIGINS.has(origin);
   if (isAllowed) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -239,11 +232,7 @@ function startBackgroundJobs() {
 
 connectMongo()
   .then(() => {
-    // On Vercel, function instances freeze between requests, so setInterval
-    // jobs can't run reliably — those jobs are exposed as /api/cron/* routes
-    // instead and triggered by an external pinger. Only run them in-process
-    // on always-on hosts (Render/Railway/local).
-    if (!process.env.VERCEL) startBackgroundJobs();
+    startBackgroundJobs();
   })
   .catch(() => {});
 
@@ -646,29 +635,24 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: message });
 });
 
-// On Vercel, the platform itself invokes the exported app per-request — it
-// must NOT call app.listen(). On always-on hosts (Render/Railway/local) we
-// still need a real listening server plus graceful shutdown on SIGTERM.
-if (!process.env.VERCEL) {
-  const server = app.listen(PORT, () => {
-    logger.info(`Server is running on port ${PORT}`);
-  });
+const server = app.listen(PORT, () => {
+  logger.info(`Server is running on port ${PORT}`);
+});
 
-  // Graceful shutdown — allow in-flight requests to complete before exiting.
-  // Render/Railway send SIGTERM before killing the process.
-  const gracefulShutdown = (signal) => {
-    logger.info(`${signal} received — shutting down gracefully`);
-    server.close(async () => {
-      try {
-        await mongoose.connection.close();
-      } catch {}
-      logger.info("MongoDB disconnected. Exiting.");
-      process.exit(0);
-    });
-    setTimeout(() => process.exit(1), 30_000);
-  };
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-}
+// Graceful shutdown — allow in-flight requests to complete before exiting.
+// PM2/systemd send SIGTERM before killing the process.
+const gracefulShutdown = (signal) => {
+  logger.info(`${signal} received — shutting down gracefully`);
+  server.close(async () => {
+    try {
+      await mongoose.connection.close();
+    } catch {}
+    logger.info("MongoDB disconnected. Exiting.");
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 30_000);
+};
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 export default app;

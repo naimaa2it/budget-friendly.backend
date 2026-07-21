@@ -747,8 +747,6 @@ CLOUDINARY_API_KEY=446279722954425
 CLOUDINARY_API_SECRET=6f286BxKJk2FEgR1kHYKoqlyTyY
 CLOUDINARY_CLOUD_NAME=dqyaobg8j
 
-# FRONTEND_ORIGIN=https://Pickobfrontend-ei5y.vercel.app
-
 FRONTEND_ORIGIN=http://localhost:3000
 MONGODB_URI="mongodb://Pickob:Pickob@ac-uarjbv7-shard-00-00.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-01.txpmesm.mongodb.net:27017,ac-uarjbv7-shard-00-02.txpmesm.mongodb.net:27017/Pickob?ssl=true&replicaSet=atlas-ji89w4-shard-0&authSource=admin&retryWrites=true&w=majority"
 PORT=5000
@@ -797,7 +795,7 @@ const store_passwd = process.env.STORE_PASSWORD;
 const is_live = false //true for live, false for sandbox
 
 // Dynamic CORS handling — always reflect request origin so any frontend
-// (Vercel preview URLs, custom domains, local dev) can call the API.
+// (custom domains, local dev) can call the API.
 // Credentials are still guarded — cookies are only sent from allowed origins
 // and verified server-side via JWT/session checks in each route.
 app.use((req, res, next) => {
