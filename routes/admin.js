@@ -11,6 +11,10 @@ import Admin from "../models/Admin.js";
 import User from "../models/User.js";
 import CheckoutSession from "../models/CheckoutSession.js";
 import CustomerTag from "../models/CustomerTag.js";
+import DeliveryCharge from "../models/DeliveryCharge.js";
+import ShippingSettings from "../models/ShippingSettings.js";
+import ShippingZoneRate from "../models/ShippingZoneRate.js";
+import PackagingCharge from "../models/PackagingCharge.js";
 import Barcode from "../models/Barcode.js";
 import Product from "../models/Product.js";
 import FAQ from "../models/FAQ.js";
@@ -2331,6 +2335,290 @@ router.delete(
       if (!tag) return res.status(404).json({ error: "Not found" });
       await CustomerTag.deleteOne({ _id: tag._id });
       await User.updateMany({ tags: tag._id }, { $pull: { tags: tag._id } });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// --- Delivery charge management ---------------------------------------
+router.get(
+  "/delivery-charges",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const items = await DeliveryCharge.find({}).sort({ label: 1 });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.post(
+  "/delivery-charges",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const { label, value } = req.body || {};
+      if (!label || !String(label).trim()) {
+        return res.status(400).json({ error: "Label is required" });
+      }
+      if (value === undefined || value === null || isNaN(Number(value))) {
+        return res.status(400).json({ error: "A numeric value is required" });
+      }
+      const charge = await DeliveryCharge.create({
+        label: String(label).trim(),
+        value: Number(value),
+      });
+      res.status(201).json({ charge });
+    } catch (err) {
+      res.status(500).json({
+        error: err.code === 11000 ? "Charge already exists" : "Server error",
+      });
+    }
+  },
+);
+
+router.put(
+  "/delivery-charges/:id",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const { label, value, isActive } = req.body || {};
+      const charge = await DeliveryCharge.findById(req.params.id);
+      if (!charge) return res.status(404).json({ error: "Not found" });
+      if (typeof label !== "undefined") charge.label = String(label).trim();
+      if (typeof value !== "undefined") charge.value = Number(value);
+      if (typeof isActive !== "undefined") charge.isActive = !!isActive;
+      await charge.save();
+      res.json({ ok: true, charge });
+    } catch (err) {
+      res.status(500).json({
+        error: err.code === 11000 ? "Charge already exists" : "Server error",
+      });
+    }
+  },
+);
+
+router.delete(
+  "/delivery-charges/:id",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const charge = await DeliveryCharge.findById(req.params.id);
+      if (!charge) return res.status(404).json({ error: "Not found" });
+      await DeliveryCharge.deleteOne({ _id: charge._id });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// --- Packaging charge management ---------------------------------------
+router.get(
+  "/packaging-charges",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const items = await PackagingCharge.find({}).sort({ label: 1 });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.post(
+  "/packaging-charges",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const { label, value } = req.body || {};
+      if (!label || !String(label).trim()) {
+        return res.status(400).json({ error: "Label is required" });
+      }
+      if (value === undefined || value === null || isNaN(Number(value))) {
+        return res.status(400).json({ error: "A numeric value is required" });
+      }
+      const charge = await PackagingCharge.create({
+        label: String(label).trim(),
+        value: Number(value),
+      });
+      res.status(201).json({ charge });
+    } catch (err) {
+      res.status(500).json({
+        error: err.code === 11000 ? "Charge already exists" : "Server error",
+      });
+    }
+  },
+);
+
+router.put(
+  "/packaging-charges/:id",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const { label, value, isActive } = req.body || {};
+      const charge = await PackagingCharge.findById(req.params.id);
+      if (!charge) return res.status(404).json({ error: "Not found" });
+      if (typeof label !== "undefined") charge.label = String(label).trim();
+      if (typeof value !== "undefined") charge.value = Number(value);
+      if (typeof isActive !== "undefined") charge.isActive = !!isActive;
+      await charge.save();
+      res.json({ ok: true, charge });
+    } catch (err) {
+      res.status(500).json({
+        error: err.code === 11000 ? "Charge already exists" : "Server error",
+      });
+    }
+  },
+);
+
+router.delete(
+  "/packaging-charges/:id",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const charge = await PackagingCharge.findById(req.params.id);
+      if (!charge) return res.status(404).json({ error: "Not found" });
+      await PackagingCharge.deleteOne({ _id: charge._id });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// --- Shipping (checkout) charge management ------------------------------
+// Flat inside/outside-Dhaka defaults, plus Dhaka zone/area-specific
+// overrides. Consumed by the checkout quote in routes/orders.js.
+router.get(
+  "/shipping-settings",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      let settings = await ShippingSettings.findOne();
+      if (!settings) settings = await ShippingSettings.create({});
+      res.json({ settings });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.put(
+  "/shipping-settings",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const { insideDhakaCharge, outsideDhakaCharge } = req.body || {};
+      if (
+        insideDhakaCharge === undefined ||
+        isNaN(Number(insideDhakaCharge)) ||
+        outsideDhakaCharge === undefined ||
+        isNaN(Number(outsideDhakaCharge))
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Both inside and outside Dhaka charges are required" });
+      }
+      let settings = await ShippingSettings.findOne();
+      if (!settings) settings = new ShippingSettings();
+      settings.insideDhakaCharge = Number(insideDhakaCharge);
+      settings.outsideDhakaCharge = Number(outsideDhakaCharge);
+      await settings.save();
+      res.json({ ok: true, settings });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.get(
+  "/shipping-zone-rates",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const items = await ShippingZoneRate.find({}).sort({ zone: 1, area: 1 });
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.post(
+  "/shipping-zone-rates",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const { zone, area, charge } = req.body || {};
+      if (!zone || !String(zone).trim()) {
+        return res.status(400).json({ error: "Zone is required" });
+      }
+      if (charge === undefined || charge === null || isNaN(Number(charge))) {
+        return res.status(400).json({ error: "A numeric charge is required" });
+      }
+      const item = await ShippingZoneRate.create({
+        zone: String(zone).trim(),
+        area: area && String(area).trim() ? String(area).trim() : null,
+        charge: Number(charge),
+      });
+      res.status(201).json({ item });
+    } catch (err) {
+      res.status(500).json({
+        error:
+          err.code === 11000
+            ? "A charge already exists for this zone/area"
+            : "Server error",
+      });
+    }
+  },
+);
+
+router.put(
+  "/shipping-zone-rates/:id",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const { charge, isActive } = req.body || {};
+      const item = await ShippingZoneRate.findById(req.params.id);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      if (typeof charge !== "undefined") item.charge = Number(charge);
+      if (typeof isActive !== "undefined") item.isActive = !!isActive;
+      await item.save();
+      res.json({ ok: true, item });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.delete(
+  "/shipping-zone-rates/:id",
+  requireAdmin,
+  requirePermission("products.charges"),
+  async (req, res) => {
+    try {
+      const item = await ShippingZoneRate.findById(req.params.id);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      await ShippingZoneRate.deleteOne({ _id: item._id });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: "Server error" });

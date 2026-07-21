@@ -9,6 +9,8 @@ import Admin from "../models/Admin.js";
 import Discount from "../models/Discount.js";
 import CouponUsage from "../models/CouponUsage.js";
 import CheckoutSession from "../models/CheckoutSession.js";
+import ShippingSettings from "../models/ShippingSettings.js";
+import ShippingZoneRate from "../models/ShippingZoneRate.js";
 import {
   sendOrderConfirmationEmail,
   sendAdminOrderNotification,
@@ -54,15 +56,48 @@ const DHAKA_NAMES = ["dhaka", "ঢাকা"];
 const isDhaka = (city) =>
   !!city && DHAKA_NAMES.some((d) => city.trim().toLowerCase() === d);
 
+// Case-insensitive exact match, safe to embed in a RegExp.
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const exactCi = (value) =>
+  new RegExp(`^${escapeRegex(String(value).trim())}$`, "i");
+
+const getShippingSettings = async () => {
+  const settings = await ShippingSettings.findOne().lean();
+  if (settings) return settings;
+  return (await ShippingSettings.create({})).toObject();
+};
+
 /**
- * Location-aware base shipping:
- *   - 70 TK inside Dhaka city
- *   - 130 TK for Savar and outside Dhaka
+ * Location-aware base shipping, resolved from the DB:
+ *   1. An active area-level override for (zone, area) — if area is given.
+ *   2. An active zone-level override for zone (area === null).
+ *   3. The inside/outside-Dhaka default from ShippingSettings.
  *   - 0 when city is unknown (not yet selected)
  */
-const calcBaseShipping = (sub, city) => {
+const calcBaseShipping = async (sub, city, zone, area) => {
   if (!city) return 0;
-  return isDhaka(city) ? 70 : 130;
+  if (!isDhaka(city)) {
+    const settings = await getShippingSettings();
+    return settings.outsideDhakaCharge;
+  }
+  if (zone && area) {
+    const areaOverride = await ShippingZoneRate.findOne({
+      zone: exactCi(zone),
+      area: exactCi(area),
+      isActive: true,
+    }).lean();
+    if (areaOverride) return areaOverride.charge;
+  }
+  if (zone) {
+    const zoneOverride = await ShippingZoneRate.findOne({
+      zone: exactCi(zone),
+      area: null,
+      isActive: true,
+    }).lean();
+    if (zoneOverride) return zoneOverride.charge;
+  }
+  const settings = await getShippingSettings();
+  return settings.insideDhakaCharge;
 };
 
 /**
@@ -181,6 +216,8 @@ const resolveAndQuote = async (
   resolvedUserId,
   city,
   pointsToRedeem = 0,
+  zone = null,
+  area = null,
 ) => {
   const productIds = clientItems.map((i) => i.productId).filter(Boolean);
   const dbProducts = await Product.find({ _id: { $in: productIds } }).lean();
@@ -264,7 +301,9 @@ const resolveAndQuote = async (
   const hasFreeShipping = items.some(
     (i) => productMap[i.productId.toString()]?.freeShipping === true,
   );
-  const baseShipping = hasFreeShipping ? 0 : calcBaseShipping(subtotal, city);
+  const baseShipping = hasFreeShipping
+    ? 0
+    : await calcBaseShipping(subtotal, city, zone, area);
 
   let totalCouponDiscount = 0;
   let couponGivesFreeShip = false;
@@ -521,6 +560,8 @@ router.post("/quote", async (req, res) => {
       couponCode,
       couponCodes,
       city,
+      zone,
+      area,
       pointsToRedeem,
     } = req.body;
     if (!Array.isArray(clientItems) || !clientItems.length) {
@@ -535,6 +576,8 @@ router.post("/quote", async (req, res) => {
       resolvedUserId,
       city || null,
       pointsToRedeem || 0,
+      zone || null,
+      area || null,
     );
     res.json(quote);
   } catch (err) {
@@ -564,7 +607,7 @@ router.post("/", orderLimiter, async (req, res) => {
       !billingDetails?.name ||
       !billingDetails?.phone ||
       !billingDetails?.city ||
-      !billingDetails?.zone
+      (isDhaka(billingDetails.city) && !billingDetails?.zone)
     ) {
       return res.status(400).json({ error: "Missing required order fields" });
     }
@@ -687,6 +730,8 @@ router.post("/", orderLimiter, async (req, res) => {
         resolvedUserId,
         orderCity,
         pointsToRedeem || 0,
+        billingDetails?.zone || null,
+        billingDetails?.area || null,
       );
     } catch (err) {
       return res.status(err.status || 400).json({ error: err.message });

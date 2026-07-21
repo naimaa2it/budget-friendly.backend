@@ -122,6 +122,18 @@ const ProductSchema = new mongoose.Schema(
     lowStockThreshold: { type: Number, default: 5 },
     trackInventory: { type: Boolean, default: true },
 
+    // delivery & packaging charge snapshot (selected from the admin-managed
+    // DeliveryCharge/PackagingCharge lists) + derived per-item cost
+    delivery: {
+      label: { type: String, default: "" },
+      value: { type: Number, default: 0 },
+    },
+    packaging: {
+      label: { type: String, default: "" },
+      value: { type: Number, default: 0 },
+    },
+    costPerItem: { type: Number, default: 0 },
+
     // DEPRECATED: colors and sizes are now stored in variants
     // These fields are kept for backward compatibility but should not be used for new products
     // colors: [{ name: { type: String }, hex: { type: String } }],
@@ -265,6 +277,10 @@ ProductSchema.virtual("monthlySoldLabel").get(function () {
 ProductSchema.pre("save", function () {
   // update timestamps and slug
   this.updatedAt = Date.now();
+  this.costPerItem =
+    (this.buyingPrice || 0) +
+    (this.delivery?.value || 0) +
+    (this.packaging?.value || 0);
   if (!this.slug && this.title) {
     this.slug = this.title
       .toLowerCase()
