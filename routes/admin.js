@@ -1623,14 +1623,35 @@ router.put(
 
         if (removed.length > 0) {
           try {
-            ensureCloudinaryConfigured();
-            for (const publicId of removed) {
-              try {
-                await cloudinary.uploader.destroy(publicId, {
-                  resource_type: "image",
-                });
-              } catch {
-                // ignore Cloudinary errors
+            // Duplicated products (see /products/:id/duplicate) reference the
+            // same Cloudinary public_id as their source instead of copying the
+            // asset. Skip destroying any public_id still used by another
+            // product, or we'd break that product's image too.
+            const stillUsed = new Set(
+              (
+                await Product.find(
+                  {
+                    _id: { $ne: existing._id },
+                    "images.public_id": { $in: removed },
+                  },
+                  { "images.public_id": 1 },
+                ).lean()
+              ).flatMap((doc) =>
+                (doc.images || []).map((i) => i && i.public_id),
+              ),
+            );
+            const toDestroy = removed.filter((id) => !stillUsed.has(id));
+
+            if (toDestroy.length > 0) {
+              ensureCloudinaryConfigured();
+              for (const publicId of toDestroy) {
+                try {
+                  await cloudinary.uploader.destroy(publicId, {
+                    resource_type: "image",
+                  });
+                } catch {
+                  // ignore Cloudinary errors
+                }
               }
             }
           } catch {
