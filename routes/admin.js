@@ -1492,13 +1492,6 @@ router.get(
         "title price compareAtPrice images slug availability _id",
       );
       if (!p) return res.status(404).json({ error: "Not found" });
-      if (
-        p.status === "draft" &&
-        p.createdBy &&
-        p.createdBy.toString() !== req.admin._id.toString()
-      ) {
-        return res.status(403).json({ error: "Access denied to this draft" });
-      }
       res.json({
         product: canSeeBuyingPrice(req.admin) ? p : stripBuyingPrice(p),
       });
@@ -1601,16 +1594,6 @@ router.put(
         }
       }
 
-      if (
-        existing.status === "draft" &&
-        existing.createdBy &&
-        existing.createdBy.toString() !== req.admin._id.toString()
-      ) {
-        return res
-          .status(403)
-          .json({ error: "Cannot edit another administrator's draft" });
-      }
-
       // Determine images removed by comparing public_id lists
       if (Array.isArray(existing.images) && Array.isArray(updates.images)) {
         const oldIds = existing.images
@@ -1703,6 +1686,19 @@ router.delete(
     try {
       const force = req.query.force === "true" || req.query.force === "1";
 
+      const existing = await Product.findById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      if (
+        req.admin.role !== "admin" &&
+        existing.status === "draft" &&
+        existing.createdBy &&
+        existing.createdBy.toString() !== req.admin._id.toString()
+      ) {
+        return res
+          .status(403)
+          .json({ error: "Cannot trash another administrator's draft" });
+      }
+
       if (force) {
         // permanent delete — remove Cloudinary images + barcodes + document
         const deleted = await permanentlyDeleteProducts({ _id: req.params.id });
@@ -1747,21 +1743,44 @@ router.post(
       if (ids.length === 0)
         return res.status(400).json({ error: "No valid product ids provided" });
 
+      let trashableIds = ids;
+      if (req.admin.role !== "admin") {
+        const targets = await Product.find(
+          { _id: { $in: ids } },
+          { status: 1, createdBy: 1 },
+        ).lean();
+        const blocked = new Set(
+          targets
+            .filter(
+              (t) =>
+                t.status === "draft" &&
+                t.createdBy &&
+                t.createdBy.toString() !== req.admin._id.toString(),
+            )
+            .map((t) => String(t._id)),
+        );
+        trashableIds = ids.filter((id) => !blocked.has(id));
+      }
+      if (trashableIds.length === 0)
+        return res
+          .status(403)
+          .json({ error: "Cannot trash another administrator's draft(s)" });
+
       const result = await Product.updateMany(
-        { _id: { $in: ids }, deletedAt: null },
+        { _id: { $in: trashableIds }, deletedAt: null },
         { $set: { deletedAt: new Date(), deletedBy: req.admin._id } },
       );
       // free up any barcodes so trashed products don't hold codes hostage
       await Barcode.updateMany(
-        { product: { $in: ids } },
+        { product: { $in: trashableIds } },
         { $set: { product: null, productTitle: "" } },
       );
       await Product.updateMany(
-        { _id: { $in: ids } },
+        { _id: { $in: trashableIds } },
         { $unset: { barcode: "" } },
       );
       clearProductsCache();
-      ids.forEach((id) => clearProductCache(id));
+      trashableIds.forEach((id) => clearProductCache(id));
       res.json({ ok: true, trashed: result.modifiedCount });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
