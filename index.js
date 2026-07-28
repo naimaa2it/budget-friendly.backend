@@ -32,6 +32,7 @@ if (missingEnv.length > 0) {
 }
 
 import fs from "node:fs";
+import path from "node:path";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -127,6 +128,26 @@ app.use(cookieParser());
 // lib/localUpload.js. Long cache since filenames are content-addressed
 // (timestamp + random suffix), never reused after a file changes.
 fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
+// Mirrors Cloudinary's f_auto: locally-optimized images are saved as .webp
+// with a same-named .jpg fallback (see lib/localUpload.js). Old browsers
+// that don't advertise webp support in Accept get served the .jpg instead,
+// so a single stored URL works everywhere old and new.
+app.use("/uploads", (req, res, next) => {
+  if (!/\.webp$/i.test(req.path)) return next();
+  res.set("Vary", "Accept");
+  const accept = req.headers.accept || "";
+  if (accept.includes("image/webp") || accept.includes("*/*")) return next();
+  const jpgPath = path.join(
+    UPLOADS_ROOT,
+    req.path.replace(/\.webp$/i, ".jpg"),
+  );
+  fs.access(jpgPath, fs.constants.R_OK, (err) => {
+    if (err) return next();
+    res.type("jpg");
+    res.set("Cache-Control", "public, max-age=2592000, immutable");
+    fs.createReadStream(jpgPath).pipe(res);
+  });
+});
 app.use(
   "/uploads",
   express.static(UPLOADS_ROOT, { maxAge: "30d", immutable: true }),
