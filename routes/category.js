@@ -69,8 +69,33 @@ router.get("/", requireAdmin, async (req, res) => {
         .status(403)
         .json({ error: "Admin or moderator access required" });
     const Category = (await import("../models/Category.js")).default;
-    const items = await Category.find().sort({ level: 1, order: 1, name: 1 });
-    res.json({ items });
+    const cats = await Category.find()
+      .sort({ level: 1, order: 1, name: 1 })
+      .lean();
+
+    const map = new Map();
+    cats.forEach((c) =>
+      map.set(String(c._id), {
+        _id: c._id,
+        name: c.name,
+        slug: c.slug,
+        description: c.description || "",
+        parent: c.parent ? String(c.parent) : null,
+        level: c.level,
+        order: c.order,
+        isActive: c.isActive,
+        images: c.images || [],
+        children: [],
+      }),
+    );
+    const roots = [];
+    for (const node of map.values()) {
+      if (node.parent && map.has(node.parent))
+        map.get(node.parent).children.push(node);
+      else roots.push(node);
+    }
+
+    res.json({ items: cats, categories: roots });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
