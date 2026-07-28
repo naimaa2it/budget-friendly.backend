@@ -5,6 +5,7 @@ import Product from "../models/Product.js";
 import { v2 as cloudinary } from "cloudinary";
 import { redisClient } from "../lib/redis.js";
 import { bustCatMemCache } from "../lib/catCache.js";
+import { deleteImageAsset } from "../lib/localUpload.js";
 
 const CAT_CACHE_KEY = "products:categories:v2";
 const bustCatCache = () => {
@@ -148,45 +149,25 @@ router.put("/:id", requireAdmin, async (req, res) => {
       cat.level = newParent.level + 1;
     }
 
-    // Delete removed images from Cloudinary
+    // Delete removed images (local file or legacy Cloudinary asset)
     if (Array.isArray(removedImages) && removedImages.length > 0) {
-      try {
-        ensureCloudinaryConfigured();
-        for (const publicId of removedImages) {
-          if (publicId) {
-            try {
-              await cloudinary.uploader.destroy(publicId, {
-                resource_type: "image",
-              });
-            } catch {
-              // ignore Cloudinary errors
-            }
-          }
+      ensureCloudinaryConfigured();
+      for (const publicId of removedImages) {
+        if (publicId) {
+          await deleteImageAsset(publicId, cloudinary.uploader.destroy);
         }
-      } catch {
-        // ignore Cloudinary errors
       }
     }
 
-    // process image removals (delete from Cloudinary if public_id removed)
+    // process image removals (delete underlying asset if public_id removed)
     if (Array.isArray(cat.images) && Array.isArray(images)) {
       const oldIds = cat.images.map((i) => i && i.public_id).filter(Boolean);
       const newIds = images.map((i) => i && i.public_id).filter(Boolean);
       const removed = oldIds.filter((id) => !newIds.includes(id));
       if (removed.length > 0) {
-        try {
-          ensureCloudinaryConfigured();
-          for (const publicId of removed) {
-            try {
-              await cloudinary.uploader.destroy(publicId, {
-                resource_type: "image",
-              });
-            } catch {
-              // ignore Cloudinary errors
-            }
-          }
-        } catch {
-          // ignore Cloudinary errors
+        ensureCloudinaryConfigured();
+        for (const publicId of removed) {
+          await deleteImageAsset(publicId, cloudinary.uploader.destroy);
         }
       }
     }
@@ -228,25 +209,15 @@ router.delete("/:id", requireAdmin, async (req, res) => {
         .status(400)
         .json({ error: "Category is used by products; cannot delete" });
 
-    // remove any images from Cloudinary before deleting the category
-    try {
-      if (Array.isArray(cat.images) && cat.images.length > 0) {
-        const ids = cat.images.map((i) => i && i.public_id).filter(Boolean);
-        if (ids.length > 0) {
-          ensureCloudinaryConfigured();
-          for (const publicId of ids) {
-            try {
-              await cloudinary.uploader.destroy(publicId, {
-                resource_type: "image",
-              });
-            } catch {
-              // ignore Cloudinary errors
-            }
-          }
+    // remove any underlying images before deleting the category
+    if (Array.isArray(cat.images) && cat.images.length > 0) {
+      const ids = cat.images.map((i) => i && i.public_id).filter(Boolean);
+      if (ids.length > 0) {
+        ensureCloudinaryConfigured();
+        for (const publicId of ids) {
+          await deleteImageAsset(publicId, cloudinary.uploader.destroy);
         }
       }
-    } catch {
-      // proceed with deletion of DB record even if Cloudinary cleanup fails
     }
 
     await cat.deleteOne();

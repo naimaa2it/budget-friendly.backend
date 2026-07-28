@@ -4,22 +4,10 @@ import { uploadLimiter, reviewLimiter } from "../lib/rateLimiters.js";
 import Product from "../models/Product.js";
 import Barcode from "../models/Barcode.js";
 import multer from "multer";
-import { v2 as cloudinary } from "cloudinary";
-import sharp from "sharp";
 import { redisClient, clearProductsCache } from "../lib/redis.js";
 import { getCatMemCache, setCatMemCache } from "../lib/catCache.js";
+import { processAndSaveImage } from "../lib/localUpload.js";
 
-let cloudinaryConfigured = false;
-const ensureCloudinaryConfigured = () => {
-  if (!cloudinaryConfigured) {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-    });
-    cloudinaryConfigured = true;
-  }
-};
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -518,8 +506,8 @@ async function requireAdmin(req, res, next) {
 }
 
 // Upload review images — authenticated users only, max 4 images, 10MB each.
-// (Kept as a fallback path; the frontend now uploads review images directly to
-// Cloudinary via /api/user/upload/sign to bypass Vercel's 4.5MB body cap.)
+// (Kept as a fallback path; the frontend now uploads review images via
+// POST /api/user/upload — see lib/uploadImage.js.)
 const reviewImageUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 4 },
@@ -537,29 +525,18 @@ router.post(
   reviewImageUpload.array("images", 4),
   async (req, res) => {
     try {
-      ensureCloudinaryConfigured();
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: "No files uploaded" });
       }
       const urls = await Promise.all(
-        req.files.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              cloudinary.uploader
-                .upload_stream(
-                  {
-                    folder: `${process.env.CLOUDINARY_FOLDER || "Pickob"}/reviews`,
-                    quality: "auto",
-                    fetch_format: "auto",
-                  },
-                  (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result.secure_url);
-                  },
-                )
-                .end(file.buffer);
-            }),
-        ),
+        req.files.map(async (file) => {
+          const { url } = await processAndSaveImage(
+            file.buffer,
+            file.mimetype,
+            `${process.env.CLOUDINARY_FOLDER || "Pickob"}/reviews`,
+          );
+          return url;
+        }),
       );
       res.json({ ok: true, urls });
     } catch (err) {
@@ -955,7 +932,7 @@ router.delete(
   },
 );
 
-// Upload image (optimized server-side) - returns Cloudinary asset
+// Upload image (optimized server-side) - saved to this server's local disk
 router.post(
   "/upload",
   requireAdmin,
@@ -963,63 +940,22 @@ router.post(
   upload.single("file"),
   async (req, res) => {
     try {
-      ensureCloudinaryConfigured(); // configure on first use
-
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-      if (
-        !process.env.CLOUDINARY_CLOUD_NAME ||
-        !process.env.CLOUDINARY_API_KEY ||
-        !process.env.CLOUDINARY_API_SECRET
-      ) {
-        return res.status(500).json({
-          error:
-            "Server upload not configured (Cloudinary credentials missing).",
-        });
-      }
-
-      const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
-      const quality = Number(process.env.IMG_QUALITY) || 75;
-
-      let optimizedBuffer;
+      let asset;
       try {
-        optimizedBuffer = await sharp(req.file.buffer)
-          .rotate()
-          .resize({ width: maxWidth, withoutEnlargement: true })
-          .webp({ quality })
-          .toBuffer();
+        asset = await processAndSaveImage(
+          req.file.buffer,
+          req.file.mimetype,
+          `${process.env.CLOUDINARY_FOLDER || "Pickob"}/products`,
+        );
       } catch (sharpErr) {
         return res
           .status(400)
           .json({ error: "Invalid image file or unsupported format." });
       }
 
-      const streamUpload = (buffer) =>
-        new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            {
-              folder: `${process.env.CLOUDINARY_FOLDER || "Pickob"}/products`,
-              resource_type: "image",
-            },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            },
-          );
-          stream.end(buffer);
-        });
-
-      const result = await streamUpload(optimizedBuffer);
-      res.json({
-        ok: true,
-        asset: {
-          public_id: result.public_id,
-          url: result.secure_url || result.url,
-          width: result.width,
-          height: result.height,
-          format: result.format,
-        },
-      });
+      res.json({ ok: true, asset });
     } catch (err) {
       res.status(500).json({ error: err.message || "Upload failed" });
     }

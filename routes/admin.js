@@ -7,6 +7,14 @@ import { permanentlyDeleteProducts } from "../lib/productCleanup.js";
 import mongoose from "mongoose";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
+import {
+  processAndSaveImage,
+  deleteImageAsset,
+  deleteLocalImage,
+  isLocalPublicId,
+  listLocalImages,
+  listLocalFolders,
+} from "../lib/localUpload.js";
 import Admin from "../models/Admin.js";
 import User from "../models/User.js";
 import CheckoutSession from "../models/CheckoutSession.js";
@@ -30,7 +38,6 @@ import {
   sanitizePermissions,
   hasPermission,
 } from "../lib/permissions.js";
-import sharp from "sharp";
 import categoryRoutes from "./category.js";
 import { defaultTrackingUrl } from "../lib/couriers/constants.js";
 import {
@@ -172,6 +179,9 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
+// Local-storage folder prefix — kept the same as the old Cloudinary folder
+// name so existing on-disk/URL paths stay meaningful.
+const ROOT_UPLOAD_FOLDER = process.env.CLOUDINARY_FOLDER || "Pickob";
 
 // Middleware to require admin JWT cookie
 const requireAdmin = async (req, res, next) => {
@@ -223,141 +233,35 @@ router.post("/check-email", async (req, res) => {
   }
 });
 
-// Cloudinary signed-upload params — frontend uploads directly, bypassing Vercel body limit
-router.get("/upload/sign", requireAdmin, (req, res) => {
-  try {
-    ensureCloudinaryConfigured();
-    const timestamp = Math.round(Date.now() / 1000);
-    const folder = String(
-      req.query.folder ||
-        `${process.env.CLOUDINARY_FOLDER || "Pickob"}/products`,
-    );
-    const paramsToSign = { folder, timestamp };
-    const signature = cloudinary.utils.api_sign_request(
-      paramsToSign,
-      process.env.CLOUDINARY_API_SECRET,
-    );
-    res.json({
-      signature,
-      timestamp,
-      folder,
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-      apiKey: process.env.CLOUDINARY_API_KEY,
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to generate upload signature" });
-  }
-});
-
-// Image/Video upload to Cloudinary (admin-only) — optimized server-side with sharp
+// Image/Video upload (admin-only) — stored on this server's local disk under
+// public/uploads, served back at /uploads (see index.js). Images are
+// optimized with sharp (resize, rotate, convert to webp) before saving.
 router.post(
   "/upload",
   requireAdmin,
   upload.single("file"),
   async (req, res) => {
     try {
-      ensureCloudinaryConfigured(); // configure on first use
-
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-      // fail fast if Cloudinary is not configured correctly
-      if (
-        !process.env.CLOUDINARY_CLOUD_NAME ||
-        !process.env.CLOUDINARY_API_KEY ||
-        !process.env.CLOUDINARY_API_SECRET
-      ) {
-        return res.status(500).json({
-          error:
-            "Server upload not configured (Cloudinary credentials missing).",
-        });
-      }
 
       // Get folder from request body or query (default to products)
       const folder =
-        req.body.folder ||
-        req.query.folder ||
-        `${process.env.CLOUDINARY_FOLDER || "Pickob"}/media`;
+        req.body.folder || req.query.folder || `${ROOT_UPLOAD_FOLDER}/media`;
 
-      // Detect if file is a video based on mimetype
-      const isVideo = req.file.mimetype.startsWith("video/");
-      const resourceType = isVideo ? "video" : "image";
-
-      // For images: optimize with sharp (resize, rotate, convert to webp)
-      if (resourceType === "image") {
-        const maxWidth = Number(process.env.IMG_MAX_WIDTH) || 1600;
-        const quality = Number(process.env.IMG_QUALITY) || 75;
-
-        let optimizedBuffer;
-        try {
-          optimizedBuffer = await sharp(req.file.buffer)
-            .rotate()
-            .resize({ width: maxWidth, withoutEnlargement: true })
-            .webp({ quality })
-            .toBuffer();
-        } catch (sharpErr) {
-          return res
-            .status(400)
-            .json({ error: "Invalid image file or unsupported format." });
-        }
-
-        const streamUpload = (buffer) =>
-          new Promise((resolve, reject) => {
-            const stream = cloudinary.uploader.upload_stream(
-              {
-                folder,
-                resource_type: "image",
-              },
-              (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
-              },
-            );
-            stream.end(buffer);
-          });
-
-        const result = await streamUpload(optimizedBuffer);
-        res.json({
-          ok: true,
-          asset: {
-            public_id: result.public_id,
-            url: result.secure_url || result.url,
-            width: result.width,
-            height: result.height,
-            format: result.format,
-            resourceType: "image",
-          },
-        });
-      } else {
-        // For videos: upload directly without processing
-        const streamUpload = (buffer) =>
-          new Promise((resolve, reject) => {
-            const stream = cloudinary.uploader.upload_stream(
-              {
-                folder,
-                resource_type: "video",
-              },
-              (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
-              },
-            );
-            stream.end(buffer);
-          });
-
-        const result = await streamUpload(req.file.buffer);
-        res.json({
-          ok: true,
-          asset: {
-            public_id: result.public_id,
-            url: result.secure_url || result.url,
-            width: result.width,
-            height: result.height,
-            format: result.format,
-            duration: result.duration,
-            resourceType: "video",
-          },
-        });
+      let asset;
+      try {
+        asset = await processAndSaveImage(
+          req.file.buffer,
+          req.file.mimetype,
+          folder,
+        );
+      } catch (sharpErr) {
+        return res
+          .status(400)
+          .json({ error: "Invalid image file or unsupported format." });
       }
+
+      res.json({ ok: true, asset });
     } catch (err) {
       res.status(500).json({ error: err.message || "Upload failed" });
     }
@@ -1628,13 +1532,7 @@ router.put(
             if (toDestroy.length > 0) {
               ensureCloudinaryConfigured();
               for (const publicId of toDestroy) {
-                try {
-                  await cloudinary.uploader.destroy(publicId, {
-                    resource_type: "image",
-                  });
-                } catch {
-                  // ignore Cloudinary errors
-                }
+                await deleteImageAsset(publicId, cloudinary.uploader.destroy);
               }
             }
           } catch {
@@ -3655,16 +3553,10 @@ router.delete(
       const Banner = (await import("../models/Banner.js")).default;
       const banner = await Banner.findByIdAndDelete(req.params.id);
       if (!banner) return res.status(404).json({ error: "Not found" });
-      // optionally remove from Cloudinary
+      // remove the underlying image (local file or legacy Cloudinary asset)
       if (banner.image?.public_id) {
-        try {
-          ensureCloudinaryConfigured();
-          await cloudinary.uploader.destroy(banner.image.public_id, {
-            resource_type: "image",
-          });
-        } catch {
-          /* ignore Cloudinary errors */
-        }
+        ensureCloudinaryConfigured();
+        await deleteImageAsset(banner.image.public_id, cloudinary.uploader.destroy);
       }
       res.json({ ok: true });
     } catch (err) {
@@ -3780,14 +3672,8 @@ router.delete(
       const panel = await PromoPanel.findByIdAndDelete(req.params.id);
       if (!panel) return res.status(404).json({ error: "Not found" });
       if (panel.image?.public_id) {
-        try {
-          ensureCloudinaryConfigured();
-          await cloudinary.uploader.destroy(panel.image.public_id, {
-            resource_type: "image",
-          });
-        } catch {
-          /* ignore Cloudinary errors */
-        }
+        ensureCloudinaryConfigured();
+        await deleteImageAsset(panel.image.public_id, cloudinary.uploader.destroy);
       }
       res.json({ ok: true });
     } catch (err) {
@@ -3869,14 +3755,8 @@ router.delete(
       const Popup = (await import("../models/Popup.js")).default;
       const popup = await Popup.findOne();
       if (popup?.image?.public_id) {
-        try {
-          ensureCloudinaryConfigured();
-          await cloudinary.uploader.destroy(popup.image.public_id, {
-            resource_type: "image",
-          });
-        } catch {
-          /* ignore Cloudinary errors */
-        }
+        ensureCloudinaryConfigured();
+        await deleteImageAsset(popup.image.public_id, cloudinary.uploader.destroy);
       }
       await Popup.deleteMany();
       res.json({ ok: true });
@@ -3886,10 +3766,15 @@ router.delete(
   },
 );
 
-// ─── Media Library (Cloudinary) ────────────────────────────────────────────────
+// ─── Media Library (local uploads + legacy Cloudinary) ─────────────────────────
+//
+// New uploads all land on this server's local disk (see lib/localUpload.js);
+// images uploaded before that migration still live on Cloudinary. This
+// library merges both sources so nothing already uploaded "disappears".
 
 // GET /api/admin/media?folder=&next_cursor=&q=
-// Lists images and videos stored in Cloudinary (up to 60 per page)
+// Local files (no pagination — folders are small) are only included on the
+// first page; `next_cursor` (Cloudinary-only) drives "load more" beyond that.
 router.get(
   "/media",
   requireAdmin,
@@ -3897,7 +3782,7 @@ router.get(
   async (req, res) => {
     try {
       ensureCloudinaryConfigured();
-      const { folder = "", next_cursor, q } = req.query;
+      const { folder = "", next_cursor, q = "" } = req.query;
 
       const buildOpts = (resource_type) => {
         const opts = { type: "upload", resource_type, max_results: 30 };
@@ -3915,7 +3800,7 @@ router.get(
           .catch(() => ({ resources: [] })),
       ]);
 
-      let resources = [
+      let cloudinaryItems = [
         ...(imgResult.resources || []).map((r) => ({
           ...r,
           resource_type: "image",
@@ -3924,17 +3809,22 @@ router.get(
           ...r,
           resource_type: "video",
         })),
-      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      ];
 
       if (q) {
         const lower = q.toLowerCase();
-        resources = resources.filter((r) =>
+        cloudinaryItems = cloudinaryItems.filter((r) =>
           r.public_id.toLowerCase().includes(lower),
         );
       }
 
-      res.json({
-        items: resources.map((r) => ({
+      const localItems = next_cursor
+        ? [] // already delivered on the first page
+        : listLocalImages({ folder, q });
+
+      const items = [
+        ...localItems,
+        ...cloudinaryItems.map((r) => ({
           public_id: r.public_id,
           url: r.secure_url || r.url,
           resource_type: r.resource_type,
@@ -3945,10 +3835,17 @@ router.get(
           created_at: r.created_at,
           folder: r.folder || r.public_id.split("/").slice(0, -1).join("/"),
         })),
+      ];
+      if (!next_cursor) {
+        items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      }
+
+      res.json({
+        items,
         next_cursor: imgResult.next_cursor || vidResult.next_cursor || null,
       });
     } catch (err) {
-      res.status(500).json({ error: err.message || "Cloudinary error" });
+      res.status(500).json({ error: err.message || "Media library error" });
     }
   },
 );
@@ -3959,36 +3856,58 @@ router.get(
   requireAdmin,
   requirePermission("content"),
   async (req, res) => {
+    let cloudinaryFolders = [];
     try {
       ensureCloudinaryConfigured();
       const result = await cloudinary.api.root_folders();
-      const folders = (result.folders || []).map((f) => f.path);
-      res.json({ folders });
+      cloudinaryFolders = (result.folders || []).map((f) => f.path);
     } catch (err) {
-      // non-fatal — return empty list
-      res.json({ folders: [] });
+      // non-fatal — Cloudinary folders are just an addition to the local list
     }
+    const folders = [...new Set([...listLocalFolders(), ...cloudinaryFolders])].sort();
+    res.json({ folders });
   },
 );
 
-// DELETE /api/admin/media  — delete one or more images/videos from Cloudinary
-// body: { public_ids: ['folder/name', ...], resource_type?: 'image'|'video' }
+// DELETE /api/admin/media  — delete one or more images/videos (local file or
+// legacy Cloudinary asset). body: { public_ids: ['folder/name', ...], resource_type?: 'image'|'video' }
 router.delete(
   "/media",
   requireAdmin,
   requirePermission("content"),
   async (req, res) => {
     try {
-      ensureCloudinaryConfigured();
       const { public_ids, resource_type } = req.body || {};
       if (!Array.isArray(public_ids) || public_ids.length === 0) {
         return res.status(400).json({ error: "public_ids array required" });
       }
-      const type = resource_type === "video" ? "video" : "image";
-      const result = await cloudinary.api.delete_resources(public_ids, {
-        resource_type: type,
+
+      const localIds = public_ids.filter(isLocalPublicId);
+      const cloudinaryIds = public_ids.filter((id) => !isLocalPublicId(id));
+
+      localIds.forEach(deleteLocalImage);
+
+      let cloudinaryDeleted = {};
+      if (cloudinaryIds.length > 0) {
+        ensureCloudinaryConfigured();
+        const type = resource_type === "video" ? "video" : "image";
+        try {
+          const result = await cloudinary.api.delete_resources(cloudinaryIds, {
+            resource_type: type,
+          });
+          cloudinaryDeleted = result.deleted || {};
+        } catch (err) {
+          // fall through — local deletes above still succeeded
+        }
+      }
+
+      res.json({
+        ok: true,
+        deleted: {
+          ...cloudinaryDeleted,
+          ...Object.fromEntries(localIds.map((id) => [id, "deleted"])),
+        },
       });
-      res.json({ ok: true, deleted: result.deleted });
     } catch (err) {
       res.status(500).json({ error: err.message || "Delete failed" });
     }

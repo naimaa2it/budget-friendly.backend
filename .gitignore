@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# locally-stored uploads (product/category/banner/avatar images) — runtime
+# data written by lib/localUpload.js, never committed
+/public/uploads/*
+!/public/uploads/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -31,6 +31,7 @@ if (missingEnv.length > 0) {
   process.exit(1);
 }
 
+import fs from "node:fs";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -39,6 +40,7 @@ import compression from "compression";
 import SSLCommerzPayment from "sslcommerz-lts";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
+import { UPLOADS_ROOT } from "./lib/localUpload.js";
 
 import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
@@ -111,13 +113,24 @@ app.use(
   }),
 );
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
-// JSON/form bodies never carry raw image bytes (uploads go straight to
-// Cloudinary), but product/blog docs with rich HTML + many image URLs can grow
-// past a couple MB — keep the limit generous so saves never 413 "entity too
-// large". File uploads are capped at 10MB client-side (see lib/uploadImage.js).
+// JSON/form bodies never carry raw image bytes (those go through multer as
+// multipart/form-data — see routes/admin.js and routes/user.js POST /upload),
+// but product/blog docs with rich HTML + many image URLs can grow past a
+// couple MB — keep the limit generous so saves never 413 "entity too large".
+// File uploads are capped at 10MB client-side (see lib/uploadImage.js) and
+// server-side via multer's fileSize limit.
 app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: true, limit: "12mb" }));
 app.use(cookieParser());
+
+// Locally-stored uploads (product/category/banner/avatar images etc.) — see
+// lib/localUpload.js. Long cache since filenames are content-addressed
+// (timestamp + random suffix), never reused after a file changes.
+fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
+app.use(
+  "/uploads",
+  express.static(UPLOADS_ROOT, { maxAge: "30d", immutable: true }),
+);
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/admin")) return next();
   return generalLimiter(req, res, next);
@@ -635,6 +648,15 @@ app.post("/api/waitlist", async (req, res) => {
 // Global error handler — catches any unhandled errors thrown in route handlers
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  // Multer's errors (file-upload routes) don't carry a .status, so they'd
+  // otherwise fall through to the generic 500 below.
+  if (err.name === "MulterError") {
+    const message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? "File is too large — max 10MB."
+        : err.message;
+    return res.status(400).json({ error: message });
+  }
   const status = err.status || err.statusCode || 500;
   const message = status < 500 ? err.message : "Internal server error";
   if (status >= 500) {
