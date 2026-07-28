@@ -239,7 +239,7 @@ router.get("/categories", async (req, res) => {
           setCatMemCache(parsed);
           res.setHeader(
             "Cache-Control",
-            "public, max-age=600, stale-while-revalidate=3600",
+            "public, max-age=30, stale-while-revalidate=120",
           );
           return res.json(parsed);
         }
@@ -284,7 +284,7 @@ router.get("/categories", async (req, res) => {
     }
     res.setHeader(
       "Cache-Control",
-      "public, max-age=600, stale-while-revalidate=3600",
+      "public, max-age=30, stale-while-revalidate=120",
     );
     res.json(payload);
   } catch (err) {

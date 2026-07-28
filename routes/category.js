@@ -60,10 +60,14 @@ const requireAdmin = async (req, res, next) => {
 };
 
 // --- Category management (admin-only) ---
+// Returns a tree (same shape as the public /api/products/categories endpoint)
+// but reads straight from the DB — no cache — so dashboard edits show up instantly.
 router.get("/", requireAdmin, async (req, res) => {
   try {
-    if (req.admin.role !== "admin")
-      return res.status(403).json({ error: "Admin access required" });
+    if (req.admin.role !== "admin" && req.admin.role !== "moderator")
+      return res
+        .status(403)
+        .json({ error: "Admin or moderator access required" });
     const Category = (await import("../models/Category.js")).default;
     const items = await Category.find().sort({ level: 1, order: 1, name: 1 });
     res.json({ items });
@@ -195,7 +199,12 @@ router.delete("/:id", requireAdmin, async (req, res) => {
     const Category = (await import("../models/Category.js")).default;
     const cat = await Category.findById(req.params.id);
     if (!cat) return res.status(404).json({ error: "Not found" });
-    const child = await Category.findOne({ parent: cat._id });
+    const [child, product] = await Promise.all([
+      Category.findOne({ parent: cat._id }),
+      // exclude trashed products — a soft-deleted product still holding this
+      // categoryId shouldn't block deleting a category that has 0 active products
+      Product.findOne({ categoryId: cat._id, deletedAt: null }),
+    ]);
     if (child)
       return res
         .status(400)
@@ -203,7 +212,6 @@ router.delete("/:id", requireAdmin, async (req, res) => {
           error:
             "Category has subcategories; remove them first or deactivate instead",
         });
-    const product = await Product.findOne({ categoryId: cat._id });
     if (product)
       return res
         .status(400)
