@@ -824,11 +824,12 @@ router.post("/", orderLimiter, async (req, res) => {
       }
     }
 
-    // Send emails — awaited because on Vercel the function invocation is
-    // frozen right after the response is sent, so fire-and-forget sends
-    // never finish their SMTP handshake and the email never arrives.
-    await sendOrderConfirmationEmail(order).catch(() => {});
-    await sendAdminOrderNotification(order).catch(() => {});
+    // Send emails fire-and-forget — backend is an always-on VPS process (not
+    // Vercel serverless), so nothing freezes after the response is sent. Awaiting
+    // these here blocked order placement for up to ~20-30s whenever SMTP was slow
+    // or unreachable, making "Place Order" look stuck instead of confirming.
+    sendOrderConfirmationEmail(order).catch(() => {});
+    sendAdminOrderNotification(order).catch(() => {});
 
     // ── Cash on Delivery ──────────────────────────────────────────────────────
     if (paymentMethod === "cash-on-delivery") {
