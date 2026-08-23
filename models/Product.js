@@ -219,6 +219,16 @@ const ProductSchema = new mongoose.Schema(
         images: { type: [String], default: [] },
         helpful: { type: Number, default: 0 },
         createdAt: { type: Date, default: Date.now },
+        // ---- automation / moderation (set by lib/ruleEngine.js) ----
+        hidden: { type: Boolean, default: false }, // auto/mod hidden from public
+        flagged: { type: Boolean, default: false }, // queued for human review
+        tags: { type: [String], default: [] }, // e.g. "angry-customer"
+        adminReply: {
+          body: { type: String },
+          byName: { type: String },
+          isAuto: { type: Boolean, default: false },
+          createdAt: { type: Date },
+        },
       },
     ],
     averageRating: { type: Number, default: 0 },
