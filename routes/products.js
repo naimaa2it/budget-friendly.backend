@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import { uploadLimiter, reviewLimiter } from "../lib/rateLimiters.js";
 import Product from "../models/Product.js";
@@ -43,6 +44,13 @@ const CARD_SELECT = [
   "coupon featured clearance tags rewardPoints",
   "skinTypes spf fragranceFree parabenFree crueltyFree vegan",
 ].join(" ");
+
+// Same field set as CARD_SELECT, expressed as an aggregation $project object
+// (used by the rating-priority sort path, which needs an aggregation pipeline).
+const CARD_PROJECTION = CARD_SELECT.split(/\s+/).reduce((acc, field) => {
+  acc[field] = 1;
+  return acc;
+}, {});
 
 //get products with optional filters: ?q=search&categoryId=123&badge=best-seller&flag=featured&page=1&limit=20&status=published&sort=position&minPrice=10&maxPrice=100&brand=BrandA&minRating=4
 // Public product listing with pagination, search, category filter
@@ -162,8 +170,6 @@ router.get("/", async (req, res) => {
       nameDesc: { title: -1 },
       priceHigh: { price: -1 },
       priceLow: { price: 1 },
-      // highest-rated first (5★ → 4★ → 3★ …), newest as tiebreaker
-      ratingHigh: { averageRating: -1, updatedAt: -1 },
     };
     let sortBy = sortMap[sort] || sortMap.position;
     // When text search is active and no explicit sort was requested, rank by
@@ -187,15 +193,70 @@ router.get("/", async (req, res) => {
       }
     }
 
-    const [items, total] = await Promise.all([
-      Product.find(filter)
-        .select(CARD_SELECT)
-        .sort(sortBy)
-        .skip(Number(skip))
-        .limit(Number(limit))
-        .lean(),
-      Product.countDocuments(filter),
-    ]);
+    // Rating-priority ordering: the storefront rating widget sends ?ratingSort=N
+    // (1-5). Products whose rounded star rating equals N float to the very top,
+    // and every other product follows in descending rating order. Example for
+    // N=4 → 4★, 5★, 3★, 2★, 1★. Nothing is filtered out. Only applies to the
+    // default ("position") sort and non-search listings so explicit sort/search
+    // choices still win.
+    const ratingSortN = Number(req.query.ratingSort);
+    const useRatingBucket =
+      ratingSortN >= 1 &&
+      ratingSortN <= 5 &&
+      (sort === "position" || sort === undefined) &&
+      !q;
+
+    let items, total;
+    if (useRatingBucket) {
+      // Aggregation $match does NOT auto-cast strings to ObjectId the way
+      // Mongoose's find() does, so cast categoryId (the only ObjectId field in
+      // the filter) explicitly or category filtering would silently match none.
+      const toOid = (v) =>
+        mongoose.Types.ObjectId.isValid(v) ? new mongoose.Types.ObjectId(v) : v;
+      const matchFilter = { ...filter };
+      if (matchFilter.categoryId) {
+        if (matchFilter.categoryId.$in) {
+          matchFilter.categoryId = {
+            $in: matchFilter.categoryId.$in.map(toOid),
+          };
+        } else {
+          matchFilter.categoryId = toOid(matchFilter.categoryId);
+        }
+      }
+      const pipeline = [
+        { $match: matchFilter },
+        {
+          $addFields: {
+            _rrank: {
+              $let: {
+                vars: { r: { $round: [{ $ifNull: ["$averageRating", 0] }, 0] } },
+                in: {
+                  $cond: [{ $eq: ["$$r", ratingSortN] }, 100, "$$r"],
+                },
+              },
+            },
+          },
+        },
+        { $sort: { _rrank: -1, averageRating: -1, updatedAt: -1 } },
+        { $skip: Number(skip) },
+        { $limit: Number(limit) },
+        { $project: CARD_PROJECTION },
+      ];
+      [items, total] = await Promise.all([
+        Product.aggregate(pipeline),
+        Product.countDocuments(filter),
+      ]);
+    } else {
+      [items, total] = await Promise.all([
+        Product.find(filter)
+          .select(CARD_SELECT)
+          .sort(sortBy)
+          .skip(Number(skip))
+          .limit(Number(limit))
+          .lean(),
+        Product.countDocuments(filter),
+      ]);
+    }
 
     const payload = {
       items: items.map(stripBuyingPrice),
