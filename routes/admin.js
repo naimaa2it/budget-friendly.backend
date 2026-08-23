@@ -1074,12 +1074,36 @@ router.get(
           // in the trash view, order by when items were trashed (newest first)
           .sort(inTrashView ? { deletedAt: -1 } : { updatedAt: -1 })
           .skip(Number(skip))
-          .limit(Number(limit)),
+          .limit(Number(limit))
+          // needed to reconstruct a "Created by" entry for products that
+          // predate the auditTrail field
+          .populate("createdBy", "name email"),
         Product.countDocuments(filter),
       ]);
+
+      // For older products (created before the auditTrail existed) fall back to
+      // the stored createdBy admin so the dashboard can still show who created
+      // them. Past *edits* can't be reconstructed — they were never recorded.
+      const withAudit = items.map((doc) => {
+        const obj = doc.toObject({ virtuals: true });
+        const creator = obj.createdBy;
+        if (!Array.isArray(obj.auditTrail) || obj.auditTrail.length === 0) {
+          const name =
+            (creator && (creator.name || creator.email?.split("@")[0])) || null;
+          obj.auditTrail = name
+            ? [{ name, action: "created", at: obj.createdAt }]
+            : [];
+        }
+        // collapse the populated admin back to its id to keep the payload shape
+        if (creator && typeof creator === "object") {
+          obj.createdBy = creator._id;
+        }
+        return obj;
+      });
+
       const safeItems = canSeeBuyingPrice(req.admin)
-        ? items
-        : items.map(stripBuyingPrice);
+        ? withAudit
+        : withAudit.map(stripBuyingPrice);
       res.json({
         items: safeItems,
         total,
@@ -1295,6 +1319,13 @@ router.post(
         payload.createdBy = req.admin._id;
       }
 
+      // seed the human-readable audit trail with a "created by" entry
+      const creatorName =
+        req.admin.name || req.admin.email?.split("@")[0] || "Admin";
+      payload.auditTrail = [
+        { name: creatorName, action: "created", at: new Date() },
+      ];
+
       // perform a bit of defensive cleanup/validation so the database error is
       // easier for the client to understand.  This mirrors some of the logic
       // already in the front end but ensures the server doesn't crash if a bad
@@ -1445,6 +1476,25 @@ router.put(
       // Load existing product first so barcode ownership can be validated before updating.
       const existing = await Product.findById(req.params.id);
       if (!existing) return res.status(404).json({ error: "Not found" });
+
+      // Append an "edited by" entry to the audit trail. Preserve the original
+      // "created" entry and keep only the 4 most recent edits (5 entries total).
+      const editorName =
+        req.admin.name || req.admin.email?.split("@")[0] || "Admin";
+      const prevTrail = Array.isArray(existing.auditTrail)
+        ? existing.auditTrail.map((e) => ({
+            name: e.name,
+            action: e.action,
+            at: e.at,
+          }))
+        : [];
+      const createdEntry = prevTrail.find((e) => e.action === "created");
+      const edits = prevTrail.filter((e) => e.action === "edited");
+      edits.push({ name: editorName, action: "edited", at: new Date() });
+      updates.auditTrail = [
+        ...(createdEntry ? [createdEntry] : []),
+        ...edits.slice(-4),
+      ].slice(-5);
 
       // Moderators without the buying-price permission can neither change nor
       // wipe buying prices — restore the stored values before applying updates.
@@ -4503,13 +4553,35 @@ router.get(
       if (paymentMethod && paymentMethod !== "all")
         filter.paymentMethod = paymentMethod;
       if (q) {
-        filter.$or = [
+        const orClauses = [
           { _id: q.match(/^[a-f\d]{24}$/i) ? q : null },
           { "billingDetails.name": { $regex: q, $options: "i" } },
           { "billingDetails.phone": { $regex: q, $options: "i" } },
           { userEmail: { $regex: q, $options: "i" } },
           { transactionId: { $regex: q, $options: "i" } },
         ].filter((c) => Object.values(c)[0] !== null);
+
+        // Search by the short 8-char order ID (the suffix shown in the
+        // dashboard, e.g. "#A1B2C3D4"). Strip a leading '#' and match the last
+        // 8 hex chars of the stringified _id, allowing partial suffixes too.
+        const idQuery = q.trim().replace(/^#/, "");
+        if (/^[a-f\d]{1,8}$/i.test(idQuery)) {
+          const escaped = idQuery
+            .toUpperCase()
+            .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          orClauses.push({
+            $expr: {
+              $regexMatch: {
+                input: {
+                  $toUpper: { $substr: [{ $toString: "$_id" }, 16, 8] },
+                },
+                regex: escaped,
+              },
+            },
+          });
+        }
+
+        filter.$or = orClauses;
       }
       const skip = (parseInt(page) - 1) * parseInt(limit);
       const [ordersRaw, total] = await Promise.all([
@@ -4954,8 +5026,7 @@ router.put(
       const { status, reason } = req.body;
       if (!VALID.includes(status))
         return res.status(400).json({ error: "Invalid status" });
-      if (!String(reason || "").trim())
-        return res.status(400).json({ error: "Reason is required" });
+      // reason is optional — a status change may be recorded without one
       const order = await Order.findById(req.params.id);
       if (!order) return res.status(404).json({ error: "Order not found" });
       applyOrderStatusChange(order, status, {

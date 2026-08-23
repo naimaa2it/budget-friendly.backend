@@ -162,6 +162,8 @@ router.get("/", async (req, res) => {
       nameDesc: { title: -1 },
       priceHigh: { price: -1 },
       priceLow: { price: 1 },
+      // highest-rated first (5★ → 4★ → 3★ …), newest as tiebreaker
+      ratingHigh: { averageRating: -1, updatedAt: -1 },
     };
     let sortBy = sortMap[sort] || sortMap.position;
     // When text search is active and no explicit sort was requested, rank by

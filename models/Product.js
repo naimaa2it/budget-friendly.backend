@@ -155,6 +155,19 @@ const ProductSchema = new mongoose.Schema(
 
     // ownership + audit
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    // Human-readable audit trail of who created / edited this product.
+    // Kept capped at 5 entries (the "created" entry + the 4 most recent edits)
+    // so the dashboard can show a short who-touched-this list.
+    auditTrail: [
+      new mongoose.Schema(
+        {
+          name: { type: String }, // moderator/admin display name
+          action: { type: String, enum: ["created", "edited"], default: "edited" },
+          at: { type: Date, default: Date.now },
+        },
+        { _id: false },
+      ),
+    ],
 
     // promotion flags (admin toggles)
     coupon: { type: Boolean, default: false }, // eligible for coupons
