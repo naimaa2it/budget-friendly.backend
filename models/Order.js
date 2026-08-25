@@ -233,6 +233,10 @@ const OrderSchema = new mongoose.Schema({
   deviceId: { type: String, default: "" },
   userAgent: { type: String, default: "" },
 
+  // where the order was placed from. "chatbot" = created by the AI/support
+  // chatbot; anything else (or unset) = normal storefront checkout.
+  source: { type: String, default: "web" },
+
   // soft-delete / recycle bin — when deletedAt is set the order lives in
   // "trash": hidden from the orders dashboard + its stats, but kept in the DB
   // so it can be restored within the retention window. A cron job permanently
