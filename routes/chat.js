@@ -88,7 +88,8 @@ router.post("/message", generalLimiter, async (req, res) => {
       .limit(100)
       .lean();
     res.json({ conversationId: convo._id, messages, quickReplies: QUICK_REPLIES });
-  } catch {
+  } catch (err) {
+    console.error("[chat/message] error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
