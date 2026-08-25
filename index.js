@@ -56,7 +56,7 @@ import brandRoutes from "./routes/brands.js";
 import contactRoutes from "./routes/contact.js";
 import cartRoutes from "./routes/cart.js";
 import cronRoutes from "./routes/cron.js";
-import automationRoutes from "./routes/automation.js";
+import chatRoutes from "./routes/chat.js";
 import { syncActiveShipments } from "./lib/shipmentTracking.js";
 import { seedDefaultsIfEmpty } from "./lib/courierDefaults.js";
 import { generalLimiter } from "./lib/rateLimiters.js";
@@ -304,7 +304,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/cart", cartRoutes); // shareable cart links
 app.use("/api/cron", cronRoutes); // external-pinger-triggered background jobs (Vercel-safe)
 
-app.use("/api/automation", automationRoutes); // keyword automation: rules CRUD, dry-run test, logs
+app.use("/api/chat", chatRoutes); // support chatbot: visitor send/poll + admin inbox
 
 // Public: list active occasion sections (used by homepage)
 app.get("/api/occasions", async (req, res) => {

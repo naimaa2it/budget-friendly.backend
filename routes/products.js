@@ -8,7 +8,6 @@ import multer from "multer";
 import { redisClient, clearProductsCache } from "../lib/redis.js";
 import { getCatMemCache, setCatMemCache } from "../lib/catCache.js";
 import { processAndSaveImage } from "../lib/localUpload.js";
-import { runAutomation } from "../lib/ruleEngine.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -634,20 +633,6 @@ router.post("/:id/reviews", requireUser, reviewLimiter, async (req, res) => {
       body: body.trim(),
       images: reviewImages,
       createdAt: new Date(),
-    });
-    // Keyword automation: negative-comment auto-reply / hide / flag / notify.
-    // Mutates the review in place (hidden/flagged/adminReply); saved just below.
-    const newReview = prod.reviews[prod.reviews.length - 1];
-    await runAutomation({
-      channel: "review",
-      text: body.trim(),
-      sourceId: `review:${prod._id}:${newReview._id}`,
-      meta: {
-        name: displayName,
-        product: prod.title,
-        email: req.user?.email,
-      },
-      ctx: { review: newReview, product: prod },
     });
     await prod.save();
     res.json({
