@@ -210,7 +210,7 @@ const calculateCouponDiscount = (coupon, subtotal) => {
 // Fetches real prices from the DB, validates coupon(s), and returns the full
 // pricing breakdown. Supports up to 2 stackable coupons (1 if cart has free-shipping product).
 // couponCodes can be a single code string or array of codes.
-const resolveAndQuote = async (
+export const resolveAndQuote = async (
   clientItems,
   couponCodes,
   resolvedUserId,

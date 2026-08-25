@@ -1,65 +1,24 @@
 import express from "express";
 import ChatConversation from "../models/ChatConversation.js";
 import ChatMessage from "../models/ChatMessage.js";
+import ChatbotQA from "../models/ChatbotQA.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { requirePermission } from "../lib/permissions.js";
-import { matchFaqAnswer } from "../lib/faqMatch.js";
 import { generalLimiter } from "../lib/rateLimiters.js";
+import { handleChatMessage } from "../lib/chatbotEngine.js";
 
 const router = express.Router();
 
 const MAX_LEN = 1000;
-const SITE = process.env.FRONTEND_ORIGIN || "https://pickob.com";
 
-// Quick-reply menu shown in the widget. Same list the frontend renders as
-// buttons; clicking a button just sends its text, which we match here too.
+// Quick-reply menu shown in the widget. Clicking a button sends its text, which
+// the chatbot engine then handles like any typed message.
 export const QUICK_REPLIES = [
   { key: "track", emoji: "📦", label: "Track Order", text: "Track order" },
   { key: "delivery", emoji: "🚚", label: "Delivery", text: "Delivery charge koto?" },
   { key: "products", emoji: "🛍️", label: "Products", text: "Products dekhte chai" },
   { key: "agent", emoji: "👤", label: "Agent", text: "Agent er sathe kotha bolbo" },
 ];
-
-// intent → canned answer (typical e-commerce chatbot behaviour)
-const INTENTS = [
-  {
-    keys: ["track order", "order koi", "order kothay", "amar order", "parcel koi", "track"],
-    reply: `Order track korte ekhane jaan 👉 ${SITE}/track-order — ba apnar order number ta ekhane likhun, dekhe dicchi 🙂`,
-  },
-  {
-    keys: ["delivery", "shipping", "charge", "koto taka", "kobe pabo", "koto din", "cash on"],
-    reply:
-      "Dhaka'r moddhe delivery charge 60-80৳, Dhaka'r baire 120-150৳. Dhaka'y 1-2 din, baire 2-4 diner moddhe delivery. Cash on Delivery (COD) available ✅",
-  },
-  {
-    keys: ["product", "kinbo", "kinte", "ki ache", "available", "dekhte chai", "koto dam", "dam koto"],
-    reply: `Amader shob product ekhane dekhun 🛍️ 👉 ${SITE} — ki khujchen bolun, help kori.`,
-  },
-  {
-    keys: ["agent", "human", "manush", "kotha bolbo", "customer care", "call", "phone"],
-    reply:
-      "Ekjon team member shigroi apnar sathe jogajog korbe 🙏 doya kore apnar phone number likhe din.",
-    flag: true,
-  },
-];
-
-function normalize(t) {
-  return String(t || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
-}
-
-// Decide the bot's reply: menu intent → site FAQ → soft human handoff.
-async function botAnswer(text) {
-  const t = normalize(text);
-  for (const it of INTENTS) {
-    if (it.keys.some((k) => t.includes(normalize(k)))) return { reply: it.reply, flag: !!it.flag };
-  }
-  const faq = await matchFaqAnswer(text);
-  if (faq) return { reply: faq.answer, flag: false };
-  return {
-    reply: "Dhonnobad! 🙏 amader ekjon team member shigroi apnar message er reply debe.",
-    flag: true,
-  };
-}
 
 // ===========================================================================
 // PUBLIC — site visitor
@@ -96,7 +55,26 @@ router.post("/message", generalLimiter, async (req, res) => {
 
     await ChatMessage.create({ conversationId: convo._id, sender: "visitor", body: text });
 
-    const { reply, flag } = await botAnswer(text);
+    // FREE rule-based chatbot: trained Q&A + product search + guided order flow.
+    // No paid API. Conversation state persists on convo.botState.
+    const meta = {
+      clientIp:
+        (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+        req.socket?.remoteAddress ||
+        "",
+      userAgent: req.headers["user-agent"] || "chatbot",
+      deviceId: req.body.deviceId || "",
+    };
+    const turn = await handleChatMessage({
+      text,
+      state: convo.botState,
+      meta,
+    });
+    const reply = turn.reply;
+    const flag = !!turn.flag;
+    convo.botState = turn.state || {};
+    convo.markModified("botState");
+
     await ChatMessage.create({ conversationId: convo._id, sender: "bot", body: reply });
 
     convo.lastMessage = text;
@@ -198,6 +176,67 @@ router.put("/conversations/:id", async (req, res) => {
     if (typeof req.body.flagged === "boolean") convo.flagged = req.body.flagged;
     await convo.save();
     res.json({ conversation: convo });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ===========================================================================
+// ADMIN — chatbot training (Q&A knowledge base)
+// ===========================================================================
+
+router.get("/training", async (req, res) => {
+  try {
+    const items = await ChatbotQA.find().sort({ order: 1, createdAt: 1 }).lean();
+    // Free rule-based bot is always active (no API key required).
+    res.json({ items, aiEnabled: true });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.post("/training", async (req, res) => {
+  try {
+    const { question, answer, tags, enabled, order } = req.body;
+    if (!question?.trim() || !answer?.trim())
+      return res.status(400).json({ error: "Question and answer are required" });
+    const item = await ChatbotQA.create({
+      question: question.trim(),
+      answer: answer.trim(),
+      tags: Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : [],
+      enabled: enabled !== false,
+      order: Number(order) || 0,
+      createdBy: req.admin?._id || null,
+    });
+    res.json({ item });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.put("/training/:id", async (req, res) => {
+  try {
+    const item = await ChatbotQA.findById(req.params.id);
+    if (!item) return res.status(404).json({ error: "Not found" });
+    const { question, answer, tags, enabled, order } = req.body;
+    if (question != null) item.question = String(question).trim();
+    if (answer != null) item.answer = String(answer).trim();
+    if (tags != null)
+      item.tags = Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : [];
+    if (typeof enabled === "boolean") item.enabled = enabled;
+    if (order != null) item.order = Number(order) || 0;
+    await item.save();
+    res.json({ item });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.delete("/training/:id", async (req, res) => {
+  try {
+    const del = await ChatbotQA.findByIdAndDelete(req.params.id);
+    if (!del) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Server error" });
   }

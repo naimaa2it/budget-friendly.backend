@@ -12,6 +12,7 @@
     "migrate:products": "node scripts/migrateProducts.js"
   },
   "dependencies": {
+    "bangladesh-location-data": "^1.0.6",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "compression": "^1.8.1",

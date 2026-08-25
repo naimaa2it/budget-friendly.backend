@@ -27,6 +27,10 @@ const ChatConversationSchema = new mongoose.Schema({
   // how many visitor messages the admin hasn't seen yet
   unreadForAdmin: { type: Number, default: 0 },
 
+  // State-machine data for the free rule-based support chatbot (current step
+  // in the guided order flow + draft order). Persists across page reloads.
+  botState: { type: mongoose.Schema.Types.Mixed, default: {} },
+
   createdAt: { type: Date, default: Date.now },
 });
 
