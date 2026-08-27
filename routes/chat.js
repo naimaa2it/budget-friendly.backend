@@ -169,6 +169,19 @@ router.post("/conversations/:id/reply", async (req, res) => {
   }
 });
 
+// Permanently delete a conversation and all its messages.
+router.delete("/conversations/:id", async (req, res) => {
+  try {
+    const convo = await ChatConversation.findById(req.params.id);
+    if (!convo) return res.status(404).json({ error: "Conversation not found" });
+    await ChatMessage.deleteMany({ conversationId: convo._id });
+    await convo.deleteOne();
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 router.put("/conversations/:id", async (req, res) => {
   try {
     const convo = await ChatConversation.findById(req.params.id);
