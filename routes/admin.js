@@ -6476,9 +6476,14 @@ router.post(
   requirePermission("orders"),
   async (req, res) => {
     try {
-      const { items, customer, sessionId, cartUserId } = req.body || {};
+      const { items, customer, sessionId, cartUserId, shipping } =
+        req.body || {};
       const placedBy =
         req.admin?.name || req.admin?.email || "admin";
+      const shippingOverride =
+        shipping === undefined || shipping === null || shipping === ""
+          ? null
+          : Number(shipping);
 
       // Link the order to the customer's account (by email, else phone) so it
       // behaves exactly like a self-placed order: it appears in their order
@@ -6511,6 +6516,7 @@ router.post(
         defaultNote: "Manually placed order",
         userId: linkedUserId,
         requireAddress: false,
+        shippingOverride,
         meta: {
           clientIp: req.ip || "",
           userAgent: "admin-manual",
