@@ -40,11 +40,25 @@ router.post('/', async (req, res) => {
 // PATCH /api/checkout-sessions/:id — update guest identity as they fill the checkout form
 router.patch('/:id', async (req, res) => {
   try {
-    const { userName, userEmail, userPhone } = req.body;
+    const {
+      userName,
+      userEmail,
+      userPhone,
+      userCity,
+      userZone,
+      userArea,
+      userAddress,
+      userNote,
+    } = req.body;
     const update = {};
     if (userName) update.userName = String(userName).slice(0, 100);
     if (userEmail) update.userEmail = String(userEmail).slice(0, 200);
     if (userPhone) update.userPhone = String(userPhone).slice(0, 30);
+    if (userCity) update.userCity = String(userCity).slice(0, 100);
+    if (userZone) update.userZone = String(userZone).slice(0, 100);
+    if (userArea) update.userArea = String(userArea).slice(0, 100);
+    if (userAddress) update.userAddress = String(userAddress).slice(0, 500);
+    if (userNote) update.userNote = String(userNote).slice(0, 500);
     if (!Object.keys(update).length) return res.json({ ok: true });
 
     await CheckoutSession.findByIdAndUpdate(req.params.id, update);

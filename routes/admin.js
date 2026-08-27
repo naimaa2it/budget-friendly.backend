@@ -6311,7 +6311,7 @@ router.get(
       const skip = (pg - 1) * lim;
       const [users, total] = await Promise.all([
         User.find(filter)
-          .select("name email mobile savedCart")
+          .select("name email mobile savedCart addresses")
           .sort({ "savedCart.updatedAt": -1 })
           .skip(skip)
           .limit(lim)
@@ -6399,17 +6399,25 @@ router.get(
       let userMap = {};
       if (userIds.length) {
         const users = await User.find({ _id: { $in: userIds } })
-          .select("name email mobile")
+          .select("name email mobile addresses")
           .lean();
         for (const u of users) userMap[String(u._id)] = u;
       }
       const enriched = rawSessions.map((s) => {
         const u = s.userId ? userMap[String(s.userId)] : null;
+        const addr = u?.addresses?.[0] || {};
         return {
           ...s,
           userName: s.userName || u?.name || null,
           userEmail: s.userEmail || u?.email || null,
           userPhone: s.userPhone || u?.mobile || null,
+          // Fall back to the customer's saved address when the session itself
+          // didn't capture a typed address (e.g. logged-in checkout).
+          userCity: s.userCity || addr.city || null,
+          userZone: s.userZone || addr.zone || null,
+          userArea: s.userArea || null,
+          userAddress: s.userAddress || addr.address || null,
+          userNote: s.userNote || null,
         };
       });
       const active = enriched.filter((s) => {

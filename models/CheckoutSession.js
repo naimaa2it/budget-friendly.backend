@@ -5,6 +5,14 @@ const CheckoutSessionSchema = new mongoose.Schema({
   userEmail: { type: String, default: null },
   userName: { type: String, default: null },
   userPhone: { type: String, default: null },
+  // Delivery address the customer fills in on the checkout page. Captured as
+  // they type so staff can see it in the Abandoned Checkout tab and pre-fill a
+  // manually placed order.
+  userCity: { type: String, default: null },
+  userZone: { type: String, default: null },
+  userArea: { type: String, default: null },
+  userAddress: { type: String, default: null },
+  userNote: { type: String, default: null },
   items: [{
     productId: { type: String, default: '' },
     title: { type: String, default: '' },
