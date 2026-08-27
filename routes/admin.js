@@ -4183,8 +4183,12 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
     const last7Start = addDays(todayStart, -6);
     const last30Start = addDays(todayStart, -29);
 
+    // Every dashboard figure must ignore trashed orders so the numbers match
+    // the Orders page (which filters `deletedAt: null` everywhere).
+    const notTrashed = { deletedAt: null };
+
     const summarizeRange = async (start, end) => {
-      const match = { createdAt: { $gte: start, $lt: end } };
+      const match = { createdAt: { $gte: start, $lt: end }, ...notTrashed };
       const [count, salesAgg, profitAgg, pending] = await Promise.all([
         Order.countDocuments(match),
         Order.aggregate([
@@ -4237,16 +4241,19 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
       newCustomersCount,
       returningCustomersCount,
     ] = await Promise.all([
-      Order.countDocuments(),
-      Order.countDocuments({ status: "pending" }),
-      Order.countDocuments({ status: "processing" }),
-      Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+      Order.countDocuments({ ...notTrashed }),
+      Order.countDocuments({ status: "pending", ...notTrashed }),
+      Order.countDocuments({ status: "processing", ...notTrashed }),
       Order.aggregate([
-        { $match: { status: { $nin: ["cancelled", "failed"] } } },
+        { $match: { ...notTrashed } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      Order.aggregate([
+        { $match: { status: { $nin: ["cancelled", "failed"] }, ...notTrashed } },
         { $group: { _id: null, total: { $sum: "$total" } } },
       ]),
       Order.aggregate([
-        { $match: { status: { $nin: ["cancelled", "failed"] } } },
+        { $match: { status: { $nin: ["cancelled", "failed"] }, ...notTrashed } },
         {
           $group: {
             _id: null,
@@ -4254,10 +4261,11 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
           },
         },
       ]),
-      Order.find({}).sort({ createdAt: -1 }).limit(8).lean(),
+      Order.find({ ...notTrashed }).sort({ createdAt: -1 }).limit(8).lean(),
       Order.countDocuments({
         paymentMethod: { $in: ["online", "bkash"] },
         paymentStatus: "unpaid",
+        ...notTrashed,
       }),
       summarizeRange(todayStart, tomorrowStart),
       summarizeRange(yesterdayStart, todayStart),
@@ -4268,6 +4276,7 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
           $match: {
             createdAt: { $gte: last30Start, $lt: tomorrowStart },
             status: { $nin: ["cancelled", "failed"] },
+            ...notTrashed,
           },
         },
         { $unwind: "$items" },
@@ -4289,6 +4298,7 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
           $match: {
             createdAt: { $gte: todayStart, $lt: tomorrowStart },
             status: { $nin: ["cancelled", "failed"] },
+            ...notTrashed,
           },
         },
         {
@@ -4309,6 +4319,7 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
           $match: {
             createdAt: { $gte: last12MonthsStart },
             status: { $nin: ["cancelled", "failed"] },
+            ...notTrashed,
           },
         },
         {
@@ -4329,6 +4340,7 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
           $match: {
             createdAt: { $gte: last30Start },
             status: { $nin: ["cancelled", "failed"] },
+            ...notTrashed,
           },
         },
         {
@@ -4344,6 +4356,7 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
       User.countDocuments({ createdAt: { $gte: last30Start } }),
       // Returning customers (placed more than 1 order)
       Order.aggregate([
+        { $match: { ...notTrashed } },
         { $group: { _id: "$billingDetails.phone", orderCount: { $sum: 1 } } },
         { $match: { orderCount: { $gt: 1 } } },
         { $count: "total" },
@@ -4449,11 +4462,19 @@ router.get("/dashboard-overview", requireAdmin, async (req, res) => {
       orderFlow: {
         created: totalOrders,
         pending: statusCounts.pending || 0,
+        // "accepted" groups the intermediate handling states shown as accepted
+        // on the Orders page (accepted / picked / approved).
+        accepted:
+          (statusCounts.accepted || 0) +
+          (statusCounts.picked || 0) +
+          (statusCounts.approved || 0),
         confirmed: statusCounts.confirmed || 0,
         processing: statusCounts.processing || 0,
         sentToCourier: statusCounts.shipped || 0,
         delivered: statusCounts.delivered || 0,
+        returned: statusCounts.returned || 0,
         cancelled: statusCounts.cancelled || 0,
+        rejected: statusCounts.rejected || 0,
         failed: statusCounts.failed || 0,
       },
       recentOrders,
