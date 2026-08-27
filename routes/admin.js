@@ -5205,7 +5205,7 @@ router.put(
       const order = await Order.findById(req.params.id);
       if (!order) return res.status(404).json({ error: "Order not found" });
 
-      const { items, shipping, discount } = req.body || {};
+      const { items, shipping, discount, subtotal } = req.body || {};
 
       if (Array.isArray(items)) {
         if (items.length === 0) {
@@ -5227,6 +5227,12 @@ router.put(
           (sum, item) => sum + item.price * item.quantity,
           0,
         );
+      }
+
+      // Explicit subtotal override (admin editing the "Original Order" amount
+      // directly). Wins over the value computed from items above.
+      if (typeof subtotal !== "undefined") {
+        order.subtotal = Math.max(0, Number(subtotal) || 0);
       }
 
       if (typeof shipping !== "undefined") {
