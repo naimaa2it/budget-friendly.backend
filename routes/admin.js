@@ -6480,6 +6480,28 @@ router.post(
       const placedBy =
         req.admin?.name || req.admin?.email || "admin";
 
+      // Link the order to the customer's account (by email, else phone) so it
+      // behaves exactly like a self-placed order: it appears in their order
+      // history and its reward points land in "My Rewards". If no account
+      // matches, the order still links by billingDetails.email for history once
+      // they register/log in with that email.
+      let linkedUserId = cartUserId || null;
+      if (!linkedUserId) {
+        const email = customer?.email
+          ? String(customer.email).trim().toLowerCase()
+          : "";
+        const phone = customer?.phone
+          ? String(customer.phone).replace(/\D/g, "").replace(/^88/, "")
+          : "";
+        const or = [];
+        if (email) or.push({ email });
+        if (phone) or.push({ mobile: { $regex: `${phone}$` } });
+        if (or.length) {
+          const acct = await User.findOne({ $or: or }).select("_id").lean();
+          if (acct) linkedUserId = String(acct._id);
+        }
+      }
+
       const result = await placeChatbotOrder({
         items,
         customer,
@@ -6487,6 +6509,8 @@ router.post(
         changedBy: placedBy,
         statusReason: `Manually placed by ${placedBy} (customer confirmed by phone)`,
         defaultNote: "Manually placed order",
+        userId: linkedUserId,
+        requireAddress: false,
         meta: {
           clientIp: req.ip || "",
           userAgent: "admin-manual",
