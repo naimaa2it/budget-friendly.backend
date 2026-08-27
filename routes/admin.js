@@ -5078,7 +5078,10 @@ router.put(
       if (!order) return res.status(404).json({ error: "Order not found" });
       applyOrderStatusChange(order, status, {
         reason: String(reason || "").trim(),
-        changedBy: String(req.admin?._id || "admin"),
+        changedBy:
+          req.admin?.email ||
+          req.admin?.name ||
+          String(req.admin?._id || "admin"),
       });
       if (status === "delivered") {
         await creditOrderRewardPoints(order);
@@ -5901,7 +5904,10 @@ router.post(
       if (isDelivered) {
         applyOrderStatusChange(order, "delivered", {
           reason: String(label).trim(),
-          changedBy: String(req.admin?._id || "admin"),
+          changedBy:
+            req.admin?.email ||
+            req.admin?.name ||
+            String(req.admin?._id || "admin"),
         });
       } else {
         appendManualTrackingEvent(order, {
@@ -6032,7 +6038,10 @@ router.post(
       ) {
         applyOrderStatusChange(order, nextStatus, {
           reason: `Booked with ${courierLabel}`,
-          changedBy: req.admin?.name || String(req.admin?._id || "admin"),
+          changedBy:
+            req.admin?.email ||
+            req.admin?.name ||
+            String(req.admin?._id || "admin"),
         });
       }
 
@@ -6218,6 +6227,23 @@ router.get(
           { mobile: { $regex: q, $options: "i" } },
         ];
       }
+
+      // Customers who already placed an order in this window have effectively
+      // completed their cart — don't surface them as "abandoned".
+      const placedUserIds = (
+        await Order.find({
+          createdAt: { $gte: lowerBound },
+          deletedAt: null,
+          userId: { $ne: null },
+        }).distinct("userId")
+      )
+        // Order.userId is stored as a string; User._id is an ObjectId — convert
+        // so the $nin exclusion actually matches.
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+      if (placedUserIds.length) {
+        filter._id = { $nin: placedUserIds };
+      }
       const skip = (pg - 1) * lim;
       const [users, total] = await Promise.all([
         User.find(filter)
@@ -6271,16 +6297,38 @@ router.get(
           { userPhone: { $regex: q, $options: "i" } },
         ];
       }
-      const skip = (pg - 1) * lim;
-      const [rawSessions, total] = await Promise.all([
-        CheckoutSession.find(filter)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(lim)
-          .lean(),
-        CheckoutSession.countDocuments(filter),
-      ]);
-      // Enrich sessions that have a userId with user details
+
+      // A customer who has actually placed an order should never be listed as an
+      // "abandoned checkout" — they completed a purchase. Build a lookup of every
+      // customer (by userId / phone / email) that has a real order in this window,
+      // then filter those sessions out. This also cleans up historical sessions
+      // that were never marked "completed" (e.g. guest orders with no userId).
+      const norm = (p) =>
+        String(p || "")
+          .replace(/\D/g, "")
+          .slice(-10);
+      const placedOrders = await Order.find({
+        createdAt: { $gte: lowerBound },
+        deletedAt: null,
+      })
+        .select("billingDetails.phone billingDetails.email userId")
+        .lean();
+      const orderedPhones = new Set();
+      const orderedEmails = new Set();
+      const orderedUserIds = new Set();
+      for (const o of placedOrders) {
+        if (o.billingDetails?.phone)
+          orderedPhones.add(norm(o.billingDetails.phone));
+        if (o.billingDetails?.email)
+          orderedEmails.add(String(o.billingDetails.email).toLowerCase());
+        if (o.userId) orderedUserIds.add(String(o.userId));
+      }
+
+      // Fetch all matching incomplete sessions, enrich, drop customers who
+      // already ordered, then paginate in memory so counts stay accurate.
+      const rawSessions = await CheckoutSession.find(filter)
+        .sort({ createdAt: -1 })
+        .lean();
       const userIds = [
         ...new Set(rawSessions.map((s) => s.userId).filter(Boolean)),
       ];
@@ -6291,7 +6339,7 @@ router.get(
           .lean();
         for (const u of users) userMap[String(u._id)] = u;
       }
-      const sessions = rawSessions.map((s) => {
+      const enriched = rawSessions.map((s) => {
         const u = s.userId ? userMap[String(s.userId)] : null;
         return {
           ...s,
@@ -6300,6 +6348,16 @@ router.get(
           userPhone: s.userPhone || u?.mobile || null,
         };
       });
+      const active = enriched.filter((s) => {
+        if (s.userId && orderedUserIds.has(String(s.userId))) return false;
+        if (s.userPhone && orderedPhones.has(norm(s.userPhone))) return false;
+        if (s.userEmail && orderedEmails.has(String(s.userEmail).toLowerCase()))
+          return false;
+        return true;
+      });
+      const total = active.length;
+      const skip = (pg - 1) * lim;
+      const sessions = active.slice(skip, skip + lim);
       res.json({ sessions, total, pages: Math.ceil(total / lim) });
     } catch (err) {
       res.status(500).json({ error: "Server error" });

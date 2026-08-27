@@ -797,12 +797,22 @@ router.post("/", orderLimiter, async (req, res) => {
 
     await order.save();
 
-    // Mark any open checkout sessions for this user as completed
-    if (resolvedUserId) {
-      CheckoutSession.updateMany(
-        { userId: resolvedUserId, status: "incomplete" },
-        { status: "completed", completedAt: new Date() },
-      ).catch(() => {});
+    // Mark any open checkout sessions for this customer as completed. Match by
+    // userId (logged-in) as well as phone/email so guest checkouts stop showing
+    // up in the "abandoned checkouts" list once the order is actually placed.
+    {
+      const sessionOr = [];
+      if (resolvedUserId) sessionOr.push({ userId: resolvedUserId });
+      if (billingDetails?.phone)
+        sessionOr.push({ userPhone: billingDetails.phone });
+      if (billingDetails?.email)
+        sessionOr.push({ userEmail: billingDetails.email });
+      if (sessionOr.length) {
+        CheckoutSession.updateMany(
+          { status: "incomplete", $or: sessionOr },
+          { status: "completed", completedAt: new Date() },
+        ).catch(() => {});
+      }
     }
 
     if (resolvedUserId && pointsRedeemed > 0) {
