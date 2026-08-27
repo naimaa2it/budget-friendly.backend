@@ -33,6 +33,7 @@ import Order from "../models/Order.js";
 import Courier from "../models/Courier.js";
 import TimelinePreset from "../models/TimelinePreset.js";
 import { formatOrderIdSuffix } from "../lib/orderLookup.js";
+import { placeChatbotOrder } from "../lib/chatbotOrder.js";
 import {
   requirePermission,
   sanitizePermissions,
@@ -3042,6 +3043,34 @@ async function resolveCustomerUserId(order) {
   return null;
 }
 
+const CHANGED_BY_ID_RE = /^[a-f\d]{24}$/i;
+
+// Some statusHistory entries recorded the admin's raw ObjectId in `changedBy`
+// (e.g. when their name/email wasn't on the request) instead of a human name.
+// Given a flat list of objects that each carry a `changedBy` field, replace any
+// id-shaped value with that admin's name (falling back to their email). Values
+// like "system" / "customer" / "chatbot" / an email / a name pass through
+// untouched. Mutates the passed objects in place.
+async function resolveChangedByNames(entries) {
+  const ids = new Set();
+  for (const e of entries) {
+    if (e && CHANGED_BY_ID_RE.test(String(e.changedBy || ""))) {
+      ids.add(String(e.changedBy));
+    }
+  }
+  if (!ids.size) return;
+  const admins = await Admin.find({ _id: { $in: [...ids] } })
+    .select("name email")
+    .lean();
+  const nameById = new Map(
+    admins.map((a) => [String(a._id), a.name || a.email]),
+  );
+  for (const e of entries) {
+    const key = String(e?.changedBy || "");
+    if (nameById.has(key)) e.changedBy = nameById.get(key);
+  }
+}
+
 function buildCustomerOrderFilter(user) {
   const or = [{ userId: String(user._id) }];
   if (user.email) {
@@ -4661,6 +4690,10 @@ router.get(
           .lean(),
         Order.countDocuments(filter),
       ]);
+      // Resolve any ObjectId-shaped changedBy values into admin names for display
+      await resolveChangedByNames(
+        ordersRaw.flatMap((o) => o.statusHistory || []),
+      );
       const orders = await Promise.all(
         ordersRaw.map(async (order) => ({
           ...order,
@@ -4772,7 +4805,10 @@ router.get(
         }
       }
       events.sort((a, b) => new Date(b.at) - new Date(a.at));
-      res.json({ events: events.slice(0, limit) });
+      const sliced = events.slice(0, limit);
+      // Resolve any ObjectId-shaped changedBy values into admin names for display
+      await resolveChangedByNames(sliced);
+      res.json({ events: sliced });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
@@ -4829,6 +4865,10 @@ router.get(
         Order.countDocuments(filter),
       ]);
 
+      // Resolve any ObjectId-shaped changedBy values into admin names for display
+      await resolveChangedByNames(
+        ordersRaw.flatMap((o) => o.statusHistory || []),
+      );
       const orders = await Promise.all(
         ordersRaw.map(async (order) => ({
           ...order,
@@ -5057,6 +5097,9 @@ router.get(
 
       const customerUserId = await resolveCustomerUserId(orderObj);
 
+      // Resolve any ObjectId-shaped changedBy values into admin names for display
+      await resolveChangedByNames(orderObj.statusHistory || []);
+
       res.json({
         ...orderObj,
         orderId: formatOrderIdSuffix(orderObj._id),
@@ -5100,8 +5143,8 @@ router.put(
       applyOrderStatusChange(order, status, {
         reason: String(reason || "").trim(),
         changedBy:
-          req.admin?.email ||
           req.admin?.name ||
+          req.admin?.email ||
           String(req.admin?._id || "admin"),
       });
       if (status === "delivered") {
@@ -6395,6 +6438,64 @@ router.delete(
     try {
       await CheckoutSession.findByIdAndDelete(req.params.id);
       res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+// POST /api/admin/orders/manual — admin/moderator places an order on the
+// customer's behalf. Used from the Abandoned Cart / Abandoned Checkout tabs:
+// after talking to the customer and getting a verbal confirmation, staff fills
+// in the delivery address and creates a confirmed cash-on-delivery order. The
+// order then shows up in the normal orders dashboard (dashboard/orders).
+//
+// Body: {
+//   items: [{ productId, quantity, color?, size? }],
+//   customer: { name, phone, email?, city, zone?, area?, address, note? },
+//   sessionId?: CheckoutSession _id to mark completed after success,
+//   cartUserId?: User _id whose savedCart to clear after success,
+// }
+router.post(
+  "/orders/manual",
+  requireAdmin,
+  requirePermission("orders"),
+  async (req, res) => {
+    try {
+      const { items, customer, sessionId, cartUserId } = req.body || {};
+      const placedBy =
+        req.admin?.name || req.admin?.email || "admin";
+
+      const result = await placeChatbotOrder({
+        items,
+        customer,
+        source: "manual",
+        changedBy: placedBy,
+        statusReason: `Manually placed by ${placedBy} (customer confirmed by phone)`,
+        defaultNote: "Manually placed order",
+        meta: {
+          clientIp: req.ip || "",
+          userAgent: "admin-manual",
+        },
+      });
+
+      if (!result.ok) {
+        return res.status(400).json({ error: result.error });
+      }
+
+      // Order placed — get the customer out of the abandoned lists so staff
+      // don't try to place it twice. Best-effort; never fail the request on it.
+      if (sessionId) {
+        CheckoutSession.findByIdAndUpdate(sessionId, {
+          status: "completed",
+          completedAt: new Date(),
+        }).catch(() => {});
+      }
+      if (cartUserId) {
+        User.findByIdAndUpdate(cartUserId, { savedCart: null }).catch(() => {});
+      }
+
+      res.json(result);
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
