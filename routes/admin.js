@@ -4564,7 +4564,7 @@ router.get(
         : new Date(Date.now() - 24 * 60 * 60 * 1000);
       const orders = await Order.find(
         { createdAt: { $gt: since } },
-        "billingDetails userEmail total status paymentMethod createdAt",
+        "orderNo billingDetails userEmail total status paymentMethod createdAt",
       )
         .sort({ createdAt: -1 })
         .limit(20)

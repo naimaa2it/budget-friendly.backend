@@ -1210,7 +1210,7 @@ router.get(
     try {
       const orders = await Order.find(
         { "items.isPreorder": true },
-        "items billingDetails userEmail status paymentStatus createdAt",
+        "orderNo items billingDetails userEmail status paymentStatus createdAt",
       )
         .sort({ createdAt: -1 })
         .lean();
@@ -1221,6 +1221,8 @@ router.get(
           if (!item.isPreorder) return;
           rows.push({
             orderId: o._id,
+            orderNo: o.orderNo ?? null,
+            orderNumber: formatOrderNumber(o),
             itemIndex: idx,
             productId: item.productId,
             productTitle: item.title,
