@@ -32,7 +32,7 @@ import BlogCategory from "../models/BlogCategory.js";
 import Order from "../models/Order.js";
 import Courier from "../models/Courier.js";
 import TimelinePreset from "../models/TimelinePreset.js";
-import { formatOrderIdSuffix } from "../lib/orderLookup.js";
+import { formatOrderIdSuffix, formatOrderNumber } from "../lib/orderLookup.js";
 import { placeChatbotOrder } from "../lib/chatbotOrder.js";
 import {
   requirePermission,
@@ -3155,6 +3155,7 @@ router.get(
         orders: orders.map((order) => ({
           ...order,
           orderId: formatOrderIdSuffix(order._id),
+          orderNumber: formatOrderNumber(order),
         })),
       });
     } catch (err) {
@@ -4576,6 +4577,7 @@ router.get(
         orders: orders.map((o) => ({
           _id: o._id,
           orderId: formatOrderIdSuffix(o._id),
+          orderNumber: formatOrderNumber(o),
           customerName: o.billingDetails?.name || o.userEmail || "Guest",
           total: o.total,
           status: o.status,
@@ -4665,6 +4667,11 @@ router.get(
         // dashboard, e.g. "#A1B2C3D4"). Strip a leading '#' and match the last
         // 8 hex chars of the stringified _id, allowing partial suffixes too.
         const idQuery = q.trim().replace(/^#/, "");
+        // New-style "pk100000" order number → match numeric orderNo directly.
+        const pkMatch = idQuery.match(/^pk0*(\d+)$/i);
+        if (pkMatch) {
+          orClauses.push({ orderNo: Number(pkMatch[1]) });
+        }
         if (/^[a-f\d]{1,8}$/i.test(idQuery)) {
           const escaped = idQuery
             .toUpperCase()
@@ -4701,6 +4708,7 @@ router.get(
         ordersRaw.map(async (order) => ({
           ...order,
           orderId: formatOrderIdSuffix(order._id),
+          orderNumber: formatOrderNumber(order),
           customerUserId: await resolveCustomerUserId(order),
         })),
       );
@@ -4795,7 +4803,7 @@ router.get(
         for (const ev of order.statusHistory || []) {
           events.push({
             orderId: order._id,
-            orderIdShort: String(order._id).slice(-8).toUpperCase(),
+            orderIdShort: formatOrderNumber(order),
             customerName: order.billingDetails?.name || "—",
             customerPhone: order.billingDetails?.phone || "",
             orderTotal: order.total,
@@ -4876,6 +4884,7 @@ router.get(
         ordersRaw.map(async (order) => ({
           ...order,
           orderId: formatOrderIdSuffix(order._id),
+          orderNumber: formatOrderNumber(order),
           customerUserId: await resolveCustomerUserId(order),
         })),
       );
@@ -5106,6 +5115,7 @@ router.get(
       res.json({
         ...orderObj,
         orderId: formatOrderIdSuffix(orderObj._id),
+        orderNumber: formatOrderNumber(orderObj),
         customerTags,
         customerUserId,
         courierName: courierDoc?.name || orderObj.shipment?.courier || null,
@@ -5303,6 +5313,7 @@ router.get(
         orderRows.push({
           _id: order._id,
           orderId: formatOrderIdSuffix(order._id),
+          orderNumber: formatOrderNumber(order),
           userId: order.userId,
           customerName: order.billingDetails?.name,
           status: order.status,
@@ -5401,6 +5412,7 @@ router.put(
       res.json({
         ...order.toObject(),
         orderId: formatOrderIdSuffix(order._id),
+        orderNumber: formatOrderNumber(order),
       });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
@@ -5427,6 +5439,7 @@ router.get("/admins/:id/pick-profile", requireAdmin, async (req, res) => {
     const orders = ordersRaw.map((o) => ({
       ...o,
       orderId: formatOrderIdSuffix(o._id),
+      orderNumber: formatOrderNumber(o),
     }));
 
     res.json({

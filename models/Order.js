@@ -161,6 +161,11 @@ const ShipmentSchema = new mongoose.Schema(
 );
 
 const OrderSchema = new mongoose.Schema({
+  // Human-facing sequential order number, rendered as "pk<orderNo>" (e.g.
+  // pk100000). Assigned on creation for new orders only; older orders have no
+  // orderNo and fall back to the legacy "#<_id suffix>" format. Sparse+unique
+  // so the many legacy docs without it don't collide on null.
+  orderNo: { type: Number, index: true, sparse: true, unique: true },
   userId: { type: String, default: null }, // MongoDB _id as string (may be null for guests)
   userEmail: { type: String, default: null },
   items: { type: [OrderItemSchema], required: true },

@@ -9,6 +9,7 @@ import Admin from "../models/Admin.js";
 import Discount from "../models/Discount.js";
 import CouponUsage from "../models/CouponUsage.js";
 import CheckoutSession from "../models/CheckoutSession.js";
+import { getNextOrderNo } from "../models/Counter.js";
 import ShippingSettings from "../models/ShippingSettings.js";
 import ShippingZoneRate from "../models/ShippingZoneRate.js";
 import {
@@ -27,6 +28,7 @@ import {
   findOrderByTrackingUrl,
   findOrdersByPhone,
   formatOrderIdSuffix,
+  formatOrderNumber,
   toPublicTrackOrder,
   phoneMatchesOrder,
 } from "../lib/orderLookup.js";
@@ -757,6 +759,7 @@ router.post("/", orderLimiter, async (req, res) => {
     }
 
     const order = new Order({
+      orderNo: await getNextOrderNo(),
       userId: resolvedUserId,
       userEmail: userEmail || null,
       items,
@@ -1312,7 +1315,11 @@ router.get("/my", async (req, res) => {
     res.json({
       orders: orders.map((o) => {
         const obj = o.toObject ? o.toObject() : o;
-        return { ...obj, orderId: formatOrderIdSuffix(o._id) };
+        return {
+          ...obj,
+          orderId: formatOrderIdSuffix(o._id),
+          orderNumber: formatOrderNumber(o),
+        };
       }),
     });
   } catch (err) {
