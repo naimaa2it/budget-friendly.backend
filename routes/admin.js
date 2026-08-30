@@ -320,6 +320,9 @@ router.get("/top-banner", async (req, res) => {
         quickLinks: Array.isArray(s?.footerLinks?.quickLinks) ? s.footerLinks.quickLinks : [],
         customerService: Array.isArray(s?.footerLinks?.customerService) ? s.footerLinks.customerService : [],
       },
+      // Support chatbot availability — the widget reads this to decide whether
+      // to render, so admins can control show/hide hours from the dashboard.
+      chatbotSchedule: s?.chatbotSchedule || null,
     });
   } catch (err) {
     res.json({

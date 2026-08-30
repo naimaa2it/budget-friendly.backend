@@ -15,6 +15,13 @@ const ChatConversationSchema = new mongoose.Schema({
   phone: { type: String, default: "" },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
+  // Technical fingerprint captured from the chat request. Lets the inbox show
+  // *something* for anonymous visitors, and — crucially — link a chat to any
+  // order placed from the same browser/IP to reveal the real customer.
+  clientIp: { type: String, default: "" },
+  userAgent: { type: String, default: "" },
+  deviceId: { type: String, default: "", index: true },
+
   status: { type: String, enum: ["open", "closed"], default: "open", index: true },
 
   // set by automation (flag action) so admins can triage

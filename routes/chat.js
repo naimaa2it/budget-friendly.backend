@@ -1,6 +1,7 @@
 import express from "express";
 import ChatConversation from "../models/ChatConversation.js";
 import ChatMessage from "../models/ChatMessage.js";
+import Order from "../models/Order.js";
 import ChatbotQA from "../models/ChatbotQA.js";
 import Setting from "../models/Setting.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
@@ -27,7 +28,7 @@ export const QUICK_REPLIES = [
 
 router.post("/message", generalLimiter, async (req, res) => {
   try {
-    const { visitorId, body, name, email } = req.body;
+    const { visitorId, body, name, email, phone, userId } = req.body;
     if (!visitorId || typeof visitorId !== "string")
       return res.status(400).json({ error: "visitorId is required" });
     if (!body?.trim()) return res.status(400).json({ error: "Message is required" });
@@ -40,10 +41,15 @@ router.post("/message", generalLimiter, async (req, res) => {
         visitorId,
         name: name?.trim() || "",
         email: email?.trim() || "",
+        phone: phone?.trim() || "",
+        userId: userId || null,
       });
     } else {
+      // Fill from the logged-in customer's account when we don't already have it.
       if (name && !convo.name) convo.name = name.trim();
       if (email && !convo.email) convo.email = email.trim();
+      if (phone && !convo.phone) convo.phone = phone.trim();
+      if (userId && !convo.userId) convo.userId = userId;
     }
 
     if (isNew) {
@@ -66,6 +72,12 @@ router.post("/message", generalLimiter, async (req, res) => {
       userAgent: req.headers["user-agent"] || "chatbot",
       deviceId: req.body.deviceId || "",
     };
+    // Persist the fingerprint so the inbox can show device/IP and link to
+    // orders from the same browser (see /conversations enrichment below).
+    if (meta.clientIp) convo.clientIp = meta.clientIp;
+    if (meta.userAgent) convo.userAgent = meta.userAgent;
+    if (meta.deviceId && !convo.deviceId) convo.deviceId = meta.deviceId;
+
     const turn = await handleChatMessage({
       text,
       state: convo.botState,
@@ -75,6 +87,18 @@ router.post("/message", generalLimiter, async (req, res) => {
     const flag = !!turn.flag;
     convo.botState = turn.state || {};
     convo.markModified("botState");
+
+    // Surface the customer's identity onto the conversation itself, so the
+    // support inbox shows WHO each chat is with (name / phone / email) instead
+    // of just an anonymous visitorId. The guided order flow captures these into
+    // botState.draft step-by-step; copy them over as soon as they're known (the
+    // draft is cleared once the order is placed, so we grab them each turn).
+    const draft = turn.state?.draft;
+    if (draft && typeof draft === "object") {
+      if (draft.name && !convo.name) convo.name = String(draft.name).slice(0, 100);
+      if (draft.phone && !convo.phone) convo.phone = String(draft.phone).slice(0, 20);
+      if (draft.email && !convo.email) convo.email = String(draft.email).slice(0, 120);
+    }
 
     await ChatMessage.create({ conversationId: convo._id, sender: "bot", body: reply });
 
@@ -119,6 +143,32 @@ router.get("/thread", async (req, res) => {
 router.use(requireAdmin);
 router.use(requirePermission("chat.manage"));
 
+// Find the customer behind a conversation by matching any order placed from the
+// same browser (deviceId) or IP — so even an anonymous chat that never shared a
+// name can be tied to a real customer + their past orders.
+async function linkCustomer(convo) {
+  const or = [];
+  if (convo.deviceId) or.push({ deviceId: convo.deviceId });
+  if (convo.clientIp) or.push({ clientIp: convo.clientIp });
+  if (convo.phone) or.push({ "billingDetails.phone": convo.phone });
+  if (!or.length) return null;
+  const orders = await Order.find({ $or: or })
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .select("billingDetails createdAt")
+    .lean()
+    .catch(() => []);
+  if (!orders.length) return null;
+  const latest = orders[0].billingDetails || {};
+  return {
+    name: latest.name || "",
+    phone: latest.phone || "",
+    email: latest.email || "",
+    city: latest.city || "",
+    orderCount: orders.length,
+  };
+}
+
 router.get("/conversations", async (req, res) => {
   try {
     const filter = {};
@@ -127,6 +177,15 @@ router.get("/conversations", async (req, res) => {
       .sort({ lastMessageAt: -1 })
       .limit(100)
       .lean();
+    // Attach the linked customer (from past orders) to any conversation that
+    // doesn't already have a name/phone of its own.
+    await Promise.all(
+      conversations.map(async (c) => {
+        if (c.name && c.phone) return;
+        const linked = await linkCustomer(c);
+        if (linked) c.linkedCustomer = linked;
+      }),
+    );
     res.json({ conversations });
   } catch {
     res.status(500).json({ error: "Server error" });
@@ -144,7 +203,12 @@ router.get("/conversations/:id/messages", async (req, res) => {
     const messages = await ChatMessage.find({ conversationId: convo._id })
       .sort({ createdAt: 1 })
       .lean();
-    res.json({ conversation: convo, messages });
+    const conversation = convo.toObject();
+    if (!(conversation.name && conversation.phone)) {
+      const linked = await linkCustomer(conversation);
+      if (linked) conversation.linkedCustomer = linked;
+    }
+    res.json({ conversation, messages });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
