@@ -2,6 +2,7 @@ import express from "express";
 import ChatConversation from "../models/ChatConversation.js";
 import ChatMessage from "../models/ChatMessage.js";
 import ChatbotQA from "../models/ChatbotQA.js";
+import Setting from "../models/Setting.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { requirePermission } from "../lib/permissions.js";
 import { generalLimiter } from "../lib/rateLimiters.js";

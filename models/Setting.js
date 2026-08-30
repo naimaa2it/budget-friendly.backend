@@ -51,7 +51,33 @@ const AboutItemSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// One weekday's chatbot availability.
+//   mode "off"    → widget hidden all day
+//   mode "allday" → widget shown all day
+//   mode "range"  → shown between start & end (end < start ⇒ wraps past midnight,
+//                   e.g. 17:00→09:00 means 5 PM through 9 AM next morning)
+const ChatbotDaySchema = new mongoose.Schema(
+  {
+    mode: { type: String, enum: ["off", "allday", "range"], default: "range" },
+    start: { type: String, default: "17:00" }, // "HH:MM", 24-hour
+    end: { type: String, default: "09:00" },
+  },
+  { _id: false },
+);
+
+// Default: Sun–Thu evening→morning (5 PM–9 AM), Fri & Sat all day. Index 0 = Sun.
+function defaultChatbotDays() {
+  const range = { mode: "range", start: "17:00", end: "09:00" };
+  const allDay = { mode: "allday", start: "00:00", end: "23:59" };
+  return [range, range, range, range, range, allDay, allDay];
+}
+
 const SettingsSchema = new mongoose.Schema({
+  // Support chatbot availability (all in Bangladesh time, Asia/Dhaka).
+  chatbotSchedule: {
+    enabled: { type: Boolean, default: true }, // master on/off
+    days: { type: [ChatbotDaySchema], default: defaultChatbotDays },
+  },
   storeName: { type: String, default: "Pickob" },
   storeEmail: { type: String, default: "" },
   footerInfo: {
