@@ -323,6 +323,14 @@ router.get("/top-banner", async (req, res) => {
       // Support chatbot availability — the widget reads this to decide whether
       // to render, so admins can control show/hide hours from the dashboard.
       chatbotSchedule: s?.chatbotSchedule || null,
+      // Floating chat launcher config (master toggle + external chat links).
+      // The widget reads these at runtime; env values are only a fallback used
+      // before this loads. Blank links tell the widget to hide that button.
+      chatWidget: {
+        enabled: s?.chatWidget?.enabled !== false,
+        facebookMessengerUrl: s?.chatWidget?.facebookMessengerUrl || "",
+        whatsappNumber: s?.chatWidget?.whatsappNumber || "",
+      },
     });
   } catch (err) {
     res.json({
@@ -348,6 +356,7 @@ router.get("/top-banner", async (req, res) => {
         about: [],
       },
       footerLinks: { quickLinks: [], customerService: [] },
+      chatWidget: { enabled: true, facebookMessengerUrl: "", whatsappNumber: "" },
     });
   }
 });

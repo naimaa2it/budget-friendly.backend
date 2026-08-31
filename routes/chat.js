@@ -13,6 +13,14 @@ const router = express.Router();
 
 const MAX_LEN = 1000;
 
+// Resolve the one conversation for a (visitor, session) pair. A client that
+// sends a sessionId gets that exact thread; a legacy client without one falls
+// back to the visitor's most-recent thread so old chats keep working.
+async function findConversation(visitorId, sessionId) {
+  if (sessionId) return ChatConversation.findOne({ visitorId, sessionId });
+  return ChatConversation.findOne({ visitorId }).sort({ lastMessageAt: -1 });
+}
+
 // Quick-reply menu shown in the widget. Clicking a button sends its text, which
 // the chatbot engine then handles like any typed message.
 export const QUICK_REPLIES = [
@@ -28,17 +36,19 @@ export const QUICK_REPLIES = [
 
 router.post("/message", generalLimiter, async (req, res) => {
   try {
-    const { visitorId, body, name, email, phone, userId } = req.body;
+    const { visitorId, sessionId, body, name, email, phone, userId } = req.body;
     if (!visitorId || typeof visitorId !== "string")
       return res.status(400).json({ error: "visitorId is required" });
     if (!body?.trim()) return res.status(400).json({ error: "Message is required" });
     const text = body.trim().slice(0, MAX_LEN);
+    const sid = typeof sessionId === "string" ? sessionId.slice(0, 60) : "";
 
-    let convo = await ChatConversation.findOne({ visitorId });
+    let convo = await findConversation(visitorId, sid);
     const isNew = !convo;
     if (!convo) {
       convo = await ChatConversation.create({
         visitorId,
+        sessionId: sid,
         name: name?.trim() || "",
         email: email?.trim() || "",
         phone: phone?.trim() || "",
@@ -122,9 +132,14 @@ router.post("/message", generalLimiter, async (req, res) => {
 // Poll the visitor's thread (picks up admin replies too).
 router.get("/thread", async (req, res) => {
   try {
-    const { visitorId } = req.query;
+    const { visitorId, sessionId } = req.query;
     if (!visitorId) return res.status(400).json({ error: "visitorId is required" });
-    const convo = await ChatConversation.findOne({ visitorId }).lean();
+    const sid = typeof sessionId === "string" ? sessionId.slice(0, 60) : "";
+    const convo = await (
+      sid
+        ? ChatConversation.findOne({ visitorId, sessionId: sid })
+        : ChatConversation.findOne({ visitorId }).sort({ lastMessageAt: -1 })
+    ).lean();
     if (!convo) return res.json({ conversationId: null, messages: [], quickReplies: QUICK_REPLIES });
     const messages = await ChatMessage.find({ conversationId: convo._id })
       .sort({ createdAt: 1 })
@@ -173,14 +188,22 @@ router.get("/conversations", async (req, res) => {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
+    // Free-text search by name or phone (also matches visitorId for support).
+    const q = (req.query.q || "").trim();
+    if (q) {
+      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      filter.$or = [{ name: rx }, { phone: rx }, { email: rx }, { visitorId: rx }];
+    }
     const conversations = await ChatConversation.find(filter)
       .sort({ lastMessageAt: -1 })
       .limit(100)
       .lean();
     // Attach the linked customer (from past orders) to any conversation that
-    // doesn't already have a name/phone of its own.
+    // doesn't already have a name/phone of its own, plus a total message count
+    // for the inbox info panel.
     await Promise.all(
       conversations.map(async (c) => {
+        c.messageCount = await ChatMessage.countDocuments({ conversationId: c._id });
         if (c.name && c.phone) return;
         const linked = await linkCustomer(c);
         if (linked) c.linkedCustomer = linked;
@@ -204,6 +227,7 @@ router.get("/conversations/:id/messages", async (req, res) => {
       .sort({ createdAt: 1 })
       .lean();
     const conversation = convo.toObject();
+    conversation.messageCount = messages.length;
     if (!(conversation.name && conversation.phone)) {
       const linked = await linkCustomer(conversation);
       if (linked) conversation.linkedCustomer = linked;

@@ -78,6 +78,18 @@ const SettingsSchema = new mongoose.Schema({
     enabled: { type: Boolean, default: true }, // master on/off
     days: { type: [ChatbotDaySchema], default: defaultChatbotDays },
   },
+
+  // Floating chat launcher config (the round Messenger-style button + its
+  // 3-option popup). Admin-configurable from Settings → Chat Widget; the public
+  // widget reads these at runtime via /api/admin/top-banner.
+  //   enabled              → master on/off for the whole launcher
+  //   facebookMessengerUrl → e.g. https://m.me/yourpage (blank hides the button)
+  //   whatsappNumber       → digits only, e.g. 8801XXXXXXXXX (blank hides it)
+  chatWidget: {
+    enabled: { type: Boolean, default: true },
+    facebookMessengerUrl: { type: String, default: "" },
+    whatsappNumber: { type: String, default: "" },
+  },
   storeName: { type: String, default: "Pickob" },
   storeEmail: { type: String, default: "" },
   footerInfo: {

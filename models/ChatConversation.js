@@ -9,6 +9,13 @@ import mongoose from "mongoose";
 const ChatConversationSchema = new mongoose.Schema({
   visitorId: { type: String, required: true, index: true },
 
+  // A single visitor can hold several separate conversations over time — the
+  // "＋ New chat" button mints a fresh sessionId while keeping the same
+  // visitorId. Each (visitorId, sessionId) pair is one distinct thread, so old
+  // chats stay saved separately in the inbox. Legacy conversations created
+  // before sessions existed have sessionId "" and still resolve by visitorId.
+  sessionId: { type: String, default: "", index: true },
+
   // optional details the visitor may share
   name: { type: String, default: "" },
   email: { type: String, default: "" },
@@ -42,6 +49,8 @@ const ChatConversationSchema = new mongoose.Schema({
 });
 
 ChatConversationSchema.index({ status: 1, lastMessageAt: -1 });
+// One thread per (visitor, session); the pair is how a chat is looked up.
+ChatConversationSchema.index({ visitorId: 1, sessionId: 1 });
 
 export default mongoose.models.ChatConversation ||
   mongoose.model("ChatConversation", ChatConversationSchema);
