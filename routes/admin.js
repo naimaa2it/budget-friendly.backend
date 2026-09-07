@@ -1112,6 +1112,7 @@ router.get(
       // For older products (created before the auditTrail existed) fall back to
       // the stored createdBy admin so the dashboard can still show who created
       // them. Past *edits* can't be reconstructed — they were never recorded.
+      const ownerSet = await getOwnerIdentitySet();
       const withAudit = items.map((doc) => {
         const obj = doc.toObject({ virtuals: true });
         const creator = obj.createdBy;
@@ -1121,6 +1122,12 @@ router.get(
           obj.auditTrail = name
             ? [{ name, action: "created", at: obj.createdAt }]
             : [];
+        }
+        // hide the owner's own create/edit entries from the audit trail
+        if (Array.isArray(obj.auditTrail)) {
+          obj.auditTrail = obj.auditTrail.filter(
+            (a) => !isOwnerActor(ownerSet, a?.name),
+          );
         }
         // collapse the populated admin back to its id to keep the payload shape
         if (creator && typeof creator === "object") {
@@ -3083,6 +3090,49 @@ async function resolveChangedByNames(entries) {
   }
 }
 
+// The store owner asked that their own create/edit activity never be surfaced
+// in the dashboard audit trails (product "Created / Edited by" column and the
+// order status-change "by …" labels). Everyone else's activity is shown as-is.
+// The owner is matched by a fixed email; we also resolve their display name and
+// email local-part so entries recorded under any of those forms are caught.
+const OWNER_HIDDEN_EMAIL = (
+  process.env.OWNER_HIDDEN_EMAIL || "owner@pickob.gmail.com"
+).toLowerCase();
+
+let _ownerIdentityCache = { at: 0, set: null };
+
+async function getOwnerIdentitySet() {
+  const now = Date.now();
+  if (_ownerIdentityCache.set && now - _ownerIdentityCache.at < 5 * 60 * 1000) {
+    return _ownerIdentityCache.set;
+  }
+  const set = new Set([OWNER_HIDDEN_EMAIL, OWNER_HIDDEN_EMAIL.split("@")[0]]);
+  try {
+    const owners = await Admin.find({ email: OWNER_HIDDEN_EMAIL })
+      .select("name email")
+      .lean();
+    for (const o of owners) {
+      if (o.email) {
+        set.add(String(o.email).toLowerCase());
+        set.add(String(o.email).split("@")[0].toLowerCase());
+      }
+      if (o.name) set.add(String(o.name).trim().toLowerCase());
+    }
+  } catch {
+    // if the lookup fails, fall back to matching on the email forms only
+  }
+  _ownerIdentityCache = { at: now, set };
+  return set;
+}
+
+// True when `actor` (an audit name / changedBy string) belongs to the hidden owner.
+function isOwnerActor(ownerSet, actor) {
+  const a = String(actor || "")
+    .trim()
+    .toLowerCase();
+  return a ? ownerSet.has(a) : false;
+}
+
 function buildCustomerOrderFilter(user) {
   const or = [{ userId: String(user._id) }];
   if (user.email) {
@@ -4713,6 +4763,15 @@ router.get(
       await resolveChangedByNames(
         ordersRaw.flatMap((o) => o.statusHistory || []),
       );
+      // hide the owner's own status changes from the "by …" attribution
+      const ordersOwnerSet = await getOwnerIdentitySet();
+      for (const o of ordersRaw) {
+        if (Array.isArray(o.statusHistory)) {
+          o.statusHistory = o.statusHistory.filter(
+            (ev) => !isOwnerActor(ordersOwnerSet, ev?.changedBy),
+          );
+        }
+      }
       const orders = await Promise.all(
         ordersRaw.map(async (order) => ({
           ...order,
@@ -4825,9 +4884,13 @@ router.get(
         }
       }
       events.sort((a, b) => new Date(b.at) - new Date(a.at));
-      const sliced = events.slice(0, limit);
       // Resolve any ObjectId-shaped changedBy values into admin names for display
-      await resolveChangedByNames(sliced);
+      await resolveChangedByNames(events);
+      // hide the owner's own status changes from the timeline entirely
+      const timelineOwnerSet = await getOwnerIdentitySet();
+      const sliced = events
+        .filter((ev) => !isOwnerActor(timelineOwnerSet, ev?.changedBy))
+        .slice(0, limit);
       res.json({ events: sliced });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
@@ -4889,6 +4952,15 @@ router.get(
       await resolveChangedByNames(
         ordersRaw.flatMap((o) => o.statusHistory || []),
       );
+      // hide the owner's own status changes from the "by …" attribution
+      const ordersOwnerSet = await getOwnerIdentitySet();
+      for (const o of ordersRaw) {
+        if (Array.isArray(o.statusHistory)) {
+          o.statusHistory = o.statusHistory.filter(
+            (ev) => !isOwnerActor(ordersOwnerSet, ev?.changedBy),
+          );
+        }
+      }
       const orders = await Promise.all(
         ordersRaw.map(async (order) => ({
           ...order,
