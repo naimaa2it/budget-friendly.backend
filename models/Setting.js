@@ -90,6 +90,28 @@ const SettingsSchema = new mongoose.Schema({
     facebookMessengerUrl: { type: String, default: "" },
     whatsappNumber: { type: String, default: "" },
   },
+  // Product description page layout controls (admin-configurable from
+  // Settings → Product Page Layout; read publicly via /api/admin/top-banner).
+  //   showRelatedProducts / showRecentlyViewed → master on/off per section
+  //   *Position → where the section renders on the product page:
+  //     "before_description" → right after the info tabs, before the
+  //                            detailed description blocks
+  //     "after_description"  → immediately after the detailed description
+  //     "bottom"             → at the very bottom of the page
+  productPageLayout: {
+    showRelatedProducts: { type: Boolean, default: true },
+    relatedProductsPosition: {
+      type: String,
+      enum: ["before_description", "after_description", "bottom"],
+      default: "before_description",
+    },
+    showRecentlyViewed: { type: Boolean, default: true },
+    recentlyViewedPosition: {
+      type: String,
+      enum: ["before_description", "after_description", "bottom"],
+      default: "bottom",
+    },
+  },
   storeName: { type: String, default: "Pickob" },
   storeEmail: { type: String, default: "" },
   footerInfo: {

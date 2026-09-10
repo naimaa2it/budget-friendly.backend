@@ -331,6 +331,16 @@ router.get("/top-banner", async (req, res) => {
         facebookMessengerUrl: s?.chatWidget?.facebookMessengerUrl || "",
         whatsappNumber: s?.chatWidget?.whatsappNumber || "",
       },
+      // Product page layout (Related Products / Recently Viewed) — the
+      // storefront product page reads this to decide show/hide + placement.
+      productPageLayout: {
+        showRelatedProducts: s?.productPageLayout?.showRelatedProducts !== false,
+        relatedProductsPosition:
+          s?.productPageLayout?.relatedProductsPosition || "before_description",
+        showRecentlyViewed: s?.productPageLayout?.showRecentlyViewed !== false,
+        recentlyViewedPosition:
+          s?.productPageLayout?.recentlyViewedPosition || "bottom",
+      },
     });
   } catch (err) {
     res.json({
@@ -357,6 +367,12 @@ router.get("/top-banner", async (req, res) => {
       },
       footerLinks: { quickLinks: [], customerService: [] },
       chatWidget: { enabled: true, facebookMessengerUrl: "", whatsappNumber: "" },
+      productPageLayout: {
+        showRelatedProducts: true,
+        relatedProductsPosition: "before_description",
+        showRecentlyViewed: true,
+        recentlyViewedPosition: "bottom",
+      },
     });
   }
 });
