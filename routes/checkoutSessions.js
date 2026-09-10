@@ -27,6 +27,8 @@ router.post('/', async (req, res) => {
         image: i.image || null,
         price: Number(i.price || 0),
         quantity: Number(i.quantity || 1),
+        color: i.color || null,
+        size: i.size || null,
       })),
       total: Number(total || 0),
     });
