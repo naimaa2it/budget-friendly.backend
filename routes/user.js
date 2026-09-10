@@ -251,7 +251,12 @@ router.put("/cart", requireUser, async (req, res) => {
         item.product?._id || item.product?.id || item.productId || "",
       ),
       title: String(item.product?.title || item.title || ""),
-      image: String(item.product?.images?.[0] || item.image || ""),
+      image: String(
+        item.product?.images?.[0]?.url ||
+          item.product?.images?.[0] ||
+          item.image ||
+          "",
+      ),
       price: Number(item.selectedVariant?.price || item.product?.price || 0),
       quantity: Number(item.quantity || 1),
       color: item.selectedColor || null,
