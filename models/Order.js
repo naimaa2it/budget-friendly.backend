@@ -9,6 +9,10 @@ const OrderItemSchema = new mongoose.Schema(
     image: String,
     color: { type: String, default: null },
     size: { type: String, default: null },
+    // A standalone generic variant group (e.g. Type=Charging) — independent
+    // of color/size, never combined with them.
+    attrGroup: { type: String, default: null },
+    attrValue: { type: String, default: null },
     rewardPoints: { type: Number, default: 0 },
     isPreorder: { type: Boolean, default: false },
   },

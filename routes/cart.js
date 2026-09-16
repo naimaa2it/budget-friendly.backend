@@ -17,6 +17,8 @@ router.post("/share", async (req, res) => {
         quantity: Math.max(1, parseInt(i.quantity) || 1),
         color: i.color || null,
         size: i.size || null,
+        attrGroup: i.attrGroup || null,
+        attrValue: i.attrValue || null,
       }))
       .filter((i) => i.productId);
 
@@ -69,6 +71,8 @@ router.get("/share/:token", async (req, res) => {
           quantity: i.quantity,
           color: i.color,
           size: i.size,
+          attrGroup: i.attrGroup,
+          attrValue: i.attrValue,
         };
       })
       .filter(Boolean);

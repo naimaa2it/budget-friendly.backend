@@ -5331,6 +5331,8 @@ router.put(
           image: item.image || null,
           color: item.color || null,
           size: item.size || null,
+          attrGroup: item.attrGroup || null,
+          attrValue: item.attrValue || null,
           rewardPoints: Number(item.rewardPoints) || 0,
         }));
         order.subtotal = order.items.reduce(

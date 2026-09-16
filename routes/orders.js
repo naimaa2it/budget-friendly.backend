@@ -238,7 +238,23 @@ export const resolveAndQuote = async (
     const qty = Math.max(1, parseInt(ci.quantity) || 1);
 
     let unitPrice = prod.price ?? 0;
-    if (prod.variants?.length && (ci.color || ci.size)) {
+    if (prod.variants?.length && ci.attrGroup && ci.attrValue) {
+      // A standalone generic-group variant (e.g. Type=Charging) — matched
+      // purely by its own attribute key, never combined with color/size.
+      const targetGroup = String(ci.attrGroup).toLowerCase();
+      const targetValue = String(ci.attrValue).trim().toLowerCase();
+      const variant = prod.variants.find((v) => {
+        const attrs = v.attributes || {};
+        const key = Object.keys(attrs).find(
+          (k) => k.toLowerCase() === targetGroup,
+        );
+        if (!key) return false;
+        return String(attrs[key]).trim().toLowerCase() === targetValue;
+      });
+      if (variant && variant.price != null && variant.price > 0) {
+        unitPrice = variant.price;
+      }
+    } else if (prod.variants?.length && (ci.color || ci.size)) {
       // Try new structure first (v.color.name, v.size)
       let variant = prod.variants.find((v) => {
         const variantColor = v.color?.name?.toLowerCase()?.trim();
@@ -292,6 +308,8 @@ export const resolveAndQuote = async (
       image: prod.images?.[0]?.url || null,
       color: ci.color || null,
       size: ci.size || null,
+      attrGroup: ci.attrGroup || null,
+      attrValue: ci.attrValue || null,
       rewardPoints: Math.max(0, Number(prod.rewardPoints) || 0),
       isPreorder: prod.availability === "pre_order",
     });
