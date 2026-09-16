@@ -6580,7 +6580,7 @@ router.delete(
 // order then shows up in the normal orders dashboard (dashboard/orders).
 //
 // Body: {
-//   items: [{ productId, quantity, color?, size? }],
+//   items: [{ productId, quantity, color?, size?, attrGroup?, attrValue? }],
 //   customer: { name, phone, email?, city, zone?, area?, address, note? },
 //   sessionId?: CheckoutSession _id to mark completed after success,
 //   cartUserId?: User _id whose savedCart to clear after success,
