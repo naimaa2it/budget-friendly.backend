@@ -1419,15 +1419,8 @@ router.post("/webhooks/steadfast", async (req, res) => {
     order.shipment.courierStatus = String(message);
     order.shipment.lastSyncAt = new Date();
 
-    const statusType = String(payload.status_type || "").toLowerCase();
-    if (statusType.includes("deliver")) {
-      order.status = "delivered";
-      order.shipment.deliveredAt = event.at;
-    } else if (statusType.includes("cancel")) {
-      order.status = "cancelled";
-    } else if (!["delivered", "cancelled", "failed"].includes(order.status)) {
-      order.status = "shipped";
-    }
+    // order.status is admin/moderator-controlled and is never auto-changed
+    // from courier webhooks; only the display-only courier status/events above update.
 
     order.updatedAt = new Date();
     await order.save();
