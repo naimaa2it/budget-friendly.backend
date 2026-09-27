@@ -163,7 +163,7 @@ PUT /api/user/profile
 {
   "name": "John Doe",
   "email": "john@example.com",
-  "mobile": "+8801712345678",
+  "mobile": "+8801*******",
   "dob": "1990-01-01",
   "newsletterSubscribed": "true",
   "image": File, // Optional: new profile image
@@ -179,7 +179,7 @@ PUT /api/user/profile
     "_id": "user123",
     "name": "John Doe",
     "email": "john@example.com",
-    "mobile": "+8801712345678",
+    "mobile": "+8801*******",
     "image": "https://cloudinary.../optimized.webp"
   }
 }
@@ -207,7 +207,7 @@ GET /api/user/addresses
       "_id": "addr123",
       "fullName": "John Doe",
       "email": "john@example.com",
-      "phone": "+8801712345678",
+      "phone": "+8801*******",
       "city": "Dhaka",
       "zone": "Mirpur",
       "address": "123 Main Street",
@@ -231,7 +231,7 @@ POST /api/user/addresses
 {
   "fullName": "John Doe",
   "email": "john@example.com",
-  "phone": "+8801712345678",
+  "phone": "+8801*******",
   "city": "Dhaka",
   "zone": "Mirpur",
   "address": "123 Main Street",
@@ -1137,7 +1137,7 @@ POST /api/orders
   ],
   "billingDetails": {
     "name": "John Doe",
-    "phone": "+8801712345678",
+    "phone": "+8801*******",
     "email": "customer@example.com",
     "city": "Dhaka",
     "zone": "Mirpur",
@@ -1668,7 +1668,7 @@ GET /api/admin/settings
   "settings": {
     "storeName": "Pickob",
     "storeEmail": "support@Pickob.com",
-    "storePhone": "+8801712345678",
+    "storePhone": "+8801*******",
     "topBannerText": "...",
     "topBannerEnabled": true,
     "adsenseEnabled": true,
@@ -2060,7 +2060,7 @@ GET /api/admin/users
       "_id": "user123",
       "email": "user@example.com",
       "name": "John Doe",
-      "mobile": "+8801712345678",
+      "mobile": "+8801*******",
       "role": "user",
       "provider": "google.com",
       "newsletterSubscribed": true,
@@ -2093,7 +2093,7 @@ PUT /api/admin/users/:id
 {
   "name": "Updated Name",
   "email": "newemail@example.com",
-  "mobile": "+8801712345678",
+  "mobile": "+8801*******",
   "role": "user",
   "newsletterSubscribed": true
 }

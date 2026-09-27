@@ -528,7 +528,7 @@ Body:
   ],
   "billingDetails": {
     "name": "John Doe",
-    "phone": "+8801712345678",
+    "phone": "+8801*******",
     "email": "customer@example.com",
     "city": "Dhaka",
     "zone": "Mirpur",
@@ -557,7 +557,7 @@ curl -X POST https://api.pickob.com/api/orders \
     ],
     "billingDetails": {
       "name": "John Doe",
-      "phone": "+8801712345678",
+      "phone": "+8801*******",
       "email": "customer@example.com",
       "city": "Dhaka",
       "zone": "Mirpur",

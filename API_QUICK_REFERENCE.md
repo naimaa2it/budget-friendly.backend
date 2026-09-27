@@ -324,7 +324,7 @@
   ],
   "billingDetails": {
     "name": "John Doe",
-    "phone": "+8801712345678",
+    "phone": "+8801*******",
     "email": "customer@example.com",
     "city": "Dhaka",
     "zone": "Mirpur",
