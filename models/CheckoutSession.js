@@ -23,6 +23,10 @@ const CheckoutSessionSchema = new mongoose.Schema({
     // and a manually placed order reproduces the same color/size.
     color: { type: String, default: null },
     size: { type: String, default: null },
+    attrGroup: { type: String, default: null },
+    attrValue: { type: String, default: null },
+    // Full combined variant selection, e.g. { Color: "White", Type: "8 Pin" }.
+    attributes: { type: Object, default: null },
   }],
   total: { type: Number, default: 0 },
   status: { type: String, enum: ['incomplete', 'completed'], default: 'incomplete' },

@@ -261,6 +261,12 @@ router.put("/cart", requireUser, async (req, res) => {
       quantity: Number(item.quantity || 1),
       color: item.selectedColor || null,
       size: item.selectedSize || null,
+      attrGroup: item.selectedAttr?.groupName || null,
+      attrValue: item.selectedAttr?.value || null,
+      attributes:
+        item.selectedAttributes && typeof item.selectedAttributes === "object"
+          ? item.selectedAttributes
+          : null,
     }));
     req.user.savedCart = { items: cartItems, updatedAt: new Date() };
     await req.user.save();

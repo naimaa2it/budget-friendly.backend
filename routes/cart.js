@@ -19,6 +19,10 @@ router.post("/share", async (req, res) => {
         size: i.size || null,
         attrGroup: i.attrGroup || null,
         attrValue: i.attrValue || null,
+        attributes:
+          i.attributes && typeof i.attributes === "object"
+            ? i.attributes
+            : null,
       }))
       .filter((i) => i.productId);
 
@@ -73,6 +77,7 @@ router.get("/share/:token", async (req, res) => {
           size: i.size,
           attrGroup: i.attrGroup,
           attrValue: i.attrValue,
+          attributes: i.attributes || null,
         };
       })
       .filter(Boolean);

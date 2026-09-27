@@ -5333,6 +5333,10 @@ router.put(
           size: item.size || null,
           attrGroup: item.attrGroup || null,
           attrValue: item.attrValue || null,
+          attributes:
+            item.attributes && typeof item.attributes === "object"
+              ? item.attributes
+              : null,
           rewardPoints: Number(item.rewardPoints) || 0,
         }));
         order.subtotal = order.items.reduce(

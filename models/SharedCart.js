@@ -6,10 +6,11 @@ const SharedCartItemSchema = new mongoose.Schema(
     quantity: { type: Number, default: 1 },
     color: { type: String, default: null },
     size: { type: String, default: null },
-    // A standalone generic variant group (e.g. Type=Charging), independent
-    // of color/size — never combined with them.
+    // Legacy single generic variant group (e.g. Type=Charging).
     attrGroup: { type: String, default: null },
     attrValue: { type: String, default: null },
+    // Full combined variant selection, e.g. { Color: "White", Type: "8 Pin" }.
+    attributes: { type: Object, default: null },
   },
   { _id: false },
 );
