@@ -5473,19 +5473,22 @@ router.put(
 
       const adminName = req.admin?.name || "admin";
       if (pick) {
-        if (order.pickedBy?.adminId && PICKED_STATUSES.includes(order.status)) {
+        // Picking only claims the order (assigns a picker). It must NOT change
+        // the order status — the order stays "pending" until an authorized
+        // person manually confirms it (or a courier sync updates the status).
+        if (order.pickedBy?.adminId) {
           if (order.pickedBy.adminId.toString() !== req.admin._id.toString()) {
             return res
               .status(400)
               .json({ error: `Already picked by ${order.pickedBy.name}` });
           }
+          // Already picked by the same person — nothing to do.
         } else {
           order.pickedBy = {
             adminId: req.admin._id,
             name: adminName,
             pickedAt: new Date(),
           };
-          applyOrderStatusChange(order, "accepted", { changedBy: adminName });
         }
       } else {
         if (
@@ -5497,13 +5500,8 @@ router.put(
             .status(403)
             .json({ error: "Only the picker or an admin can unpick" });
         }
+        // Unpicking only clears the picker; status is left untouched.
         order.pickedBy = null;
-        if (PICKED_STATUSES.includes(order.status)) {
-          applyOrderStatusChange(order, "pending", {
-            reason: "Unpicked",
-            changedBy: adminName,
-          });
-        }
       }
 
       order.updatedAt = new Date();
