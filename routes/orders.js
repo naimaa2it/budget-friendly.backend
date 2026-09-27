@@ -207,6 +207,48 @@ const calculateCouponDiscount = (coupon, subtotal) => {
   };
 };
 
+// ── variant attribute matching ────────────────────────────────────────────────
+const VARIANT_COLOR_RE = /^colou?rs?$/i;
+const VARIANT_SIZE_RE = /^sizes?$/i;
+
+// Normalised attribute map for a DB variant: explicit attributes plus Color/Size
+// synthesised from the denormalised color.name / size fields.
+const backendVariantAttrMap = (v) => {
+  const map = {};
+  Object.entries(v.attributes || {}).forEach(([k, val]) => {
+    const s = val == null ? "" : String(val).trim();
+    if (s) map[k] = s;
+  });
+  const colorName = v.color?.name?.trim();
+  if (colorName && !Object.keys(map).some((k) => VARIANT_COLOR_RE.test(k))) {
+    map.Color = colorName;
+  }
+  const sizeVal = v.size?.trim();
+  if (sizeVal && !Object.keys(map).some((k) => VARIANT_SIZE_RE.test(k))) {
+    map.Size = sizeVal;
+  }
+  return map;
+};
+
+// Find the single variant matching ALL provided attributes (case-insensitive).
+// `attributes` is a plain map { groupName: value } — blanks are ignored.
+const matchVariantByAttributes = (prod, attributes) => {
+  const entries = Object.entries(attributes || {}).filter(
+    ([, v]) => v != null && String(v).trim(),
+  );
+  if (!entries.length || !prod.variants?.length) return null;
+  return (
+    prod.variants.find((v) => {
+      const map = backendVariantAttrMap(v);
+      const keys = Object.keys(map);
+      return entries.every(([g, val]) => {
+        const k = keys.find((x) => x.toLowerCase() === g.toLowerCase());
+        return k && map[k].toLowerCase() === String(val).trim().toLowerCase();
+      });
+    }) || null
+  );
+};
+
 // ── resolveAndQuote ───────────────────────────────────────────────────────────
 // Shared helper used by both /quote (read-only preview) and POST / (order save).
 // Fetches real prices from the DB, validates coupon(s), and returns the full
@@ -237,8 +279,40 @@ export const resolveAndQuote = async (
     }
     const qty = Math.max(1, parseInt(ci.quantity) || 1);
 
+    // Combined variant selection (e.g. { Type: "8 Pin" }) sent alongside the
+    // separate color/size. Kept as extras-only to mirror the cart key.
+    const extraAttrs =
+      ci.attributes && typeof ci.attributes === "object"
+        ? Object.fromEntries(
+            Object.entries(ci.attributes).filter(
+              ([, v]) => v != null && String(v).trim(),
+            ),
+          )
+        : {};
+    const hasExtraAttrs = Object.keys(extraAttrs).length > 0;
+
     let unitPrice = prod.price ?? 0;
-    if (prod.variants?.length && ci.attrGroup && ci.attrValue) {
+    if (prod.variants?.length && hasExtraAttrs) {
+      // Match the exact combo across Color + Size + every generic group so
+      // white+8pin resolves to its own variant/price. Fall back for legacy
+      // standalone products: extras-only, then color/size-only.
+      const fullAttrs = {
+        ...(ci.color ? { Color: ci.color } : {}),
+        ...(ci.size ? { Size: ci.size } : {}),
+        ...extraAttrs,
+      };
+      let variant = matchVariantByAttributes(prod, fullAttrs);
+      if (!variant) variant = matchVariantByAttributes(prod, extraAttrs);
+      if (!variant && (ci.color || ci.size)) {
+        variant = matchVariantByAttributes(prod, {
+          ...(ci.color ? { Color: ci.color } : {}),
+          ...(ci.size ? { Size: ci.size } : {}),
+        });
+      }
+      if (variant && variant.price != null && variant.price > 0) {
+        unitPrice = variant.price;
+      }
+    } else if (prod.variants?.length && ci.attrGroup && ci.attrValue) {
       // A standalone generic-group variant (e.g. Type=Charging) — matched
       // purely by its own attribute key, never combined with color/size.
       const targetGroup = String(ci.attrGroup).toLowerCase();
@@ -310,6 +384,7 @@ export const resolveAndQuote = async (
       size: ci.size || null,
       attrGroup: ci.attrGroup || null,
       attrValue: ci.attrValue || null,
+      attributes: hasExtraAttrs ? extraAttrs : null,
       rewardPoints: Math.max(0, Number(prod.rewardPoints) || 0),
       isPreorder: prod.availability === "pre_order",
     });
