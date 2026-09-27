@@ -1775,6 +1775,14 @@ router.patch("/:id/edit", async (req, res) => {
       ...billingPatch,
     };
 
+    // Remember the delivery location before the edit so we can recompute the
+    // shipping charge if the customer changes their city/zone/area.
+    const prevLoc = {
+      city: order.billingDetails?.city || null,
+      zone: order.billingDetails?.zone || null,
+      area: order.billingDetails?.area || null,
+    };
+
     Object.entries(billingUpdates).forEach(([key, value]) => {
       if (typeof value !== "undefined") {
         order.billingDetails[key] = value;
@@ -1884,17 +1892,48 @@ router.patch("/:id/edit", async (req, res) => {
       }
     }
 
-    // Recalculate totals whenever items changed
-    if (
+    // Recalculate subtotal whenever items changed.
+    const itemsChanged =
       (Array.isArray(items) && items.length > 0) ||
-      (Array.isArray(addItems) && addItems.length > 0)
-    ) {
-      const newSubtotal = order.items.reduce(
+      (Array.isArray(addItems) && addItems.length > 0);
+    if (itemsChanged) {
+      order.subtotal = order.items.reduce(
         (sum, it) => sum + (it.price || 0) * it.quantity,
         0,
       );
-      order.subtotal = newSubtotal;
-      order.total = newSubtotal + (order.shipping || 0) - (order.discount || 0);
+    }
+
+    // Recompute the delivery charge if the customer changed their city/zone/area,
+    // so the total reflects the new location's shipping rate.
+    const nb = order.billingDetails || {};
+    const locChanged =
+      (nb.city || null) !== prevLoc.city ||
+      (nb.zone || null) !== prevLoc.zone ||
+      (nb.area || null) !== prevLoc.area;
+    if (locChanged && nb.city) {
+      try {
+        // Product-level free shipping keeps delivery free regardless of address.
+        const ids = order.items.map((it) => it.productId).filter(Boolean);
+        const prods = ids.length
+          ? await Product.find({ _id: { $in: ids } })
+              .select("freeShipping")
+              .lean()
+          : [];
+        const hasFreeShipping = prods.some((p) => p.freeShipping === true);
+        order.shipping = hasFreeShipping
+          ? 0
+          : await calcBaseShipping(
+              order.subtotal || 0,
+              nb.city,
+              nb.zone || null,
+              nb.area || null,
+            );
+      } catch (_) {}
+    }
+
+    if (itemsChanged || locChanged) {
+      order.total =
+        (order.subtotal || 0) + (order.shipping || 0) - (order.discount || 0);
     }
 
     order.markModified("items");
