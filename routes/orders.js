@@ -645,6 +645,35 @@ const resolveVariantPrice = (product, color, size) => {
     : (product.price ?? null);
 };
 
+// Price for a full color + size + combined generic-attributes selection, with the
+// same fallbacks as resolveAndQuote (full combo → extras-only → color/size-only).
+const priceForSelection = (product, color, size, attributes) => {
+  if (!product) return null;
+  const extra =
+    attributes && typeof attributes === "object"
+      ? Object.fromEntries(
+          Object.entries(attributes).filter(
+            ([, v]) => v != null && String(v).trim(),
+          ),
+        )
+      : {};
+  if (product.variants?.length && Object.keys(extra).length) {
+    const cs = {
+      ...(color ? { Color: color } : {}),
+      ...(size ? { Size: size } : {}),
+    };
+    let variant = matchVariantByAttributes(product, { ...cs, ...extra });
+    if (!variant) variant = matchVariantByAttributes(product, extra);
+    if (!variant && (color || size)) {
+      variant = matchVariantByAttributes(product, cs);
+    }
+    if (variant && variant.price != null && variant.price > 0) {
+      return variant.price;
+    }
+  }
+  return resolveVariantPrice(product, color, size);
+};
+
 // ── POST /api/orders/quote ───────────────────────────────────────────────────
 // Read-only price preview. No DB writes. The frontend calls this whenever cart
 // contents change or a coupon is applied, and displays ONLY these server values.
@@ -1777,6 +1806,17 @@ router.patch("/:id/edit", async (req, res) => {
           typeof itemUpdate.size !== "undefined"
             ? itemUpdate.size
             : currentItem.size;
+        const nextAttributes =
+          typeof itemUpdate.attributes !== "undefined"
+            ? itemUpdate.attributes &&
+              typeof itemUpdate.attributes === "object"
+              ? Object.fromEntries(
+                  Object.entries(itemUpdate.attributes).filter(
+                    ([, v]) => v != null && String(v).trim(),
+                  ),
+                )
+              : {}
+            : currentItem.attributes || {};
         const nextQuantity = Number(itemUpdate.quantity);
 
         if (Number.isFinite(nextQuantity) && nextQuantity >= 1) {
@@ -1789,14 +1829,19 @@ router.patch("/:id/edit", async (req, res) => {
         if (typeof itemUpdate.size !== "undefined") {
           currentItem.size = itemUpdate.size || null;
         }
+        if (typeof itemUpdate.attributes !== "undefined") {
+          currentItem.attributes =
+            Object.keys(nextAttributes).length > 0 ? nextAttributes : null;
+        }
 
         if (productId) {
           const product = await Product.findById(productId).lean();
           if (product) {
-            const resolvedPrice = resolveVariantPrice(
+            const resolvedPrice = priceForSelection(
               product,
               nextColor,
               nextSize,
+              nextAttributes,
             );
             if (resolvedPrice != null) {
               currentItem.price = resolvedPrice;
@@ -1813,8 +1858,18 @@ router.patch("/:id/edit", async (req, res) => {
         const prod = await Product.findById(ni.productId).lean();
         if (!prod) continue;
         const qty = Math.max(1, parseInt(ni.quantity) || 1);
+        const extraAttrs =
+          ni.attributes && typeof ni.attributes === "object"
+            ? Object.fromEntries(
+                Object.entries(ni.attributes).filter(
+                  ([, v]) => v != null && String(v).trim(),
+                ),
+              )
+            : {};
         const price =
-          resolveVariantPrice(prod, ni.color, ni.size) ?? prod.price ?? 0;
+          priceForSelection(prod, ni.color, ni.size, extraAttrs) ??
+          prod.price ??
+          0;
         order.items.push({
           productId: prod._id,
           title: prod.title,
@@ -1823,6 +1878,7 @@ router.patch("/:id/edit", async (req, res) => {
           image: prod.images?.[0]?.url || null,
           color: ni.color || null,
           size: ni.size || null,
+          attributes: Object.keys(extraAttrs).length > 0 ? extraAttrs : null,
           rewardPoints: Math.max(0, Number(prod.rewardPoints) || 0),
         });
       }
