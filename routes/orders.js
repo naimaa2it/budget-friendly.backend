@@ -1289,25 +1289,8 @@ router.get("/my", async (req, res) => {
       createdAt: -1,
     });
 
-    // Lazy auto-confirm: promote pending COD orders past their confirmAfter deadline
-    const now = new Date();
-    const toConfirm = orders.filter(
-      (o) =>
-        o.status === "pending" &&
-        o.paymentMethod === "cash-on-delivery" &&
-        o.confirmAfter &&
-        o.confirmAfter <= now,
-    );
-    if (toConfirm.length) {
-      await Order.updateMany(
-        { _id: { $in: toConfirm.map((o) => o._id) } },
-        { status: "confirmed", updatedAt: now },
-      );
-      toConfirm.forEach((o) => {
-        o.status = "confirmed";
-        sendOrderConfirmedEmail(o).catch(() => {});
-      });
-    }
+    // COD orders stay "pending" until an authorized person manually confirms
+    // them (or a courier sync updates the status). No automatic confirmation.
 
     // Lazy sync courier tracking from live URLs (max 5 per request)
     const toSync = orders
@@ -1480,20 +1463,6 @@ router.post("/webhooks/pathao", async (req, res) => {
   }
 });
 
-async function lazyConfirmCodOrder(order) {
-  if (
-    order.status === "pending" &&
-    order.paymentMethod === "cash-on-delivery" &&
-    order.confirmAfter &&
-    order.confirmAfter <= new Date()
-  ) {
-    order.status = "confirmed";
-    order.updatedAt = new Date();
-    await order.save();
-    sendOrderConfirmedEmail(order).catch(() => {});
-  }
-}
-
 // ── GET /api/orders/track — public lookup by order ID or phone number
 router.get("/track", async (req, res) => {
   try {
@@ -1542,8 +1511,6 @@ router.get("/track", async (req, res) => {
       });
     }
 
-    await lazyConfirmCodOrder(order);
-
     try {
       const syncResult = await syncOrderShipment(order, { force: false });
       if (syncResult.ok && syncResult.order) {
@@ -1568,19 +1535,6 @@ router.get("/:id", async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found" });
-
-    // Lazy auto-confirm
-    if (
-      order.status === "pending" &&
-      order.paymentMethod === "cash-on-delivery" &&
-      order.confirmAfter &&
-      order.confirmAfter <= new Date()
-    ) {
-      order.status = "confirmed";
-      order.updatedAt = new Date();
-      await order.save();
-      sendOrderConfirmedEmail(order).catch(() => {});
-    }
 
     const identity = await getRequesterIdentity(req);
     const isAdmin = identity?.type === "admin";
