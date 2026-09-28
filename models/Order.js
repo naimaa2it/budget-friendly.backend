@@ -222,7 +222,8 @@ const OrderSchema = new mongoose.Schema({
   paymentNote: { type: String, default: null },
   valId: { type: String, default: null },
   paidAmount: { type: Number, default: null },
-  // COD orders auto-confirm 30 min after creation; cancellable before this time
+  // Deadline of the 1-hour customer cancel/edit window for COD orders.
+  // Orders do NOT auto-confirm; confirmation is always a manual admin action.
   confirmAfter: { type: Date, default: null },
   shipment: { type: ShipmentSchema, default: () => ({ trackingEvents: [] }) },
   assignedAgent: { type: AssignedAgentSchema, default: null },
@@ -275,6 +276,6 @@ OrderSchema.index({ deletedAt: 1, createdAt: -1 }); // trash listing + cron clea
 OrderSchema.index({ userEmail: 1, createdAt: -1 });
 OrderSchema.index({ paymentStatus: 1, createdAt: -1 });
 OrderSchema.index({ "shipment.trackingId": 1 }, { sparse: true }); // webhook lookups
-OrderSchema.index({ confirmAfter: 1 }, { sparse: true }); // lazy-confirm batch job
+OrderSchema.index({ confirmAfter: 1 }, { sparse: true }); // cancel/edit window lookups
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

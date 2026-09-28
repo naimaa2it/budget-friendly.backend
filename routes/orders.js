@@ -912,7 +912,9 @@ router.post("/", orderLimiter, async (req, res) => {
         "",
       deviceId: deviceId || "",
       userAgent: req.headers["user-agent"] || "",
-      // COD / manual mobile-banking orders auto-confirm 1 hour after placement
+      // COD / manual mobile-banking orders get a 1-hour cancel/edit window.
+      // Orders do NOT auto-confirm — status stays "pending" until an authorized
+      // admin/moderator manually confirms it.
       confirmAfter: ["cash-on-delivery", "bkash", "nagad", "rocket"].includes(
         paymentMethod,
       )
