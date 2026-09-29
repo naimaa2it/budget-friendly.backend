@@ -6044,9 +6044,8 @@ router.put(
 
       if (shouldHandOver) {
         order.shipment.handedToCourierAt = new Date();
-        if (["confirmed", "processing"].includes(order.status)) {
-          order.status = "shipped";
-        }
+        // Status is NOT auto-changed on handover. Order status only changes when
+        // an authorized person explicitly updates it via "Update status".
       }
 
       order.updatedAt = new Date();
@@ -6087,24 +6086,13 @@ router.post(
       const normalizedStatus = status
         ? String(status).trim().toLowerCase()
         : "";
-      const isDelivered =
-        normalizedStatus === "delivered" ||
-        /^delivered$/i.test(String(label).trim());
 
-      if (isDelivered) {
-        applyOrderStatusChange(order, "delivered", {
-          reason: String(label).trim(),
-          changedBy:
-            req.admin?.email ||
-            req.admin?.name ||
-            String(req.admin?._id || "admin"),
-        });
-      } else {
-        appendManualTrackingEvent(order, {
-          status: normalizedStatus || "update",
-          message: String(label).trim(),
-        });
-      }
+      // A tracking event never changes order.status. Order status only changes
+      // when an authorized person explicitly updates it via "Update status".
+      appendManualTrackingEvent(order, {
+        status: normalizedStatus || "update",
+        message: String(label).trim(),
+      });
       order.updatedAt = new Date();
       await order.save();
       res.json(order);
@@ -6215,25 +6203,8 @@ router.post(
         order.shipment.handedToCourierAt || new Date();
       order.shipment.courierStatus = "Booked";
 
-      const courierLabel =
-        result.courier.charAt(0).toUpperCase() + result.courier.slice(1);
-
-      const Setting = (await import("../models/Setting.js")).default;
-      const settings = await Setting.findOne().lean();
-      const nextStatus = settings?.shipmentConfig?.bookSetsStatus || "shipped";
-      if (
-        ["confirmed", "processing", "accepted", "picked", "approved"].includes(
-          order.status,
-        )
-      ) {
-        applyOrderStatusChange(order, nextStatus, {
-          reason: `Booked with ${courierLabel}`,
-          changedBy:
-            req.admin?.email ||
-            req.admin?.name ||
-            String(req.admin?._id || "admin"),
-        });
-      }
+      // Status is NOT auto-changed on booking. Order status only changes when an
+      // authorized person explicitly updates it via the "Update status" action.
 
       order.updatedAt = new Date();
       await order.save();
