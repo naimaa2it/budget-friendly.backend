@@ -29,7 +29,7 @@ router.post('/firebase-login', async (req, res) => {
       isVerified: true
     };
 
-    const user = await User.findOneAndUpdate({ email }, update, { upsert: true, new: true, setDefaultsOnInsert: true }).populate('tags');
+    const user = await User.findOneAndUpdate({ email }, update, { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }).populate('tags');
 
     const token = createToken(user);
     // SameSite=none + Secure required for cross-origin cookie (Vercel frontend ↔ Render backend)

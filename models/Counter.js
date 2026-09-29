@@ -17,7 +17,7 @@ export async function getNextOrderNo() {
   const doc = await Counter.findByIdAndUpdate(
     "orderNo",
     { $inc: { seq: 1 } },
-    { new: true, upsert: true },
+    { returnDocument: 'after', upsert: true },
   );
   return 99999 + doc.seq; // seq 1 → 100000, seq 2 → 100001, …
 }

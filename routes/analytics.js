@@ -86,7 +86,7 @@ router.delete('/most-popular/:id', requireAdmin, async (req, res) => {
     const product = await Product.findByIdAndUpdate(
       req.params.id,
       { $set: { viewCount: 0 } },
-      { new: true },
+      { returnDocument: 'after' },
     );
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json({ ok: true });

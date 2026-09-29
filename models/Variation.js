@@ -14,6 +14,7 @@ const VariationSchema = new mongoose.Schema({
   toObject: { virtuals: true },
 });
 
-VariationSchema.index({ name: 1 });
+// `name` already has `unique: true` above, which creates the index.
+// Declaring an explicit index here too triggers a "Duplicate schema index" warning.
 
 export default mongoose.models.Variation || mongoose.model('Variation', VariationSchema);

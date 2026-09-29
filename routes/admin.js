@@ -151,7 +151,7 @@ const syncProductBarcode = async ({
         isActive: true,
       },
     },
-    { upsert: true, new: true, runValidators: true },
+    { upsert: true, returnDocument: 'after', runValidators: true },
   );
 
   await Barcode.updateMany(
@@ -467,7 +467,7 @@ router.put("/settings", requireAdmin, async (req, res) => {
     const settings = await Setting.findOneAndUpdate(
       {},
       { $set: payload },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     );
     res.json({ ok: true, settings });
   } catch (err) {
@@ -485,7 +485,7 @@ router.put("/settings/policy", requireAdmin, async (req, res) => {
     const settings = await Setting.findOneAndUpdate(
       {},
       { $set: { policyContent } },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     );
     res.json({ ok: true, settings });
   } catch (err) {
@@ -509,7 +509,7 @@ router.put(
       const settings = await Setting.findOneAndUpdate(
         {},
         { $set: { productBadgeOptions } },
-        { upsert: true, new: true },
+        { upsert: true, returnDocument: 'after' },
       );
       res.json({ ok: true, settings });
     } catch (err) {
@@ -1279,7 +1279,7 @@ router.put(
       const variation = await Variation.findByIdAndUpdate(
         req.params.id,
         { $set: { name, options } },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       );
       if (!variation)
         return res.status(404).json({ error: "Variation not found" });
@@ -1647,7 +1647,7 @@ router.put(
 
       // Apply updates and return updated product
       const p = await Product.findByIdAndUpdate(req.params.id, updates, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       });
       if (!p) return res.status(404).json({ error: "Not found" });
@@ -1712,7 +1712,7 @@ router.delete(
       const p = await Product.findByIdAndUpdate(
         req.params.id,
         { deletedAt: new Date(), deletedBy: req.admin._id },
-        { new: true },
+        { returnDocument: 'after' },
       );
       if (!p) return res.status(404).json({ error: "Not found" });
       await detachBarcodeFromProduct(p._id);
@@ -1991,7 +1991,7 @@ router.put(
       if (updates.status === "published")
         updates.publishedAt = updates.publishedAt || Date.now();
       const p = await BlogPost.findByIdAndUpdate(req.params.id, updates, {
-        new: true,
+        returnDocument: 'after',
       });
       if (!p) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, post: p });
@@ -2011,7 +2011,7 @@ router.delete(
       const p = await BlogPost.findByIdAndUpdate(
         req.params.id,
         { status: "archived" },
-        { new: true },
+        { returnDocument: 'after' },
       );
       if (!p) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, post: p });
@@ -2075,7 +2075,7 @@ router.put(
       const category = await BlogCategory.findByIdAndUpdate(
         req.params.id,
         updates,
-        { new: true },
+        { returnDocument: 'after' },
       );
       if (!category)
         return res.status(404).json({ error: "Category not found" });
@@ -2334,7 +2334,7 @@ router.put("/admins/:id/deactivate", requireAdmin, async (req, res) => {
     const a = await Admin.findByIdAndUpdate(
       req.params.id,
       { isActive: false },
-      { new: true },
+      { returnDocument: 'after' },
     );
     if (!a) return res.status(404).json({ error: "Not found" });
     res.json({ ok: true, admin: { _id: a._id, isActive: a.isActive } });
@@ -3380,7 +3380,7 @@ router.put(
       const section = await OccasionSection.findByIdAndUpdate(
         req.params.id,
         updates,
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       );
       if (!section) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, section });
@@ -3505,7 +3505,7 @@ router.put(
       const section = await FeaturedSection.findByIdAndUpdate(
         req.params.id,
         updates,
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       );
       if (!section) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, section });
@@ -3630,7 +3630,7 @@ router.put(
       const item = await PromoStripItem.findByIdAndUpdate(
         req.params.id,
         updates,
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       );
       if (!item) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, item });
@@ -3742,7 +3742,7 @@ router.put(
       const Banner = (await import("../models/Banner.js")).default;
       const updates = { ...req.body, updatedAt: Date.now() };
       const banner = await Banner.findByIdAndUpdate(req.params.id, updates, {
-        new: true,
+        returnDocument: 'after',
       });
       if (!banner) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, banner });
@@ -3860,7 +3860,7 @@ router.put(
       const PromoPanel = (await import("../models/PromoPanel.js")).default;
       const updates = { ...req.body, updatedAt: Date.now() };
       const panel = await PromoPanel.findByIdAndUpdate(req.params.id, updates, {
-        new: true,
+        returnDocument: 'after',
       });
       if (!panel) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, panel });
@@ -4187,7 +4187,7 @@ router.put(
       const Discount = (await import("../models/Discount.js")).default;
       const updates = { ...req.body, updatedAt: Date.now() };
       const item = await Discount.findByIdAndUpdate(req.params.id, updates, {
-        new: true,
+        returnDocument: 'after',
       });
       if (!item) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, item });
@@ -4243,7 +4243,7 @@ router.put(
       const entry = await Waitlist.findByIdAndUpdate(
         req.params.id,
         { notified: true },
-        { new: true },
+        { returnDocument: 'after' },
       );
       if (!entry) return res.status(404).json({ error: "Not found" });
       res.json({ ok: true, entry });
@@ -5915,7 +5915,7 @@ router.put("/shipment-config", requireAdmin, async (req, res) => {
     const settings = await Setting.findOneAndUpdate(
       {},
       { $set: { shipmentConfig: shipmentConfig || {} } },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     );
     res.json({ ok: true, shipmentConfig: settings.shipmentConfig });
   } catch (err) {
@@ -6282,7 +6282,7 @@ router.delete(
       const order = await Order.findByIdAndUpdate(
         req.params.id,
         { deletedAt: new Date(), deletedBy: req.admin._id },
-        { new: true },
+        { returnDocument: 'after' },
       );
       if (!order) return res.status(404).json({ error: "Order not found" });
       res.json({ ok: true, order });

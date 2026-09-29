@@ -57,7 +57,7 @@ router.post('/', requireAdmin, async (req, res) => {
 // Admin: update brand
 router.put('/:id', requireAdmin, async (req, res) => {
   try {
-    const brand = await Brand.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const brand = await Brand.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after', runValidators: true });
     if (!brand) return res.status(404).json({ error: 'Brand not found' });
     res.json({ brand });
   } catch (err) {

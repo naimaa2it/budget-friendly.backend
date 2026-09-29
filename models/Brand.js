@@ -24,7 +24,8 @@ const BrandSchema = new mongoose.Schema({
 
 BrandSchema.pre('save', function () { this.updatedAt = new Date(); });
 
-BrandSchema.index({ slug: 1 }, { unique: true });
+// `slug` already has `unique: true` above, which creates the unique index.
+// A duplicate `.index({ slug: 1 })` triggers a "Duplicate schema index" warning.
 BrandSchema.index({ isActive: 1, order: 1 });
 BrandSchema.index({ type: 1, isActive: 1 });
 BrandSchema.index({ isFeatured: 1, isActive: 1 });
