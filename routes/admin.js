@@ -330,6 +330,9 @@ router.get("/top-banner", async (req, res) => {
         enabled: s?.chatWidget?.enabled !== false,
         facebookMessengerUrl: s?.chatWidget?.facebookMessengerUrl || "",
         whatsappNumber: s?.chatWidget?.whatsappNumber || "",
+        sessionTtlMinutes: Number(s?.chatWidget?.sessionTtlMinutes) > 0
+          ? Number(s.chatWidget.sessionTtlMinutes)
+          : 60,
       },
       // Product page layout (Related Products / Recently Viewed) — the
       // storefront product page reads this to decide show/hide + placement.
@@ -366,7 +369,7 @@ router.get("/top-banner", async (req, res) => {
         about: [],
       },
       footerLinks: { quickLinks: [], customerService: [] },
-      chatWidget: { enabled: true, facebookMessengerUrl: "", whatsappNumber: "" },
+      chatWidget: { enabled: true, facebookMessengerUrl: "", whatsappNumber: "", sessionTtlMinutes: 60 },
       productPageLayout: {
         showRelatedProducts: true,
         relatedProductsPosition: "before_description",

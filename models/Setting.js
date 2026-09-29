@@ -85,10 +85,14 @@ const SettingsSchema = new mongoose.Schema({
   //   enabled              → master on/off for the whole launcher
   //   facebookMessengerUrl → e.g. https://m.me/yourpage (blank hides the button)
   //   whatsappNumber       → digits only, e.g. 8801XXXXXXXXX (blank hides it)
+  //   sessionTtlMinutes    → idle minutes before the in-site chat asks for
+  //                          name + number again; same number resumes the old
+  //                          thread, a different number starts a fresh one
   chatWidget: {
     enabled: { type: Boolean, default: true },
     facebookMessengerUrl: { type: String, default: "" },
     whatsappNumber: { type: String, default: "" },
+    sessionTtlMinutes: { type: Number, default: 60 },
   },
   // Product description page layout controls (admin-configurable from
   // Settings → Product Page Layout; read publicly via /api/admin/top-banner).
