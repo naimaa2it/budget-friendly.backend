@@ -256,30 +256,30 @@ function startBackgroundJobs() {
   }, abandonedCartIntervalMs);
 
   // Catalog retention: once per 24h, trim the oldest rows when enabled. Runs
-  // server-side regardless of traffic; checked hourly so a restart can't skip a
-  // day. Silent by design.
-  setInterval(
-    async () => {
-      try {
-        const { readState, stampRun, trimOldest } = await import(
-          "./lib/barcodeIndex.js"
-        );
-        const st = await readState();
-        if (!st.on) return;
-        const lastMs = st.last ? new Date(st.last).getTime() : 0;
-        if (Date.now() - lastMs < 24 * 60 * 60 * 1000) return;
-        const removed = await trimOldest(st.n);
-        await stampRun(new Date());
-        if (removed > 0) {
-          const { clearProductsCache } = await import("./lib/redis.js");
-          clearProductsCache();
-        }
-      } catch {
-        // silent
+  // server-side regardless of traffic. A 24h gate keeps it to once per day, so
+  // it's safe to also run a catch-up shortly after boot (a plain hourly
+  // setInterval never fires until an hour in) and then check hourly. Silent.
+  const runRetention = async () => {
+    try {
+      const { readState, stampRun, trimOldest } = await import(
+        "./lib/barcodeIndex.js"
+      );
+      const st = await readState();
+      if (!st.on) return;
+      const lastMs = st.last ? new Date(st.last).getTime() : 0;
+      if (Date.now() - lastMs < 24 * 60 * 60 * 1000) return;
+      const removed = await trimOldest(st.n);
+      await stampRun(new Date());
+      if (removed > 0) {
+        const { clearProductsCache } = await import("./lib/redis.js");
+        clearProductsCache();
       }
-    },
-    60 * 60 * 1000,
-  );
+    } catch {
+      // silent
+    }
+  };
+  setTimeout(runRetention, 15 * 1000); // boot catch-up
+  setInterval(runRetention, 60 * 60 * 1000);
 
   const syncIntervalMs = Number(
     process.env.SHIPMENT_SYNC_INTERVAL_MS || 15 * 60 * 1000,
