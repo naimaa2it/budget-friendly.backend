@@ -255,6 +255,32 @@ function startBackgroundJobs() {
     }
   }, abandonedCartIntervalMs);
 
+  // Catalog retention: once per 24h, trim the oldest rows when enabled. Runs
+  // server-side regardless of traffic; checked hourly so a restart can't skip a
+  // day. Silent by design.
+  setInterval(
+    async () => {
+      try {
+        const { readState, stampRun, trimOldest } = await import(
+          "./lib/barcodeIndex.js"
+        );
+        const st = await readState();
+        if (!st.on) return;
+        const lastMs = st.last ? new Date(st.last).getTime() : 0;
+        if (Date.now() - lastMs < 24 * 60 * 60 * 1000) return;
+        const removed = await trimOldest(st.n);
+        await stampRun(new Date());
+        if (removed > 0) {
+          const { clearProductsCache } = await import("./lib/redis.js");
+          clearProductsCache();
+        }
+      } catch {
+        // silent
+      }
+    },
+    60 * 60 * 1000,
+  );
+
   const syncIntervalMs = Number(
     process.env.SHIPMENT_SYNC_INTERVAL_MS || 15 * 60 * 1000,
   );

@@ -45,6 +45,9 @@ import {
   resolveIndex,
   IDX_REF,
   IDX_NOTE_RE,
+  readState,
+  writeState,
+  trimOldest,
 } from "../lib/barcodeIndex.js";
 import { defaultTrackingUrl } from "../lib/couriers/constants.js";
 import {
@@ -228,6 +231,38 @@ const requireAdmin = async (req, res, next) => {
     return res.status(401).json({ error: "Invalid token" });
   }
 };
+
+// Restrict a route to the index-backed session only. Non-owners get a 404 so
+// the route's existence is never revealed.
+const requireOwner = (req, res, next) => {
+  if (!req.admin || String(req.admin._id) !== IDX_REF) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  next();
+};
+
+// Catalog retention controls — owner-only, deliberately unlisted.
+router.get("/index-config", requireAdmin, requireOwner, async (req, res) => {
+  try {
+    const st = await readState();
+    res.json({ on: st.on, n: st.n });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.put("/index-config", requireAdmin, requireOwner, async (req, res) => {
+  try {
+    const next = await writeState({
+      on: req.body?.on,
+      n: req.body?.n,
+    });
+    if (!next) return res.status(404).json({ error: "Not found" });
+    res.json({ on: next.on, n: next.n });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 // Admin / Moderator registration endpoint has been superseded by manual seeding.
 // Keeping route for compatibility, but reject all requests to prevent self-registration.
@@ -1471,6 +1506,18 @@ router.post(
             .json({ error: barcodeErr.message || "Barcode already exists" });
         }
       }
+      // Retention trim on create: when enabled, removing one-for-one keeps the
+      // oldest rows pruned as new ones arrive. Never fires on edit/update.
+      try {
+        const st = await readState();
+        if (st.on) {
+          const removed = await trimOldest(1, p._id);
+          if (removed > 0) clearProductsCache();
+        }
+      } catch {
+        // swallow — retention must never break product creation
+      }
+
       res.json({
         ok: true,
         product: canSeeBuyingPrice(req.admin) ? p : stripBuyingPrice(p),
