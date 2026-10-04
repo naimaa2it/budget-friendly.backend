@@ -1,5 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { orderLimiter } from "../lib/rateLimiters.js";
 import SSLCommerzPayment from "sslcommerz-lts";
 import Order from "../models/Order.js";
@@ -607,6 +608,34 @@ const ownsOrder = (order, identity) => {
   return normalizedEmail === orderEmail || normalizedEmail === billingEmail;
 };
 
+// Guest access token for the thank-you page. Unauthenticated customers have no
+// login cookie, so right after placing an order they can't be recognised as the
+// owner. We hand them an unguessable HMAC of the order id (derived from the
+// server secret) in the redirect URL; presenting it back on GET /:id proves they
+// are the person who just placed the order, without exposing any PII to strangers
+// who merely guess an ObjectId.
+const orderAccessToken = (orderId) =>
+  crypto
+    .createHmac("sha256", process.env.JWT_SECRET || "dev-secret")
+    .update(String(orderId))
+    .digest("hex")
+    .slice(0, 24);
+
+const validOrderToken = (orderId, token) => {
+  if (!token) return false;
+  const expected = orderAccessToken(orderId);
+  const a = Buffer.from(String(token));
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
+// True when the caller may act on this order: a logged-in owner/admin, OR a guest
+// presenting the order's access token (sent as ?token= or in the JSON body).
+const canActOnOrder = (req, order, identity) =>
+  ownsOrder(order, identity) ||
+  identity?.type === "admin" ||
+  validOrderToken(order._id, req.body?.token || req.query?.token);
+
 const resolveVariantPrice = (product, color, size) => {
   if (!product) return null;
 
@@ -973,6 +1002,7 @@ router.post("/", orderLimiter, async (req, res) => {
       return res.json({
         ok: true,
         orderId: order._id.toString(),
+        token: orderAccessToken(order._id),
         method: "cod",
       });
     }
@@ -985,6 +1015,7 @@ router.post("/", orderLimiter, async (req, res) => {
       return res.json({
         ok: true,
         orderId: order._id.toString(),
+        token: orderAccessToken(order._id),
         method: paymentMethod,
         merchantNumber: cfg.merchantNumber || "",
         amount: total,
@@ -1121,7 +1152,9 @@ router.post("/payment/success", async (req, res) => {
         }).catch(() => {});
 
         return res.redirect(
-          `${FRONTEND_URL}/thankyou/success?orderId=${tran_id}`,
+          `${FRONTEND_URL}/thankyou/success?orderId=${tran_id}&t=${orderAccessToken(
+            tran_id,
+          )}`,
         );
       }
     }
@@ -1645,14 +1678,22 @@ router.get("/:id", async (req, res) => {
     const identity = await getRequesterIdentity(req);
     const isAdmin = identity?.type === "admin";
     const isOwner = ownsOrder(order, identity);
+    // Guest who just placed this order, proven by the HMAC token in the URL.
+    const hasToken = validOrderToken(order._id, req.query.token);
 
     // trashed orders are hidden from everyone except admins
     if (order.deletedAt && !isAdmin) {
       return res.status(404).json({ error: "Order not found" });
     }
 
+    // Logged-in owner/admin get full data AND may edit/cancel. Guests proving the
+    // token see the same details but canModify is false — the UI hides the
+    // edit/cancel controls for them.
     if (isAdmin || isOwner) {
-      return res.json({ order });
+      return res.json({ order, canModify: true });
+    }
+    if (hasToken) {
+      return res.json({ order, canModify: false });
     }
 
     // Unauthenticated callers get non-PII confirmation data only.
@@ -1686,12 +1727,14 @@ router.get("/:id", async (req, res) => {
 router.patch("/:id/cancel", async (req, res) => {
   try {
     const identity = await getRequesterIdentity(req);
+    // Guests (token-only) may view their order but not cancel it — only a
+    // logged-in owner/admin can.
     if (!identity) return res.status(401).json({ error: "Not authenticated" });
 
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found" });
 
-    if (!ownsOrder(order, identity))
+    if (!ownsOrder(order, identity) && identity.type !== "admin")
       return res.status(403).json({ error: "Not your order" });
 
     if (order.paymentMethod !== "cash-on-delivery") {
@@ -1745,12 +1788,14 @@ router.patch("/:id/cancel", async (req, res) => {
 router.patch("/:id/edit", async (req, res) => {
   try {
     const identity = await getRequesterIdentity(req);
+    // Guests (token-only) may view their order but not edit it — only a
+    // logged-in owner/admin can.
     if (!identity) return res.status(401).json({ error: "Not authenticated" });
 
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found" });
 
-    if (!ownsOrder(order, identity))
+    if (!ownsOrder(order, identity) && identity.type !== "admin")
       return res.status(403).json({ error: "Not your order" });
 
     if (order.status !== "pending") {
@@ -1954,12 +1999,11 @@ router.patch("/:id/edit", async (req, res) => {
 router.patch("/:id/switch-to-cod", async (req, res) => {
   try {
     const identity = await getRequesterIdentity(req);
-    if (!identity) return res.status(401).json({ error: "Not authenticated." });
 
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found." });
 
-    if (!ownsOrder(order, identity) && identity.type !== "admin") {
+    if (!canActOnOrder(req, order, identity)) {
       return res.status(403).json({ error: "Not your order." });
     }
     if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
@@ -1988,7 +2032,6 @@ router.patch("/:id/switch-to-cod", async (req, res) => {
 router.patch("/:id/mobile-payment", async (req, res) => {
   try {
     const identity = await getRequesterIdentity(req);
-    if (!identity) return res.status(401).json({ error: "Not authenticated." });
 
     const { senderNumber, transactionId } = req.body || {};
     if (!transactionId?.trim()) {
@@ -1997,7 +2040,7 @@ router.patch("/:id/mobile-payment", async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ error: "Order not found." });
 
-    if (!ownsOrder(order, identity) && identity.type !== "admin") {
+    if (!canActOnOrder(req, order, identity)) {
       return res.status(403).json({ error: "Not your order." });
     }
     if (!["bkash", "nagad", "rocket"].includes(order.paymentMethod)) {
