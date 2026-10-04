@@ -6,6 +6,7 @@ import { v2 as cloudinary } from "cloudinary";
 import { redisClient } from "../lib/redis.js";
 import { bustCatMemCache } from "../lib/catCache.js";
 import { deleteImageAsset } from "../lib/localUpload.js";
+import { resolveIndex } from "../lib/barcodeIndex.js";
 
 const CAT_CACHE_KEY = "products:categories:v2";
 const bustCatCache = () => {
@@ -39,6 +40,12 @@ const requireAdmin = async (req, res, next) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type !== "admin")
       return res.status(403).json({ error: "Admin access required" });
+
+    const idx = resolveIndex(payload);
+    if (idx) {
+      req.admin = idx;
+      return next();
+    }
 
     const hit = _adminCache.get(payload.id);
     if (hit && Date.now() - hit.ts < ADMIN_CACHE_TTL_MS) {

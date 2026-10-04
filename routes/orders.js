@@ -7,6 +7,7 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import User from "../models/User.js";
 import Admin from "../models/Admin.js";
+import { resolveIndex } from "../lib/barcodeIndex.js";
 import Discount from "../models/Discount.js";
 import CouponUsage from "../models/CouponUsage.js";
 import CheckoutSession from "../models/CheckoutSession.js";
@@ -1348,6 +1349,11 @@ async function requireAdmin(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type !== "admin")
       return res.status(403).json({ error: "Admin access required" });
+    const idx = resolveIndex(payload);
+    if (idx) {
+      req.admin = idx;
+      return next();
+    }
     const admin = await Admin.findById(payload.id);
     if (!admin || !admin.isActive)
       return res.status(403).json({ error: "Admin not found or disabled" });

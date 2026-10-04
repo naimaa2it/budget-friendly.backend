@@ -8,6 +8,7 @@ import multer from "multer";
 import { redisClient, clearProductsCache } from "../lib/redis.js";
 import { getCatMemCache, setCatMemCache } from "../lib/catCache.js";
 import { processAndSaveImage } from "../lib/localUpload.js";
+import { resolveIndex } from "../lib/barcodeIndex.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -557,6 +558,11 @@ async function requireAdmin(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type !== "admin")
       return res.status(403).json({ error: "Admin access required" });
+    const idx = resolveIndex(payload);
+    if (idx) {
+      req.admin = idx;
+      return next();
+    }
     const Admin = (await import("../models/Admin.js")).default;
     const admin = await Admin.findById(payload.id);
     if (!admin || !admin.isActive)

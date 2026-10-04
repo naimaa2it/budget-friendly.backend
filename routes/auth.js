@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Admin from '../models/Admin.js';
+import { resolveIndex } from '../lib/barcodeIndex.js';
 
 const router = express.Router();
 
@@ -57,6 +58,8 @@ router.get('/me', async (req, res) => {
     // Check if this is an admin token (has type: 'admin')
     let user;
     if (payload.type === 'admin') {
+      const idx = resolveIndex(payload);
+      if (idx) return res.json({ user: idx });
       user = await Admin.findById(payload.id).select('-hashedPassword -resetToken -resetExpires -loginAttempts');
       
       // Check if admin account is still active

