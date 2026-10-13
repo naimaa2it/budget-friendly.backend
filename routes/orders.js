@@ -11,6 +11,7 @@ import { resolveIndex } from "../lib/barcodeIndex.js";
 import Discount from "../models/Discount.js";
 import CouponUsage from "../models/CouponUsage.js";
 import CheckoutSession from "../models/CheckoutSession.js";
+import { normalizeBdPhone, toEnglishDigits } from "../lib/bdValidation.js";
 import { getNextOrderNo } from "../models/Counter.js";
 import ShippingSettings from "../models/ShippingSettings.js";
 import ShippingZoneRate from "../models/ShippingZoneRate.js";
@@ -766,6 +767,10 @@ router.post("/", orderLimiter, async (req, res) => {
       return res.status(400).json({ error: "Missing required order fields" });
     }
 
+    if (billingDetails?.phone) {
+      billingDetails.phone = String(billingDetails.phone).trim();
+    }
+
     // ── Fake Order Protection ─────────────────────────────────────────────────
     try {
       const Setting = (await import("../models/Setting.js")).default;
@@ -775,7 +780,10 @@ router.post("/", orderLimiter, async (req, res) => {
           (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
           req.socket?.remoteAddress ||
           "";
-        const phone = billingDetails.phone?.replace(/\s+/g, "") || "";
+        const phone =
+          normalizeBdPhone(billingDetails.phone) ||
+          billingDetails.phone?.replace(/\s+/g, "") ||
+          "";
         const now = new Date();
 
         // Sync blocklist checks first (no DB round-trips)
@@ -960,8 +968,13 @@ router.post("/", orderLimiter, async (req, res) => {
     {
       const sessionOr = [];
       if (resolvedUserId) sessionOr.push({ userId: resolvedUserId });
-      if (billingDetails?.phone)
+      if (billingDetails?.phone) {
         sessionOr.push({ userPhone: billingDetails.phone });
+        const enPhone = normalizeBdPhone(billingDetails.phone);
+        if (enPhone && enPhone !== billingDetails.phone) {
+          sessionOr.push({ userPhone: enPhone });
+        }
+      }
       if (billingDetails?.email)
         sessionOr.push({ userEmail: billingDetails.email });
       if (sessionOr.length) {
@@ -1060,7 +1073,8 @@ router.post("/", orderLimiter, async (req, res) => {
       cus_city: billingDetails.city || "Dhaka",
       cus_postcode: "1000",
       cus_country: "Bangladesh",
-      cus_phone: billingDetails.phone,
+      cus_phone:
+        toEnglishDigits(billingDetails.phone) || billingDetails.phone,
       ship_name: billingDetails.name,
       ship_add1: billingDetails.address || "N/A",
       ship_city: billingDetails.city || "Dhaka",

@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import CheckoutSession from '../models/CheckoutSession.js';
+import { normalizeBdPhone } from '../lib/bdValidation.js';
 
 const router = express.Router();
 
@@ -61,7 +62,9 @@ router.patch('/:id', async (req, res) => {
     const update = {};
     if (userName) update.userName = String(userName).slice(0, 100);
     if (userEmail) update.userEmail = String(userEmail).slice(0, 200);
-    if (userPhone) update.userPhone = String(userPhone).slice(0, 30);
+    if (userPhone) {
+      update.userPhone = String(userPhone).trim().slice(0, 30);
+    }
     if (userCity) update.userCity = String(userCity).slice(0, 100);
     if (userZone) update.userZone = String(userZone).slice(0, 100);
     if (userArea) update.userArea = String(userArea).slice(0, 100);

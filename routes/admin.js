@@ -34,6 +34,7 @@ import Courier from "../models/Courier.js";
 import TimelinePreset from "../models/TimelinePreset.js";
 import { formatOrderIdSuffix, formatOrderNumber } from "../lib/orderLookup.js";
 import { placeChatbotOrder } from "../lib/chatbotOrder.js";
+import { normalizeBdPhone, toEnglishDigits } from "../lib/bdValidation.js";
 import {
   requirePermission,
   sanitizePermissions,
@@ -3153,8 +3154,14 @@ router.delete("/users/:id", requireAdmin, async (req, res) => {
   }
 });
 
+const BN_TO_EN = {
+  "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4",
+  "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9",
+};
+
 function normalizePhone(phone) {
-  return String(phone || "").replace(/\D/g, "");
+  const converted = String(phone || "").replace(/[০-৯]/g, (d) => BN_TO_EN[d] || d);
+  return converted.replace(/\D/g, "");
 }
 
 async function resolveCustomerUserId(order) {
@@ -3252,12 +3259,16 @@ function buildCustomerOrderFilter(user) {
     or.push({ "billingDetails.email": user.email });
   }
   if (user.mobile) {
-    const last10 = String(user.mobile).replace(/\D/g, "").slice(-10);
-    if (last10.length >= 8) {
-      or.push({ "billingDetails.phone": new RegExp(last10 + "$") });
-    } else {
-      or.push({ "billingDetails.phone": user.mobile });
+    const rawMobile = String(user.mobile).trim();
+    const enDigits = toEnglishDigits(rawMobile).replace(/\D/g, "");
+    const last10En = enDigits.slice(-10);
+    const BN_DIGITS = { "0": "০", "1": "১", "2": "২", "3": "৩", "4": "৪", "5": "৫", "6": "৬", "7": "৭", "8": "৮", "9": "৯" };
+    const last10Bn = last10En.replace(/[0-9]/g, (d) => BN_DIGITS[d] || d);
+    if (last10En.length >= 8) {
+      or.push({ "billingDetails.phone": new RegExp(last10En + "$") });
+      or.push({ "billingDetails.phone": new RegExp(last10Bn + "$") });
     }
+    or.push({ "billingDetails.phone": rawMobile });
   }
   return { $or: or };
 }
@@ -3269,6 +3280,7 @@ router.get(
   requirePermission("customers"),
   async (req, res) => {
     try {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
       const refresh = req.query.refresh === "1" || req.query.refresh === "true";
       const lifetime = await fetchLifetimeCourierStats(req.params.phone, {
         skipCache: refresh,
@@ -6558,7 +6570,7 @@ router.get(
       // then filter those sessions out. This also cleans up historical sessions
       // that were never marked "completed" (e.g. guest orders with no userId).
       const norm = (p) =>
-        String(p || "")
+        toEnglishDigits(p)
           .replace(/\D/g, "")
           .slice(-10);
       const placedOrders = await Order.find({
@@ -6669,6 +6681,10 @@ router.post(
           ? null
           : Number(shipping);
 
+      if (customer?.phone) {
+        customer.phone = String(customer.phone).trim();
+      }
+
       // Link the order to the customer's account (by email, else phone) so it
       // behaves exactly like a self-placed order: it appears in their order
       // history and its reward points land in "My Rewards". If no account
@@ -6679,12 +6695,13 @@ router.post(
         const email = customer?.email
           ? String(customer.email).trim().toLowerCase()
           : "";
-        const phone = customer?.phone
-          ? String(customer.phone).replace(/\D/g, "").replace(/^88/, "")
+        const enDigits = customer?.phone
+          ? toEnglishDigits(customer.phone).replace(/\D/g, "").replace(/^88/, "")
           : "";
         const or = [];
         if (email) or.push({ email });
-        if (phone) or.push({ mobile: { $regex: `${phone}$` } });
+        if (customer?.phone) or.push({ mobile: customer.phone });
+        if (enDigits) or.push({ mobile: { $regex: `${enDigits}$` } });
         if (or.length) {
           const acct = await User.findOne({ $or: or }).select("_id").lean();
           if (acct) linkedUserId = String(acct._id);
