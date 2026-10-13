@@ -780,19 +780,22 @@ router.post("/", orderLimiter, async (req, res) => {
           (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
           req.socket?.remoteAddress ||
           "";
-        const phone =
-          normalizeBdPhone(billingDetails.phone) ||
-          billingDetails.phone?.replace(/\s+/g, "") ||
-          "";
+        const rawPhone = billingDetails.phone ? String(billingDetails.phone).trim() : "";
+        const enPhone =
+          normalizeBdPhone(rawPhone) ||
+          rawPhone.replace(/\s+/g, "");
+        const BN_DIGITS = { "0": "০", "1": "১", "2": "২", "3": "৩", "4": "৪", "5": "৫", "6": "৬", "7": "৭", "8": "৮", "9": "৯" };
+        const bnPhone = enPhone.replace(/[0-9]/g, (d) => BN_DIGITS[d] || d);
+        const phoneCandidates = [...new Set([rawPhone, enPhone, bnPhone].filter(Boolean))];
         const now = new Date();
 
         // Sync blocklist checks first (no DB round-trips)
-        if (fop.phoneOrder?.enabled && phone) {
+        if (fop.phoneOrder?.enabled && enPhone) {
           const phoneBlocklist = (fop.phoneOrder.blocklist || "")
             .split(",")
-            .map((p) => p.trim())
+            .map((p) => normalizeBdPhone(p) || p.trim())
             .filter(Boolean);
-          if (phoneBlocklist.includes(phone)) {
+          if (phoneBlocklist.includes(enPhone)) {
             return res
               .status(400)
               .json({ error: "এই নম্বর থেকে অর্ডার করা সম্ভব নয়।" });
@@ -817,12 +820,12 @@ router.post("/", orderLimiter, async (req, res) => {
           unit === "hours" ? `${dur} ঘণ্টা` : `${dur} মিনিট`;
 
         const phonePromise =
-          fop.phoneOrder?.enabled && phone
+          fop.phoneOrder?.enabled && phoneCandidates.length
             ? (() => {
                 const dur = Number(fop.phoneOrder.limitDuration) || 5;
                 const unit = fop.phoneOrder.limitDurationUnit || "minutes";
                 return Order.countDocuments({
-                  "billingDetails.phone": phone,
+                  "billingDetails.phone": { $in: phoneCandidates },
                   createdAt: { $gte: mkSince(dur, unit) },
                 }).then((n) =>
                   n > 0

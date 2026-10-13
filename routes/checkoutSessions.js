@@ -1,7 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import CheckoutSession from '../models/CheckoutSession.js';
-import { normalizeBdPhone } from '../lib/bdValidation.js';
 
 const router = express.Router();
 
