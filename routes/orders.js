@@ -1329,7 +1329,8 @@ router.post("/:id/pay", async (req, res) => {
       cus_city: billing.city || "Dhaka",
       cus_postcode: "1000",
       cus_country: "Bangladesh",
-      cus_phone: billing.phone || "N/A",
+      cus_phone:
+        toEnglishDigits(billing.phone) || billing.phone || "N/A",
       ship_name: billing.name || "Customer",
       ship_add1: billing.address || "N/A",
       ship_city: billing.city || "Dhaka",
