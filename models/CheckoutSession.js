@@ -36,6 +36,7 @@ const CheckoutSessionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 CheckoutSessionSchema.index({ status: 1, updatedAt: 1, abandonedEmailSent: 1 });
+CheckoutSessionSchema.index({ status: 1, createdAt: -1 });
 
 export default mongoose.models.CheckoutSession ||
   mongoose.model('CheckoutSession', CheckoutSessionSchema);

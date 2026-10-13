@@ -6573,12 +6573,21 @@ router.get(
         toEnglishDigits(p)
           .replace(/\D/g, "")
           .slice(-10);
-      const placedOrders = await Order.find({
-        createdAt: { $gte: lowerBound },
-        deletedAt: null,
-      })
-        .select("billingDetails.phone billingDetails.email userId")
-        .lean();
+      // 1. Fetch placed orders and lightweight session index in parallel!
+      // Using .select() avoids downloading thousands of full documents and large items arrays.
+      const [placedOrders, lightweightSessions] = await Promise.all([
+        Order.find({
+          createdAt: { $gte: lowerBound },
+          deletedAt: null,
+        })
+          .select("billingDetails.phone billingDetails.email userId")
+          .lean(),
+        CheckoutSession.find(filter)
+          .select("_id userId userPhone userEmail userName createdAt")
+          .sort({ createdAt: -1 })
+          .lean(),
+      ]);
+
       const orderedPhones = new Set();
       const orderedEmails = new Set();
       const orderedUserIds = new Set();
@@ -6590,13 +6599,38 @@ router.get(
         if (o.userId) orderedUserIds.add(String(o.userId));
       }
 
-      // Fetch all matching incomplete sessions, enrich, drop customers who
-      // already ordered, then paginate in memory so counts stay accurate.
-      const rawSessions = await CheckoutSession.find(filter)
-        .sort({ createdAt: -1 })
-        .lean();
+      // Filter out customers who already ordered
+      const activeIds = [];
+      for (const s of lightweightSessions) {
+        if (s.userId && orderedUserIds.has(String(s.userId))) continue;
+        if (s.userPhone && orderedPhones.has(norm(s.userPhone))) continue;
+        if (s.userEmail && orderedEmails.has(String(s.userEmail).toLowerCase()))
+          continue;
+        activeIds.push(s._id);
+      }
+
+      const total = activeIds.length;
+      const skip = (pg - 1) * lim;
+      const pageIds = activeIds.slice(skip, skip + lim);
+
+      if (!pageIds.length) {
+        return res.json({ sessions: [], total, pages: Math.ceil(total / lim) || 1 });
+      }
+
+      // Fetch ONLY the ~20 full documents for the current page
+      const rawPageSessions = await CheckoutSession.find({
+        _id: { $in: pageIds },
+      }).lean();
+
+      // Preserve exact sort order of pageIds
+      const orderMap = new Map(pageIds.map((id, idx) => [String(id), idx]));
+      rawPageSessions.sort(
+        (a, b) => (orderMap.get(String(a._id)) ?? 0) - (orderMap.get(String(b._id)) ?? 0),
+      );
+
+      // Enrich only these ~20 sessions
       const userIds = [
-        ...new Set(rawSessions.map((s) => s.userId).filter(Boolean)),
+        ...new Set(rawPageSessions.map((s) => s.userId).filter(Boolean)),
       ];
       let userMap = {};
       if (userIds.length) {
@@ -6605,7 +6639,8 @@ router.get(
           .lean();
         for (const u of users) userMap[String(u._id)] = u;
       }
-      const enriched = rawSessions.map((s) => {
+
+      const sessions = rawPageSessions.map((s) => {
         const u = s.userId ? userMap[String(s.userId)] : null;
         const addr = u?.addresses?.[0] || {};
         return {
@@ -6613,8 +6648,6 @@ router.get(
           userName: s.userName || u?.name || null,
           userEmail: s.userEmail || u?.email || null,
           userPhone: s.userPhone || u?.mobile || null,
-          // Fall back to the customer's saved address when the session itself
-          // didn't capture a typed address (e.g. logged-in checkout).
           userCity: s.userCity || addr.city || null,
           userZone: s.userZone || addr.zone || null,
           userArea: s.userArea || null,
@@ -6622,17 +6655,8 @@ router.get(
           userNote: s.userNote || null,
         };
       });
-      const active = enriched.filter((s) => {
-        if (s.userId && orderedUserIds.has(String(s.userId))) return false;
-        if (s.userPhone && orderedPhones.has(norm(s.userPhone))) return false;
-        if (s.userEmail && orderedEmails.has(String(s.userEmail).toLowerCase()))
-          return false;
-        return true;
-      });
-      const total = active.length;
-      const skip = (pg - 1) * lim;
-      const sessions = active.slice(skip, skip + lim);
-      res.json({ sessions, total, pages: Math.ceil(total / lim) });
+
+      res.json({ sessions, total, pages: Math.ceil(total / lim) || 1 });
     } catch (err) {
       res.status(500).json({ error: "Server error" });
     }
