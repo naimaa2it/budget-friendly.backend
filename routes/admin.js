@@ -1589,6 +1589,17 @@ router.put(
       const existing = await Product.findById(req.params.id);
       if (!existing) return res.status(404).json({ error: "Not found" });
 
+      // A draft auto-save can already be in flight when an admin publishes a
+      // new product. It must not arrive later and silently downgrade the
+      // published product back to draft.
+      if (
+        req.get("X-Auto-Save") === "true" &&
+        existing.status === "published" &&
+        updates.status === "draft"
+      ) {
+        delete updates.status;
+      }
+
       // Append an "edited by" entry to the audit trail. Preserve the original
       // "created" entry and keep only the 4 most recent edits (5 entries total).
       const editorName =
